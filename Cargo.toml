@@ -1,0 +1,16 @@
+[package]
+name = "matter"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "rs_matter"
+path = "src/lib.rs"
+
+[[bin]]
+name = "matter"
+path = "src/main.rs"
+
+[dependencies]
