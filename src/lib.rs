@@ -7,6 +7,7 @@ pub mod sbox {
 
 pub mod data_model {
     use crate::sbox;
+    use std::borrow::BorrowMut;
     
     pub const ENDPTS_PER_ACC:     usize = 1;
     pub const CLUSTERS_PER_ENDPT: usize = 4;
@@ -66,19 +67,19 @@ pub mod data_model {
     }
 
     impl Accessory {
-        pub fn add_endpoint(&mut self, id: u32) -> Result<(), &'static str> {
+        pub fn add_endpoint(&mut self, id: u32) -> Result<&mut Endpoint, &'static str> {
             for e in self.endpoints.iter_mut() {
                 if let None = e {
                     let a = Endpoint::new(id)?;
                     *e = Some(a);
-                    return Ok(());
+                    return Ok(e.as_mut().unwrap().borrow_mut());
                 }
             }
             return Err("Hit Endpoint Limit");
         }
 
         // Adds it to the first endpoint by default
-        pub fn add_cluster(&mut self, id: u32) -> Result<(), &'static str> {
+        pub fn add_cluster(&mut self, id: u32) -> Result<&mut Cluster, &'static str> {
             if let None = self.endpoints[0] {
                 self.add_endpoint(1)?;
             }
@@ -86,7 +87,7 @@ pub mod data_model {
                 if let None = c {
                     let a = Cluster::new(id)?;
                     *c = Some(a);
-                    return Ok(());
+                    return Ok(c.as_mut().unwrap().borrow_mut());
                 }
             }
             return Err("No space available");
