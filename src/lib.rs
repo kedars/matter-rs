@@ -58,16 +58,6 @@ pub mod data_model {
             Ok(a)
         }
 
-        pub fn add_cluster(&mut self, id: u32) -> Result<(), &str> {
-            for c in self.clusters.iter_mut() {
-                if let None = c {
-                    let a = Cluster::new(id)?;
-                    *c = Some(a);
-                    return Ok(());
-                }
-            }
-            return Err("No space available");
-        }
     }
 
     #[derive(Debug, Default)]
@@ -76,11 +66,26 @@ pub mod data_model {
     }
 
     impl Accessory {
-        pub fn add_endpoint(&mut self, id: u32) -> Result<(), &str> {
+        pub fn add_endpoint(&mut self, id: u32) -> Result<(), &'static str> {
             for e in self.endpoints.iter_mut() {
                 if let None = e {
                     let a = Endpoint::new(id)?;
                     *e = Some(a);
+                    return Ok(());
+                }
+            }
+            return Err("Hit Endpoint Limit");
+        }
+
+        // Adds it to the first endpoint by default
+        pub fn add_cluster(&mut self, id: u32) -> Result<(), &'static str> {
+            if let None = self.endpoints[0] {
+                self.add_endpoint(1)?;
+            }
+            for c in self.endpoints[0].as_mut().unwrap().clusters.iter_mut() {
+                if let None = c {
+                    let a = Cluster::new(id)?;
+                    *c = Some(a);
                     return Ok(());
                 }
             }
