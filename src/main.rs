@@ -16,8 +16,8 @@ fn main() {
 
 fn data_model_init() -> Result <Box<data_model::Accessory>, &'static str> {
     let mut a = Box::new(data_model::Accessory::default());
-    a.add_endpoint(3)?;
-    a.add_cluster(1)?;
-//    a.add_endpoint(4)?;
+    a.add_endpoint(3)?
+        .add_cluster(4)?;
+
     Ok(a)
 }
