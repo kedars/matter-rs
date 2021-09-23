@@ -15,8 +15,8 @@ pub mod data_model {
 
     #[derive(Debug)]
     pub enum AttrValue {
-        Int(i64),
-        Uint(u64),
+        Int8(i8),
+        Int64(i64),
         Bool(bool),
     }
     
@@ -31,11 +31,20 @@ pub mod data_model {
             Attribute { id: 0, value: AttrValue::Bool(true)}
         }
     }
+
+    impl Attribute {
+        pub fn new (id: u32, val: AttrValue) -> Result<Box<Attribute>, &'static str> {
+            let mut a = sbox::sbox_new(Attribute::default())?;
+            a.id = id;
+            a.value = val;
+            Ok(a)
+        }
+    }
     
     #[derive(Debug, Default)]
     pub struct Cluster {
         id: u32,
-        attributes: [Attribute; ATTRS_PER_CLUSTER],
+        attributes: [Option<Box<Attribute>>; ATTRS_PER_CLUSTER],
     }
 
     impl Cluster {
@@ -43,6 +52,16 @@ pub mod data_model {
             let mut a = sbox::sbox_new(Cluster::default())?;
             a.id = id;
             Ok(a)
+        }
+
+        pub fn add_attribute(&mut self, attr: Box<Attribute>) -> Result<&mut Attribute, &'static str> {
+            for c in self.attributes.iter_mut() {
+                if let None = c {
+                    *c = Some(attr);
+                    return Ok(c.as_mut().unwrap().borrow_mut());
+                }
+            }
+            return Err("No space available");
         }
     }
 
@@ -59,11 +78,10 @@ pub mod data_model {
             Ok(a)
         }
 
-        pub fn add_cluster(&mut self, id: u32) -> Result<&mut Cluster, &'static str> {
+        pub fn add_cluster(&mut self, cluster: Box<Cluster>) -> Result<&mut Cluster, &'static str> {
             for c in self.clusters.iter_mut() {
                 if let None = c {
-                    let a = Cluster::new(id)?;
-                    *c = Some(a);
+                    *c = Some(cluster);
                     return Ok(c.as_mut().unwrap().borrow_mut());
                 }
             }
@@ -88,11 +106,11 @@ pub mod data_model {
             return Err("Hit Endpoint Limit");
         }
 
-        pub fn add_cluster(&mut self, id: u32) -> Result<&mut Cluster, &'static str> {
+        pub fn add_cluster(&mut self, cluster: Box<Cluster>) -> Result<&mut Cluster, &'static str> {
             if let None = self.endpoints[0] {
                 self.add_endpoint(1)?;
             }
-            self.endpoints[0].as_mut().unwrap().add_cluster(id)
+            self.endpoints[0].as_mut().unwrap().add_cluster(cluster)
         }
     }
 
