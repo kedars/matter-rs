@@ -1,4 +1,5 @@
 pub mod data_model;
+pub mod transport;
 
 pub mod sbox {
     pub fn sbox_new<T> (var: T) -> Result<Box<T>, &'static str> {
