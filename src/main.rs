@@ -5,6 +5,7 @@ use rs_matter::data_model::Attribute;
 use rs_matter::data_model::Cluster;
 use rs_matter::data_model::AttrValue;
 use rs_matter::transport::udp;
+use rs_matter::transport::packet::PacketParser;
 
 fn main() {
     let x = sbox::sbox_new("Hello How are you").unwrap();
@@ -16,20 +17,9 @@ fn main() {
     });
     println!("Accessory: {:#?}", a);
 
-    let packet = Packet { a: String::from("Hi") };
-    let transport: udp::Udp<Packet> = udp::Udp::new(packet);
-    transport.start_daemon();
-}
-
-struct Packet {
-    a: String,
-}
-
-impl udp::ConsumeMsg for Packet {
-    fn consume_message(&self, msg: &[u8], len: usize, src: std::net::SocketAddr) {
-        println!("Received: len {}, src {}", len, src);
-        println!("Data: {:x?}", &msg[0..len]);
-    }
+    let parser = PacketParser::new();
+    let transport: udp::UdpListener<PacketParser> = udp::UdpListener::new(parser);
+    transport.start_daemon().unwrap();
 }
 
 fn data_model_init() -> Result <Box<data_model::Accessory>, &'static str> {

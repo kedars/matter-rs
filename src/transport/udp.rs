@@ -1,6 +1,6 @@
 use std::net::{Ipv4Addr, UdpSocket};
 
-pub struct Udp<T: ConsumeMsg> {
+pub struct UdpListener<T: ConsumeMsg> {
     msg_consumer: T,
 }
 
@@ -14,9 +14,9 @@ pub trait ConsumeMsg {
     fn consume_message(&self, msg: &[u8], len: usize, src: std::net::SocketAddr);
 }
 
-impl<T: ConsumeMsg> Udp<T> {
-    pub fn new(msg_consumer: T) -> Udp<T> {
-        Udp {msg_consumer}
+impl<T: ConsumeMsg> UdpListener<T> {
+    pub fn new(msg_consumer: T) -> UdpListener<T> {
+        UdpListener {msg_consumer}
     }
 
     pub fn start_daemon(&self) -> Result<(), &'static str> {
