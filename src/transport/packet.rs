@@ -5,10 +5,22 @@ pub struct PacketParser {
     dropped_pkts: u8,
 }
 
+const SESSION_TYPE_MASK: u8 = 0x01;
+
+#[derive(Debug)]
+pub enum SessionType {
+    None,
+    Encrypted,
+}
+
 // This is the unencrypted message
 struct ChipMsg {
     flags: u8,
-    sec_flags: u8,
+    /* For the current spec that this is working against, the security flags have following structure:
+     * bit 0: if 1, AES-CCM crypto is used for the packet
+     * other bits seem to be reserved
+     */
+    sess_type: SessionType,
     sess_id: u16,
     ctr: u32,
 }
@@ -33,7 +45,8 @@ impl PacketParser {
             .le_u16(&mut sess_id)?
             .le_u32(&mut ctr)?;
 
-        Ok(ChipMsg{flags, sec_flags, sess_id, ctr})
+        let sess_type = if (sec_flags & SESSION_TYPE_MASK) == 1 { SessionType::Encrypted } else { SessionType::None };
+        Ok(ChipMsg{flags, sess_type, sess_id, ctr})
      }
 }
 
@@ -48,7 +61,7 @@ impl udp::ConsumeMsg for PacketParser {
             Err(_) => { self.dropped_pkts += 1; return; }
         };
         println!("flags: {:x}", chip_msg.flags);
-        println!("security flags: {:x}", chip_msg.sec_flags);
+        println!("session type: {:#?}", chip_msg.sess_type);
         println!("sess_id: {}", chip_msg.sess_id);
         println!("ctr: {}", chip_msg.ctr);
     }
