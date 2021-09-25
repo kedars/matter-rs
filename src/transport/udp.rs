@@ -11,7 +11,7 @@ const MAX_BUF_SIZE: usize = 1583;
 const MATTER_PORT: u16 = 5540;
 
 pub trait ConsumeMsg {
-    fn consume_message(&self, msg: &[u8], len: usize, src: std::net::SocketAddr);
+    fn consume_message(&mut self, msg: &[u8], len: usize, src: std::net::SocketAddr);
 }
 
 impl<T: ConsumeMsg> UdpListener<T> {
@@ -19,7 +19,7 @@ impl<T: ConsumeMsg> UdpListener<T> {
         UdpListener {msg_consumer}
     }
 
-    pub fn start_daemon(&self) -> Result<(), &'static str> {
+    pub fn start_daemon(&mut self) -> Result<(), &'static str> {
         /* This is the buffer that holds incoming data. */
         /* I would have liked this to be a global variable, but Rust wants all access to such mutable static
          * variables to be 'unsafe', which I don't want to do.

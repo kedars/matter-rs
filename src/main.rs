@@ -18,7 +18,7 @@ fn main() {
     println!("Accessory: {:#?}", a);
 
     let parser = PacketParser::new();
-    let transport: udp::UdpListener<PacketParser> = udp::UdpListener::new(parser);
+    let mut transport: udp::UdpListener<PacketParser> = udp::UdpListener::new(parser);
     transport.start_daemon().unwrap();
 }
 

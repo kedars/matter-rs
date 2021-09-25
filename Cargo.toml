@@ -14,3 +14,4 @@ name = "matter"
 path = "src/main.rs"
 
 [dependencies]
+byteorder = "1.4.3"
