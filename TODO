@@ -1,0 +1,4 @@
+* Common Error handling instead of &str
+* udp.c: Move the 'in_buf' out of the stack to bss
+* AEAD: Check if we are actually using the non-alloc version of AEAD
+* How to disable 'prints' in release mode?
