@@ -1,3 +1,4 @@
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::process;
 use rs_matter::sbox;
 use rs_matter::data_model;
@@ -6,6 +7,7 @@ use rs_matter::data_model::Cluster;
 use rs_matter::data_model::AttrValue;
 use rs_matter::transport::udp;
 use rs_matter::transport::packet::PacketParser;
+use rs_matter::transport::session;
 
 use ccm::{Ccm, consts::{U16, U12}};
 use ccm::aead::{AeadInPlace, NewAead, generic_array::GenericArray};
@@ -23,6 +25,16 @@ fn main() {
     println!("Accessory: {:#?}", a);
 
     test_aead();
+
+    let mut session_mgr = session::SessionMgr::init();
+    let test_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+    // Create a fake entry as hard-coded in the 'bypass mode' in chip-tool
+    let i2r_key = [ 0x44, 0xd4, 0x3c, 0x91, 0xd2, 0x27, 0xf3, 0xba, 0x08, 0x24, 0xc5, 0xd8, 0x7c, 0xb8, 0x1b, 0x33];
+    session_mgr.add(0, i2r_key, i2r_key, test_addr).unwrap();
+    println!("The sessions mgr: {:x?}", session_mgr);
+    let test_session = session_mgr.get(0, test_addr);
+    println!("The session: {:x?}", test_session);
+    
     let parser = PacketParser::new();
     let mut transport: udp::UdpListener<PacketParser> = udp::UdpListener::new(parser);
     transport.start_daemon().unwrap();
