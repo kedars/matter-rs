@@ -1,7 +1,7 @@
 use std::net::{Ipv4Addr, UdpSocket};
 
-pub struct UdpListener<T: ConsumeMsg> {
-    msg_consumer: T,
+pub struct UdpListener<'a> {
+    msg_consumer: &'a mut dyn ConsumeMsg,
 }
 
 /* Currently matches with the one in connectedhomeip repo */
@@ -14,8 +14,8 @@ pub trait ConsumeMsg {
     fn consume_message(&mut self, msg: &[u8], len: usize, src: std::net::SocketAddr);
 }
 
-impl<T: ConsumeMsg> UdpListener<T> {
-    pub fn new(msg_consumer: T) -> UdpListener<T> {
+impl<'a> UdpListener<'a> {
+    pub fn new(msg_consumer: &mut dyn ConsumeMsg) -> UdpListener {
         UdpListener {msg_consumer}
     }
 

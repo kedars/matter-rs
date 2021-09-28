@@ -2,9 +2,9 @@ use crate::transport::udp;
 use crate::utils::ParseBuf;
 use crate::utils::WriteBuf;
     
-pub struct PacketParser<'a, T: ConsumeProtoMsg> {
+pub struct PacketParser<'a> {
     dropped_pkts: u8,
-    proto_consumer: &'a mut T,
+    proto_consumer: &'a dyn ConsumeProtoMsg,
 }
 
 const SESSION_TYPE_MASK: u8 = 0x01;
@@ -28,8 +28,8 @@ pub struct MatterMsg {
     pub src_addr: Option<std::net::SocketAddr>,
 }
 
-impl<'a, T:ConsumeProtoMsg> PacketParser<'a, T> {
-    pub fn new(proto_consumer: &'a mut T) -> PacketParser<'a, T> {
+impl<'a> PacketParser<'a> {
+    pub fn new(proto_consumer: &'a dyn ConsumeProtoMsg) -> PacketParser<'a> {
         PacketParser {
             dropped_pkts: 0,
             proto_consumer,
@@ -38,7 +38,7 @@ impl<'a, T:ConsumeProtoMsg> PacketParser<'a, T> {
 }
 
 pub trait ConsumeProtoMsg {
-    fn consume_proto_msg(&mut self, matter_msg: MatterMsg, parsebuf: ParseBuf);
+    fn consume_proto_msg(&self, matter_msg: MatterMsg, parsebuf: ParseBuf);
 }
 
 // The reason UDP is part of the name here is because, if message received on TCP
@@ -58,7 +58,7 @@ fn parse_udp_hdr(msg: & mut ParseBuf) -> Result<MatterMsg, &'static str> {
     Ok(MatterMsg{flags, sess_type, sess_id, ctr, src_addr: None})
 }
 
-impl<'a, T: ConsumeProtoMsg> udp::ConsumeMsg for PacketParser<'a, T> {
+impl<'a> udp::ConsumeMsg for PacketParser<'a> {
     fn consume_message(&mut self, msg: &[u8], len: usize, src: std::net::SocketAddr) {
         println!("Received: len {}, src {}", len, src);
         println!("Data: {:x?}", &msg[0..len]);

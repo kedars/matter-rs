@@ -12,8 +12,8 @@ pub struct ProtoMsgParser<'a> {
 impl<'a> ProtoMsgParser<'a> {
     pub fn new(sess_mgr: &'a session::SessionMgr) -> ProtoMsgParser {
         let mut proto_msg = ProtoMsgParser{sess_mgr};
-        let parser: PacketParser<ProtoMsgParser> = PacketParser::new(&mut proto_msg);
-        let mut transport: udp::UdpListener<PacketParser<ProtoMsgParser>> = udp::UdpListener::new(parser);
+        let mut parser = PacketParser::new(&proto_msg);
+        let mut transport = udp::UdpListener::new(&mut parser);
         transport.start_daemon().unwrap();
         proto_msg
     }
@@ -23,7 +23,7 @@ const TAG_LEN: usize = 16;
 const IV_LEN: usize = 12;
 
 impl<'a> packet::ConsumeProtoMsg for ProtoMsgParser<'a> {
-    fn consume_proto_msg(&mut self, matter_msg: packet::MatterMsg, parsebuf: ParseBuf) {
+    fn consume_proto_msg(&self, matter_msg: packet::MatterMsg, parsebuf: ParseBuf) {
         let aad = &parsebuf.buf[0..parsebuf.read_off];
         println!("AAD: {:x?}", aad);
         let tag_start = parsebuf.buf.len() - TAG_LEN;
