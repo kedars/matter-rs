@@ -5,9 +5,8 @@ use rs_matter::data_model;
 use rs_matter::data_model::Attribute;
 use rs_matter::data_model::Cluster;
 use rs_matter::data_model::AttrValue;
-use rs_matter::transport::udp;
-use rs_matter::transport::packet::PacketParser;
 use rs_matter::transport::session;
+use rs_matter::transport::proto_msg;
 
 use ccm::{Ccm, consts::{U16, U12}};
 use ccm::aead::{AeadInPlace, NewAead, generic_array::GenericArray};
@@ -35,9 +34,8 @@ fn main() {
     let test_session = session_mgr.get(0, test_addr);
     println!("The session: {:x?}", test_session);
     
-    let parser = PacketParser::new();
-    let mut transport: udp::UdpListener<PacketParser> = udp::UdpListener::new(parser);
-    transport.start_daemon().unwrap();
+    //    let parser = PacketParser::new();
+    let parser = proto_msg::ProtoMsgParser::new(session_mgr);
 }
 
 fn data_model_init() -> Result <Box<data_model::Accessory>, &'static str> {

@@ -1,7 +1,7 @@
 use byteorder::{ByteOrder, LittleEndian};
 
 pub struct ParseBuf<'a> {
-    pub buf: &'a[u8],
+    pub buf: &'a [u8],
     pub read_off: usize,
 }
 
