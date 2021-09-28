@@ -1,5 +1,6 @@
 use crate::transport::udp;
-use byteorder::{ByteOrder, LittleEndian};
+use crate::utils::ParseBuf;
+use crate::utils::WriteBuf;
     
 pub struct PacketParser {
     dropped_pkts: u8,
@@ -92,87 +93,3 @@ fn get_protocol_msg (parsebuf: ParseBuf, chip_msg: ChipMsg) {
     
 }
 
-pub struct ParseBuf<'a> {
-    buf: &'a[u8],
-    read_off: usize,
-}
-
-impl<'a> ParseBuf<'a> {
-    pub fn new(buf: &'a [u8], len: usize) -> ParseBuf<'a> {
-        ParseBuf{buf: &buf[..len], read_off: 0}
-    }
-
-    pub fn le_u8(& mut self, data: &mut u8) -> Result<(), &'static str> {
-        // RustQ: Is there a better idiomatic way to do this in Rust? 
-        if self.buf.len() > 1 {
-            *data = self.buf[self.read_off];
-            self.read_off +=  1;
-            Ok(())
-        } else {
-            return Err("Out of Bounds");
-        }
-    }
-
-    pub fn le_u16(& mut self, data: &mut u16) -> Result<(), &'static str> {
-        if self.buf.len() > 2 {
-            *data = LittleEndian::read_u16(&self.buf[self.read_off..]);
-            self.read_off += 2;
-            Ok(())
-        } else {
-            return Err("Out of Bounds");
-        }
-
-    }
-
-    pub fn le_u32(& mut self, data: &mut u32) -> Result<(), &'static str> {
-        if self.buf.len() > 4 {
-            *data = LittleEndian::read_u32(&self.buf[self.read_off..]);
-            self.read_off += 4;
-            Ok(())
-        } else {
-            return Err("Out of Bounds");
-        }
-    }
-}
-
-pub struct WriteBuf<'a> {
-    buf: &'a mut[u8],
-    write_off: usize,
-}
-
-impl<'a> WriteBuf<'a> {
-    pub fn new(buf: &'a mut [u8], len: usize) -> WriteBuf<'a> {
-        WriteBuf{buf: &mut buf[..len], write_off: 0}
-    }
-
-    pub fn le_u16(& mut self, data: u16) -> Result<(), &'static str> {
-        if self.buf.len() > 2 {
-            LittleEndian::write_u16(&mut self.buf[self.write_off..], data);
-            self.write_off += 2;
-            Ok(())
-        } else {
-            return Err("Out of Bounds");
-        }
-    }
-
-    pub fn le_u32(& mut self, data: u32) -> Result<(), &'static str> {
-        if self.buf.len() > 4 {
-            LittleEndian::write_u32(&mut self.buf[self.write_off..], data);
-            self.write_off += 4;
-            Ok(())
-        } else {
-            return Err("Out of Bounds");
-        }
-    }
-
-    pub fn le_u64(& mut self, data: u64) -> Result<(), &'static str> {
-        if self.buf.len() > 8 {
-            LittleEndian::write_u64(&mut self.buf[self.write_off..], data);
-            self.write_off += 8;
-            Ok(())
-        } else {
-            return Err("Out of Bounds");
-        }
-    }
-
-}
