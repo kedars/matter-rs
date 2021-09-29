@@ -11,7 +11,7 @@ const MAX_BUF_SIZE: usize = 1583;
 const MATTER_PORT: u16 = 5540;
 
 pub trait ConsumeMsg {
-    fn consume_message(&mut self, msg: &[u8], len: usize, src: std::net::SocketAddr);
+    fn consume_message(&mut self, msg: &mut [u8], len: usize, src: std::net::SocketAddr);
 }
 
 impl<'a> UdpListener<'a> {

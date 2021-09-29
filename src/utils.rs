@@ -1,15 +1,22 @@
 use byteorder::{ByteOrder, LittleEndian};
 
 pub struct ParseBuf<'a> {
-    pub buf: &'a [u8],
+    pub buf: &'a mut [u8],
     pub read_off: usize,
 }
 
 impl<'a> ParseBuf<'a> {
-    pub fn new(buf: &'a [u8], len: usize) -> ParseBuf<'a> {
-        ParseBuf{buf: &buf[..len], read_off: 0}
+    pub fn new(buf: &'a mut [u8], len: usize) -> ParseBuf<'a> {
+        ParseBuf{buf: &mut buf[..len], read_off: 0}
     }
 
+    // Reset the Parsebuf to a slice that starts at read_offset (making read_offset 0 in the process)
+    // and ends at end_offset
+    pub fn update(&'a mut self, end_offset: usize) {
+        self.buf = &mut self.buf[self.read_off..end_offset];
+        self.read_off = 0;
+    }
+    
     pub fn le_u8(& mut self, data: &mut u8) -> Result<(), &'static str> {
         // RustQ: Is there a better idiomatic way to do this in Rust? 
         if self.buf.len() > 1 {

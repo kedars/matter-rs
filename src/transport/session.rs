@@ -1,4 +1,3 @@
-use std::net::SocketAddr;
 use heapless::Vec;
 
 const MATTER_AES128_KEY_SIZE: usize = 16;
@@ -6,9 +5,9 @@ const MATTER_AES128_KEY_SIZE: usize = 16;
 #[derive(Debug)]
 pub struct Session {
     // If this field is None, the rest of the members are ignored
-    peer_addr: Option<std::net::SocketAddr>,
-    i2r_key: [u8; MATTER_AES128_KEY_SIZE],
-    r2i_key: [u8; MATTER_AES128_KEY_SIZE],
+    peer_addr: Option<std::net::IpAddr>,
+    pub dec_key: [u8; MATTER_AES128_KEY_SIZE],
+    pub enc_key: [u8; MATTER_AES128_KEY_SIZE],
     session_id: u16,
 }
 
@@ -29,13 +28,13 @@ impl SessionMgr {
     }
  
     pub fn add(&mut self, session_id: u16,
-               i2r_key: [u8; MATTER_AES128_KEY_SIZE],
-               r2i_key: [u8; MATTER_AES128_KEY_SIZE],
-               peer_addr: std::net::SocketAddr) -> Result<(), &'static str> {
+               dec_key: [u8; MATTER_AES128_KEY_SIZE],
+               enc_key: [u8; MATTER_AES128_KEY_SIZE],
+               peer_addr: std::net::IpAddr) -> Result<(), &'static str> {
         let session = Session {
             peer_addr  : Some(peer_addr),
-            i2r_key,
-            r2i_key,
+            dec_key,
+            enc_key,
             session_id,
         };
         match self.sessions.push(session) {
@@ -44,7 +43,7 @@ impl SessionMgr {
         }
     }
 
-    pub fn get(&mut self, session_id: u16, peer_addr: std::net::SocketAddr) -> Option<&Session> {
+    pub fn get(&mut self, session_id: u16, peer_addr: std::net::IpAddr) -> Option<&Session> {
         if let Some(index) = self.sessions.iter().position(|x| {
             x.session_id == session_id &&
                 x.peer_addr == Some(peer_addr)
