@@ -1,12 +1,12 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::process;
-use rs_matter::sbox;
-use rs_matter::data_model;
-use rs_matter::data_model::Attribute;
-use rs_matter::data_model::Cluster;
-use rs_matter::data_model::AttrValue;
-use rs_matter::transport::session;
-use rs_matter::transport::proto_msg;
+use matter::sbox;
+use matter::data_model;
+use matter::data_model::Attribute;
+use matter::data_model::Cluster;
+use matter::data_model::AttrValue;
+use matter::transport::session;
+use matter::transport::proto_msg;
 
 
 fn main() {
