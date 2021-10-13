@@ -163,6 +163,27 @@ impl<'a> TLVElement<'a> {
         return Some(TLVContainerIterator{list_iter, prev_container: false, iterator_consumed: false});
     }
 
+    pub fn get_u8(&self) -> Option<u8> {
+        match self.element_type {
+            ElementType::U8(a) => Some(a),
+            _ => None,
+        }
+    }
+
+    pub fn get_u16(&self) -> Option<u16> {
+        match self.element_type {
+            ElementType::U16(a) => Some(a),
+            _ => None,
+        }
+    }
+
+    pub fn get_u32(&self) -> Option<u32> {
+        match self.element_type {
+            ElementType::U32(a) => Some(a),
+            _ => None,
+        }
+    }
+    
     pub fn confirm_struct(&self) -> Option<TLVElement<'a>> {
         match self.element_type {
             ElementType::Struct(_) => Some(*self),
