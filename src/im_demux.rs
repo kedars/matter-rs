@@ -72,7 +72,7 @@ impl<'a> InteractionModel<'a> {
             // This is an array of CommandDataIB
             let cmd_data_ib = cmd_list_iter.next().ok_or(Error::InvalidData)?;
 
-            // CommandDataIB has CommandPath + Variable
+            // CommandDataIB has CommandPath(0) + Variable(1)
             let cmd_path_ib = get_cmd_path_ib(&cmd_data_ib.find_element(0).ok_or(Error::InvalidData)?
                                            .confirm_list().ok_or(Error::InvalidData)?);
             let variable  = cmd_data_ib.find_element(1).ok_or(Error::InvalidData)?;
@@ -100,3 +100,53 @@ impl <'a> proto_demux::HandleProto for InteractionModel<'a> {
 }
 
 
+#[cfg(test)]
+mod tests {
+    use crate::tlv::*;
+    use crate::im_demux::*;
+    use crate::proto_demux::HandleProto;
+
+    struct TestDataModel {
+        pub endpoint: Option<u8>,
+        pub cluster: Option<u8>,
+        pub command: Option<u8>,
+        pub variable: Option<u8>,
+    }
+
+    impl TestDataModel {
+        fn init() -> TestDataModel {
+            TestDataModel{endpoint: None,
+                          cluster: None,
+                          command: None,
+                          variable: None}
+        }
+    }
+
+    impl HandleInteraction for TestDataModel {
+        fn handle_invoke_cmd(&mut self, cmd_path_ib: &CmdPathIb, variable: TLVElement) -> Result<(), Error> {
+            self.endpoint = cmd_path_ib.endpoint;
+            self.cluster = cmd_path_ib.cluster;
+            self.command = cmd_path_ib.command;
+            variable.confirm_struct().unwrap();
+            self.variable = variable.find_element(1).unwrap().get_u8();
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_valid_invoke_cmd() {
+        // An invoke command for endpoint 0, cluster 49, command 12 and a u8 variable value of 0x05
+        let b = [ 0x15, 0x36, 0x00, 0x15, 0x37, 0x00, 0x24, 0x00, 0x00, 0x24,
+                  0x02, 0x31, 0x24, 0x03, 0x0c, 0x18, 0x35, 0x01, 0x24, 0x01, 0x05, 0x18, 0x18, 0x18,
+                  0x18];
+
+
+        let mut data_model = TestDataModel::init();
+        let mut interaction_model = InteractionModel::init(&mut data_model);
+        interaction_model.handle_proto_id(0x08, &b);
+        assert_eq!(data_model.endpoint, Some(0));
+        assert_eq!(data_model.cluster, Some(49));
+        assert_eq!(data_model.command, Some(12));
+        assert_eq!(data_model.variable, Some(5));
+    }
+}
