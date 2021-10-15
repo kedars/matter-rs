@@ -60,7 +60,7 @@ impl<'a> InteractionModel<'a> {
 
 
     // For now, we just return without doing anything to this exchange. This needs change
-    fn invoke_req_handler(&mut self, opcode: OpCode, buf: &[u8]) -> Result<(), Error> {
+    fn invoke_req_handler(&mut self, _opcode: OpCode, buf: &[u8]) -> Result<(), Error> {
         info!("In invoke req handler");
         let root = get_root_node_struct(buf).ok_or(Error::InvalidData)?;
 

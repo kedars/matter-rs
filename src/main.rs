@@ -1,12 +1,10 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::process;
 use matter::sbox;
 use matter::data_model;
 use matter::data_model::Attribute;
 use matter::data_model::Cluster;
 use matter::data_model::AttrValue;
-use matter::transport::session;
-use matter::transport::proto_msg;
+use matter::transport;
 
 
 fn main() {
@@ -19,16 +17,8 @@ fn main() {
     });
     println!("Accessory: {:#?}", a);
 
-    let mut session_mgr = session::SessionMgr::init();
-    let test_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
-    // Create a fake entry as hard-coded in the 'bypass mode' in chip-tool
-    let i2r_key = [ 0x44, 0xd4, 0x3c, 0x91, 0xd2, 0x27, 0xf3, 0xba, 0x08, 0x24, 0xc5, 0xd8, 0x7c, 0xb8, 0x1b, 0x33];
-    session_mgr.add(0, i2r_key, i2r_key, test_addr.ip()).unwrap();
-    println!("The sessions mgr: {:x?}", session_mgr);
-    let test_session = session_mgr.get(0, test_addr.ip());
-    println!("The session: {:x?}", test_session);
-    
-    let _parser = proto_msg::ProtoMsgParser::new(&mut session_mgr);
+    let transport_mgr = transport::mgr::Mgr::new().unwrap();
+    transport_mgr.start().unwrap();
 }
 
 fn data_model_init() -> Result <Box<data_model::Accessory>, &'static str> {

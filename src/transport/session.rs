@@ -16,14 +16,10 @@ pub struct SessionMgr {
     pub sessions: Vec::<Session, 16>,
 }
 
-pub static mut SESSIONS_MGR: SessionMgr = SessionMgr {
-    sessions: Vec::new(),
-};
-
 impl SessionMgr {
-    pub fn init() -> &'static mut SessionMgr {
-        unsafe {
-            &mut SESSIONS_MGR   
+    pub fn new() -> SessionMgr {
+        SessionMgr{
+            sessions: Vec::new()
         }
     }
  
@@ -43,7 +39,7 @@ impl SessionMgr {
         }
     }
 
-    pub fn get(&mut self, session_id: u16, peer_addr: std::net::IpAddr) -> Option<&Session> {
+    pub fn get(&self, session_id: u16, peer_addr: std::net::IpAddr) -> Option<&Session> {
         if let Some(index) = self.sessions.iter().position(|x| {
             x.session_id == session_id &&
                 x.peer_addr == Some(peer_addr)
