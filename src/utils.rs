@@ -4,25 +4,33 @@ use byteorder::{ByteOrder, LittleEndian};
 pub struct ParseBuf<'a> {
     pub buf: &'a mut [u8],
     pub read_off: usize,
+    pub left: usize,
 }
 
 impl<'a> ParseBuf<'a> {
     pub fn new(buf: &'a mut [u8], len: usize) -> ParseBuf<'a> {
-        ParseBuf{buf: &mut buf[..len], read_off: 0}
+        ParseBuf{buf: &mut buf[..len], read_off: 0, left: len}
     }
 
-    // Reset the Parsebuf to a slice that starts at read_offset (making read_offset 0 in the process)
-    // and ends at end_offset
-    pub fn update(&'a mut self, end_offset: usize) {
-        self.buf = &mut self.buf[self.read_off..end_offset];
-        self.read_off = 0;
+    pub fn truncate(&mut self, truncate_by: usize) -> Result<(), Error> {
+        if truncate_by < self.left {
+            self.left -= truncate_by;
+            Ok(())
+        } else {
+            return Err(Error::Invalid);
+        }
     }
-    
+
+    fn advance(&mut self, len: usize) {
+        self.read_off += len;
+        self.left -= len;
+    }
+
     pub fn le_u8(& mut self) -> Result<u8, Error> {
         // RustQ: Is there a better idiomatic way to do this in Rust? 
-        if self.buf.len() > 1 {
+        if self.left > 1 {
             let data: u8 = self.buf[self.read_off];
-            self.read_off +=  1;
+            self.advance(1);
             Ok(data)
         } else {
             return Err(Error::TruncatedPacket);
@@ -30,9 +38,9 @@ impl<'a> ParseBuf<'a> {
     }
 
     pub fn le_u16(& mut self) -> Result<u16, Error> {
-        if self.buf.len() > 2 {
+        if self.left > 2 {
             let data: u16 = LittleEndian::read_u16(&self.buf[self.read_off..]);
-            self.read_off += 2;
+            self.advance(2);
             Ok(data)
         } else {
             return Err(Error::TruncatedPacket);
@@ -40,9 +48,9 @@ impl<'a> ParseBuf<'a> {
     }
 
     pub fn le_u32(& mut self) -> Result<u32, Error> {
-        if self.buf.len() > 4 {
+        if self.left > 4 {
             let data: u32 = LittleEndian::read_u32(&self.buf[self.read_off..]);
-            self.read_off += 4;
+            self.advance(4);
             Ok(data)
         } else {
             return Err(Error::TruncatedPacket);

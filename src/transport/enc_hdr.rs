@@ -67,7 +67,7 @@ impl fmt::Display for EncHdr {
 }
 
 pub fn parse_enc_hdr(plain_hdr: &plain_hdr::PlainHdr, parsebuf: &mut ParseBuf, dec_key: &[u8]) -> Result<EncHdr, Error> {
-    let end_off = decrypt_in_place(&plain_hdr, parsebuf, dec_key)?;
+    decrypt_in_place(&plain_hdr, parsebuf, dec_key)?;
 
     let mut enc_hdr = EncHdr::default();
     enc_hdr.exch_flags   = parsebuf.le_u8()?;
@@ -82,7 +82,7 @@ pub fn parse_enc_hdr(plain_hdr: &plain_hdr::PlainHdr, parsebuf: &mut ParseBuf, d
     if enc_hdr.is_ack() {
         enc_hdr.ack_msg_ctr = Some(parsebuf.le_u32()?);
     }
-    info!("payload: {:x?}", &parsebuf.buf[parsebuf.read_off..end_off]);
+    info!("payload: {:x?}", &parsebuf.buf[parsebuf.read_off..(parsebuf.read_off + parsebuf.left)]);
     Ok(enc_hdr)
 }
 
@@ -102,13 +102,13 @@ fn get_iv(plain_hdr: &plain_hdr::PlainHdr, iv: &mut [u8]) -> Result<(), Error>{
 
 fn decrypt_in_place(plain_hdr: &plain_hdr::PlainHdr,
                     parsebuf: &mut ParseBuf,
-                    key: &[u8]) -> Result<usize, Error> {
+                    key: &[u8]) -> Result<(), Error> {
     // AAD: the unencrypted header of this packet
     let mut aad: [u8; AAD_LEN] = [0; AAD_LEN];
     aad.copy_from_slice(&parsebuf.buf[0..parsebuf.read_off]);
 
     // Tag:the last TAG_LEN bytes of the packet
-    let tag_start = parsebuf.buf.len() - TAG_LEN;
+    let tag_start = parsebuf.read_off + parsebuf.left - TAG_LEN;
     let mut tag: [u8; TAG_LEN] = [0; TAG_LEN];
     tag.copy_from_slice(&parsebuf.buf[tag_start..]);
     
@@ -118,7 +118,7 @@ fn decrypt_in_place(plain_hdr: &plain_hdr::PlainHdr,
 
     let mut cipher_text = &mut parsebuf.buf[parsebuf.read_off..tag_start];
     //println!("AAD: {:x?}", aad);
-    //println!("tag_start: {}, parsebuf len = {}", tag_start, parsebuf.buf.len());
+    //println!("tag_start: {}", tag_start);
     //println!("Tag: {:x?}", &parsebuf.buf[tag_start..]);
     //println!("Cipher Text: {:x?}", cipher_text);
     //println!("IV: {:x?}", iv);
@@ -129,6 +129,9 @@ fn decrypt_in_place(plain_hdr: &plain_hdr::PlainHdr,
     let nonce = GenericArray::from_slice(&iv);
     let tag = GenericArray::from_slice(&tag);
     cipher.decrypt_in_place_detached(nonce, &aad, &mut cipher_text, &tag)?;
-    Ok(tag_start)
+
+    // Truncate the parsebuf by TAG_LEN bytes
+    parsebuf.truncate(TAG_LEN)?;
+    Ok(())
 }
 
