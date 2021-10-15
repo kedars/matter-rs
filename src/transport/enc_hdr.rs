@@ -103,18 +103,22 @@ fn get_iv(plain_hdr: &plain_hdr::PlainHdr, iv: &mut [u8]) -> Result<(), Error>{
 fn decrypt_in_place(plain_hdr: &plain_hdr::PlainHdr,
                     parsebuf: &mut ParseBuf,
                     key: &[u8]) -> Result<(), Error> {
-    // AAD: the unencrypted header of this packet
+    // AAD:
+    //    the unencrypted header of this packet
     let mut aad: [u8; AAD_LEN] = [0; AAD_LEN];
     aad.copy_from_slice(&parsebuf.buf[0..parsebuf.read_off]);
 
-    // Tag:the last TAG_LEN bytes of the packet
+    // Tag:
+    //    the last TAG_LEN bytes of the packet
     let tag_start = parsebuf.read_off + parsebuf.left - TAG_LEN;
     let mut tag: [u8; TAG_LEN] = [0; TAG_LEN];
     tag.copy_from_slice(&parsebuf.buf[tag_start..]);
+    let tag = GenericArray::from_slice(&tag);
     
     // IV
     let mut iv: [u8; IV_LEN] = [0; IV_LEN];
     get_iv(&plain_hdr, &mut iv[0..])?;
+    let nonce = GenericArray::from_slice(&iv);
 
     let mut cipher_text = &mut parsebuf.buf[parsebuf.read_off..tag_start];
     //println!("AAD: {:x?}", aad);
@@ -126,8 +130,6 @@ fn decrypt_in_place(plain_hdr: &plain_hdr::PlainHdr,
     // Matter Spec says Nonce size is 13, but the code has 12
     type AesCcm = Ccm<Aes128, U16, U12>;
     let cipher = AesCcm::new(GenericArray::from_slice(key));
-    let nonce = GenericArray::from_slice(&iv);
-    let tag = GenericArray::from_slice(&tag);
     cipher.decrypt_in_place_detached(nonce, &aad, &mut cipher_text, &tag)?;
 
     // Truncate the parsebuf by TAG_LEN bytes
