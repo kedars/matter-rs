@@ -11,6 +11,7 @@ pub struct RxCtx {
     src: Option<std::net::SocketAddr>,
     len: usize,
     plain_hdr: packet::PlainHdr,
+    enc_hdr: proto_msg::EncHdr,
 }
 
 pub struct TxCtx {
@@ -55,23 +56,23 @@ impl Mgr {
             let mut parse_buf = ParseBuf::new(&mut in_buf, len);
 
             // Read unencrypted packet header
-            match packet::parse_plain_hdr(&mut parse_buf) {
-                Ok(h) => rx_ctx.plain_hdr = h,
+            rx_ctx.plain_hdr = match packet::parse_plain_hdr(&mut parse_buf) {
+                Ok(h) => h,
                 Err(_) => continue,
-            }
+            };
 
             // Get session
-            // Ok to use unwrap here since we know 'src' is certainly not None
+            //      Ok to use unwrap here since we know 'src' is certainly not None
             let session = match self.sess_mgr.get(rx_ctx.plain_hdr.sess_id, rx_ctx.src.unwrap().ip()) {
                 Some(a) => a,
-                None => { continue; },
+                None => continue,
             };
             
             // Read encrypted header
-            match proto_msg::parse_enc_hdr(&rx_ctx.plain_hdr, &mut parse_buf, &session.dec_key) {
-                Ok(_) => (),
+            rx_ctx.enc_hdr = match proto_msg::parse_enc_hdr(&rx_ctx.plain_hdr, &mut parse_buf, &session.dec_key) {
+                Ok(h) => h,
                 Err(_) => continue,
-            }
+            };
         }
     }
 }

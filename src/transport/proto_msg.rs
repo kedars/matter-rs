@@ -17,13 +17,13 @@ const EXCHANGE_FLAG_ACK_MASK:          u8 = 0x02;
 const EXCHANGE_FLAG_INITIATOR_MASK:    u8 = 0x01;
 
 #[derive(Default)]
-struct EncHdr {
-    exch_id: u16,
-    exch_flags: u8,
-    proto_id: u16,
-    proto_opcode: u8,
-    proto_vendor_id: Option<u16>,
-    ack_msg_ctr: Option<u32>,
+pub struct EncHdr {
+    pub exch_id: u16,
+    pub exch_flags: u8,
+    pub proto_id: u16,
+    pub proto_opcode: u8,
+    pub proto_vendor_id: Option<u16>,
+    pub ack_msg_ctr: Option<u32>,
 }
 
 impl EncHdr {
@@ -66,7 +66,7 @@ impl fmt::Display for EncHdr {
     }
 }
 
-pub fn parse_enc_hdr(plain_hdr: &packet::PlainHdr, parsebuf: &mut ParseBuf, dec_key: &[u8]) -> Result<(), Error> {
+pub fn parse_enc_hdr(plain_hdr: &packet::PlainHdr, parsebuf: &mut ParseBuf, dec_key: &[u8]) -> Result<EncHdr, Error> {
     let end_off = decrypt_in_place(&plain_hdr, parsebuf, dec_key)?;
     let read_off = parsebuf.read_off;
     //println!("Decrypted data: {:x?}", &parsebuf.buf[read_off..end_off]);
@@ -77,8 +77,7 @@ pub fn parse_enc_hdr(plain_hdr: &packet::PlainHdr, parsebuf: &mut ParseBuf, dec_
     enc_hdr.proto_opcode = parsebuf.le_u8()?;
     enc_hdr.exch_id      = parsebuf.le_u16()?;
     enc_hdr.proto_id     = parsebuf.le_u16()?;
-//    println!("ex_flags: {:x?} \nproto_opcode: {} \nexchange ID: {} \nproto id: {}",
-    //             ex_flags, proto_opcode, ex_id, proto_id);
+
     info!("[enc_hdr] {} ", enc_hdr);
     if enc_hdr.is_vendor() {
         enc_hdr.proto_vendor_id = Some(parsebuf.le_u16()?);
@@ -86,8 +85,8 @@ pub fn parse_enc_hdr(plain_hdr: &packet::PlainHdr, parsebuf: &mut ParseBuf, dec_
     if enc_hdr.is_ack() {
         enc_hdr.ack_msg_ctr = Some(parsebuf.le_u32()?);
     }
-    println!("Payload: {:x?}", &parsebuf.buf[parsebuf.read_off..end_off]);
-    Ok(())
+    info!("payload: {:x?}", &parsebuf.buf[parsebuf.read_off..end_off]);
+    Ok(enc_hdr)
 }
 
 // Values as per the Matter spec
