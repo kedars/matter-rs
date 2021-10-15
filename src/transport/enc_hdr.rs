@@ -3,7 +3,7 @@ use std::fmt;
 use crate::error::*;
 use crate::utils::ParseBuf;
 use crate::utils::WriteBuf;
-use crate::transport::packet;
+use crate::transport::plain_hdr;
 
 use aes::Aes128;
 use ccm::{Ccm, consts::{U16, U12}};
@@ -66,13 +66,10 @@ impl fmt::Display for EncHdr {
     }
 }
 
-pub fn parse_enc_hdr(plain_hdr: &packet::PlainHdr, parsebuf: &mut ParseBuf, dec_key: &[u8]) -> Result<EncHdr, Error> {
+pub fn parse_enc_hdr(plain_hdr: &plain_hdr::PlainHdr, parsebuf: &mut ParseBuf, dec_key: &[u8]) -> Result<EncHdr, Error> {
     let end_off = decrypt_in_place(&plain_hdr, parsebuf, dec_key)?;
-    let read_off = parsebuf.read_off;
-    //println!("Decrypted data: {:x?}", &parsebuf.buf[read_off..end_off]);
 
     let mut enc_hdr = EncHdr::default();
-
     enc_hdr.exch_flags   = parsebuf.le_u8()?;
     enc_hdr.proto_opcode = parsebuf.le_u8()?;
     enc_hdr.exch_id      = parsebuf.le_u16()?;
@@ -94,7 +91,7 @@ const AAD_LEN: usize = 8;
 const TAG_LEN: usize = 16;
 const IV_LEN: usize = 12;
 
-fn get_iv(plain_hdr: &packet::PlainHdr, iv: &mut [u8]) -> Result<(), Error>{
+fn get_iv(plain_hdr: &plain_hdr::PlainHdr, iv: &mut [u8]) -> Result<(), Error>{
     // The IV is the source address (64-bit) followed by the message counter (32-bit)
     let mut write_buf = WriteBuf::new(iv, IV_LEN);
     // For some reason, this is 0 in the 'bypass' mode
@@ -103,7 +100,7 @@ fn get_iv(plain_hdr: &packet::PlainHdr, iv: &mut [u8]) -> Result<(), Error>{
     Ok(())
 }
 
-fn decrypt_in_place(plain_hdr: &packet::PlainHdr,
+fn decrypt_in_place(plain_hdr: &plain_hdr::PlainHdr,
                     parsebuf: &mut ParseBuf,
                     key: &[u8]) -> Result<usize, Error> {
     // AAD: the unencrypted header of this packet

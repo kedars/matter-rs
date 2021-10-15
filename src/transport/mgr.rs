@@ -1,7 +1,7 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use crate::error::*;
-use crate::transport::packet;
-use crate::transport::proto_msg;
+use crate::transport::plain_hdr;
+use crate::transport::enc_hdr;
 use crate::transport::session;
 use crate::transport::udp;
 use crate::utils::ParseBuf;
@@ -10,8 +10,8 @@ use crate::utils::ParseBuf;
 pub struct RxCtx {
     src: Option<std::net::SocketAddr>,
     len: usize,
-    plain_hdr: packet::PlainHdr,
-    enc_hdr: proto_msg::EncHdr,
+    plain_hdr: plain_hdr::PlainHdr,
+    enc_hdr: enc_hdr::EncHdr,
 }
 
 pub struct TxCtx {
@@ -56,7 +56,7 @@ impl Mgr {
             let mut parse_buf = ParseBuf::new(&mut in_buf, len);
 
             // Read unencrypted packet header
-            rx_ctx.plain_hdr = match packet::parse_plain_hdr(&mut parse_buf) {
+            rx_ctx.plain_hdr = match plain_hdr::parse_plain_hdr(&mut parse_buf) {
                 Ok(h) => h,
                 Err(_) => continue,
             };
@@ -69,7 +69,7 @@ impl Mgr {
             };
             
             // Read encrypted header
-            rx_ctx.enc_hdr = match proto_msg::parse_enc_hdr(&rx_ctx.plain_hdr, &mut parse_buf, &session.dec_key) {
+            rx_ctx.enc_hdr = match enc_hdr::parse_enc_hdr(&rx_ctx.plain_hdr, &mut parse_buf, &session.dec_key) {
                 Ok(h) => h,
                 Err(_) => continue,
             };
