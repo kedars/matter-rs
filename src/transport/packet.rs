@@ -1,5 +1,6 @@
 use crate::error::*;
 use crate::utils::ParseBuf;
+use log::info;
     
 const SESSION_TYPE_MASK: u8 = 0x01;
 
@@ -30,22 +31,15 @@ pub struct PlainHdr {
 
 // it will have an additional 'message length' field first
 pub fn parse_plain_hdr(msg: & mut ParseBuf) -> Result<PlainHdr, Error> {
-    let mut flags    : u8 = 0;
-    let mut sec_flags: u8 = 0;
-    let mut sess_id  : u16 = 0;
-    let mut ctr      : u32 = 0;
 
-    msg.le_u8(&mut flags)?;
-    msg.le_u8(&mut sec_flags)?;
-    msg.le_u16(&mut sess_id)?;
-    msg.le_u32(&mut ctr)?;
+    let flags = msg.le_u8()?;
+    let sec_flags = msg.le_u8()?;
+    let sess_id = msg.le_u16()?;
+    let ctr = msg.le_u32()?;
 
     let sess_type = if (sec_flags & SESSION_TYPE_MASK) == 1 { SessionType::Encrypted } else { SessionType::None };
 
-    println!("flags: {:x}", flags);
-    println!("session type: {:#?}", sess_type);
-    println!("sess_id: {}", sess_id);
-    println!("ctr: {}", ctr);
+    info!("[plain_hdr] flags: {:x}, session type: {:#?}, sess_id: {}, ctr: {}", flags, sess_type, sess_id, ctr);
 
     Ok(PlainHdr{flags, sess_type, sess_id, ctr})
 }

@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::error::*;
 use crate::utils::ParseBuf;
 use crate::utils::WriteBuf;
@@ -6,38 +8,83 @@ use crate::transport::packet;
 use aes::Aes128;
 use ccm::{Ccm, consts::{U16, U12}};
 use ccm::aead::{AeadInPlace, NewAead, generic_array::GenericArray};
-use log::{error, info};
+use log::info;
 
+const EXCHANGE_FLAG_VENDOR_MASK:       u8 = 0x10;
+const EXCHANGE_FLAG_SECEX_MASK:        u8 = 0x08;
+const EXCHANGE_FLAG_RELIABLE_MASK:     u8 = 0x04;
+const EXCHANGE_FLAG_ACK_MASK:          u8 = 0x02;
+const EXCHANGE_FLAG_INITIATOR_MASK:    u8 = 0x01;
 
-const EXCHANGE_FLAG_VENDOR_MASK: u8 = 0xf0;
-const EXCHANGE_FLAG_ACK_MASK:    u8 = 0x02;
+#[derive(Default)]
+struct EncHdr {
+    exch_id: u16,
+    exch_flags: u8,
+    proto_id: u16,
+    proto_opcode: u8,
+    proto_vendor_id: Option<u16>,
+    ack_msg_ctr: Option<u32>,
+}
+
+impl EncHdr {
+    pub fn is_vendor(&self) -> bool {
+        (self.exch_flags & EXCHANGE_FLAG_VENDOR_MASK) != 0
+    }
+    pub fn is_security_ext(&self) -> bool {
+        (self.exch_flags & EXCHANGE_FLAG_SECEX_MASK) != 0
+    }
+    pub fn is_reliable(&self) -> bool {
+        (self.exch_flags & EXCHANGE_FLAG_RELIABLE_MASK) != 0
+    }
+    pub fn is_ack(&self) -> bool {
+        (self.exch_flags & EXCHANGE_FLAG_ACK_MASK) != 0
+    }
+    pub fn is_initiator(&self) -> bool {
+        (self.exch_flags & EXCHANGE_FLAG_INITIATOR_MASK) != 0
+    }
+}
+
+impl fmt::Display for EncHdr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut flag_str: String = "".to_owned();
+        if self.is_vendor() {
+            flag_str.push_str("V|");
+        }
+        if self.is_security_ext() {
+            flag_str.push_str("SX|");
+        }
+        if self.is_reliable() {
+            flag_str.push_str("R|");
+        }
+        if self.is_ack() {
+            flag_str.push_str("A|");
+        }
+        if self.is_initiator() {
+            flag_str.push_str("I|");
+        }
+        write!(f, "ExId: {}, Proto: {}, Opcode: {}, Flags: {}", self.exch_id, self.proto_id, self.proto_opcode, flag_str)
+    }
+}
 
 pub fn parse_enc_hdr(plain_hdr: &packet::PlainHdr, parsebuf: &mut ParseBuf, dec_key: &[u8]) -> Result<(), Error> {
     let end_off = decrypt_in_place(&plain_hdr, parsebuf, dec_key)?;
     let read_off = parsebuf.read_off;
-
-    // Let's actually now change parsebuf to only consider the decrypted data
     //println!("Decrypted data: {:x?}", &parsebuf.buf[read_off..end_off]);
 
-    let mut ex_flags: u8 = 0;
-    let mut proto_opcode: u8 = 0;
-    let mut ex_id: u16 = 0;
-    let mut proto_id: u16 = 0;
-    let mut proto_vendor_id: u16 = 0;
-    let mut ack_msg_ctr: u32 = 0;
-    parsebuf.le_u8(&mut ex_flags)?;
-    parsebuf.le_u8(&mut proto_opcode)?;
-    parsebuf.le_u16(&mut ex_id)?;
-    parsebuf.le_u16(&mut proto_id)?;
-    println!("ex_flags: {:x?} \nproto_opcode: {} \nexchange ID: {} \nproto id: {}",
-             ex_flags, proto_opcode, ex_id, proto_id);
-    if (ex_flags & EXCHANGE_FLAG_VENDOR_MASK) == 1 {
-        parsebuf.le_u16(&mut proto_vendor_id)?;
-        println!("proto_vendor_id: {}", proto_vendor_id);
+    let mut enc_hdr = EncHdr::default();
+
+    enc_hdr.exch_flags   = parsebuf.le_u8()?;
+    enc_hdr.proto_opcode = parsebuf.le_u8()?;
+    enc_hdr.exch_id      = parsebuf.le_u16()?;
+    enc_hdr.proto_id     = parsebuf.le_u16()?;
+//    println!("ex_flags: {:x?} \nproto_opcode: {} \nexchange ID: {} \nproto id: {}",
+    //             ex_flags, proto_opcode, ex_id, proto_id);
+    info!("[enc_hdr] {} ", enc_hdr);
+    if enc_hdr.is_vendor() {
+        enc_hdr.proto_vendor_id = Some(parsebuf.le_u16()?);
     }
-    if (ex_flags & EXCHANGE_FLAG_ACK_MASK) == 1 {
-        parsebuf.le_u32(&mut ack_msg_ctr)?;
-        println!("ack msg ctr: {}", ack_msg_ctr);
+    if enc_hdr.is_ack() {
+        enc_hdr.ack_msg_ctr = Some(parsebuf.le_u32()?);
     }
     println!("Payload: {:x?}", &parsebuf.buf[parsebuf.read_off..end_off]);
     Ok(())

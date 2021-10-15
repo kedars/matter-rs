@@ -18,32 +18,32 @@ impl<'a> ParseBuf<'a> {
         self.read_off = 0;
     }
     
-    pub fn le_u8(& mut self, data: &mut u8) -> Result<(), Error> {
+    pub fn le_u8(& mut self) -> Result<u8, Error> {
         // RustQ: Is there a better idiomatic way to do this in Rust? 
         if self.buf.len() > 1 {
-            *data = self.buf[self.read_off];
+            let data: u8 = self.buf[self.read_off];
             self.read_off +=  1;
-            Ok(())
+            Ok(data)
         } else {
             return Err(Error::TruncatedPacket);
         }
     }
 
-    pub fn le_u16(& mut self, data: &mut u16) -> Result<(), Error> {
+    pub fn le_u16(& mut self) -> Result<u16, Error> {
         if self.buf.len() > 2 {
-            *data = LittleEndian::read_u16(&self.buf[self.read_off..]);
+            let data: u16 = LittleEndian::read_u16(&self.buf[self.read_off..]);
             self.read_off += 2;
-            Ok(())
+            Ok(data)
         } else {
             return Err(Error::TruncatedPacket);
         }
     }
 
-    pub fn le_u32(& mut self, data: &mut u32) -> Result<(), Error> {
+    pub fn le_u32(& mut self) -> Result<u32, Error> {
         if self.buf.len() > 4 {
-            *data = LittleEndian::read_u32(&self.buf[self.read_off..]);
+            let data: u32 = LittleEndian::read_u32(&self.buf[self.read_off..]);
             self.read_off += 4;
-            Ok(())
+            Ok(data)
         } else {
             return Err(Error::TruncatedPacket);
         }

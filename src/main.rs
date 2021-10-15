@@ -6,8 +6,10 @@ use matter::data_model::Cluster;
 use matter::data_model::AttrValue;
 use matter::transport;
 
+use log::{info};
 
 fn main() {
+    env_logger::init();
     let x = sbox::sbox_new("Hello How are you").unwrap();
     println!("Hello, world!: {}", x);
 
