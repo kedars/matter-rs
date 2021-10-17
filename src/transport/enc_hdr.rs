@@ -115,7 +115,8 @@ fn decrypt_in_place(plain_hdr: &plain_hdr::PlainHdr,
     tag.copy_from_slice(&parsebuf.buf[tag_start..]);
     let tag = GenericArray::from_slice(&tag);
     
-    // IV
+    // IV:
+    //   the specific way for creating IV is in get_iv
     let mut iv: [u8; IV_LEN] = [0; IV_LEN];
     get_iv(&plain_hdr, &mut iv[0..])?;
     let nonce = GenericArray::from_slice(&iv);

@@ -8,6 +8,21 @@ pub struct Session {
     peer_addr: Option<std::net::IpAddr>,
     pub dec_key: [u8; MATTER_AES128_KEY_SIZE],
     pub enc_key: [u8; MATTER_AES128_KEY_SIZE],
+    /*
+     *
+     * - Session Role (whether we are session-Initiator or Session-Responder (use the correct key accordingly(
+     * - local session ID (our ID assigned to this session)
+     * - peer session ID (the peer's ID assigned to this session)
+     * - local message counter (the one we'll use for our TX)
+     * - message reception state (a list of counters already received from the peer) to detect duplicates
+     * - peer Node ID - instead of the IP Address, which can change, the Node ID should be used
+     * - This is all for 'unicast' sessions
+     * - List of Exchanges: which in turn will have
+     *    - message ack pending with the message counter to be ACKed
+     *    - Exchange ID
+     *    - Role: Initiator/Responder
+     *    - 
+     */
     session_id: u16,
 }
 
