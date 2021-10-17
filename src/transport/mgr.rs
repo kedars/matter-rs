@@ -1,7 +1,10 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use log::info;
+
 use crate::error::*;
 use crate::transport::plain_hdr;
 use crate::transport::enc_hdr;
+use crate::transport::mrp;
 use crate::transport::session;
 use crate::transport::udp;
 use crate::utils::ParseBuf;
@@ -41,7 +44,7 @@ impl Mgr {
         Ok(mgr)
     }
 
-    pub fn start(&self) -> Result<(), Error>{
+    pub fn start(&mut self) -> Result<(), Error>{
         /* I would have liked this in .bss instead of the stack, will likely move this later */
         let mut in_buf: [u8; MAX_BUF_SIZE] = [0; MAX_BUF_SIZE];
 
@@ -63,7 +66,7 @@ impl Mgr {
 
             // Get session
             //      Ok to use unwrap here since we know 'src' is certainly not None
-            let session = match self.sess_mgr.get(rx_ctx.plain_hdr.sess_id, rx_ctx.src.unwrap().ip()) {
+            let mut session = match self.sess_mgr.get(rx_ctx.plain_hdr.sess_id, rx_ctx.src.unwrap().ip()) {
                 Some(a) => a,
                 None => continue,
             };
@@ -73,6 +76,19 @@ impl Mgr {
                 Ok(h) => h,
                 Err(_) => continue,
             };
+
+            // Get the exchange
+            let mut exchange = match session.get_exchange(rx_ctx.enc_hdr.exch_id, rx_ctx.enc_hdr.is_initiator()) {
+                Some(e) => e,
+                None => continue,
+            };
+
+            // Message Reliability Protocol
+            mrp::on_msg_recv(exchange, &rx_ctx.plain_hdr, &rx_ctx.enc_hdr);
+
+            info!("Exchange is {:?}", exchange);
+            // Proto Dispatch
+            
         }
     }
 }

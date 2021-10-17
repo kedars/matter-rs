@@ -1,4 +1,6 @@
 use heapless::Vec;
+use log::info;
+use crate::transport::exchange::*;
 
 const MATTER_AES128_KEY_SIZE: usize = 16;
 
@@ -24,6 +26,36 @@ pub struct Session {
      *    - 
      */
     session_id: u16,
+    exchanges: Vec::<Exchange, 4>,
+}
+
+impl Session {
+    pub fn get_exchange(&mut self, id: u16, is_peer_initiator: bool) -> Option<&mut Exchange> {
+        let role = if is_peer_initiator { ExchangeRole::Responder } else { ExchangeRole::Initiator};
+        let index = self.exchanges.iter()
+            .position(|x| x.is_match(id, role));
+
+        if let Some(i) = index {
+            Some(&mut self.exchanges[i])
+        } else {
+            // If an exchange doesn't exist, create a new one
+            if is_peer_initiator {
+                info!("Creating new exchange");
+                let e = Exchange::new(id, role);
+                match self.exchanges.push(e) {
+                    Ok(_) => {
+                        // Return the exchange that was just added
+                        return self.exchanges.iter_mut()
+                            .find(|x| x.is_match(id, role));
+                    },
+                    Err(_) => return None,
+                }
+            } else {
+                // Got a message that has no Exchange object, and the peer isn't initiator
+                return None;
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -47,6 +79,7 @@ impl SessionMgr {
             dec_key,
             enc_key,
             session_id,
+            exchanges: Vec::new(),
         };
         match self.sessions.push(session) {
             Ok(_) => return Ok(()),
@@ -54,12 +87,12 @@ impl SessionMgr {
         }
     }
 
-    pub fn get(&self, session_id: u16, peer_addr: std::net::IpAddr) -> Option<&Session> {
+    pub fn get(&mut self, session_id: u16, peer_addr: std::net::IpAddr) -> Option<&mut Session> {
         if let Some(index) = self.sessions.iter().position(|x| {
             x.session_id == session_id &&
                 x.peer_addr == Some(peer_addr)
         }) {
-            return Some(&self.sessions[index]);
+            return Some(&mut self.sessions[index]);
         }
         return None;
     }

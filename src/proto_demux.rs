@@ -12,8 +12,7 @@ pub trait HandleProto {
 }
 
 impl<'a> ProtoDemux<'a> {
-    // We should have a mechanism where only one init is allowed
-    pub fn init() -> ProtoDemux<'a> {
+    pub fn new() -> ProtoDemux<'a> {
         ProtoDemux{proto_id_handlers: [None, None, None, None]}
     }
 

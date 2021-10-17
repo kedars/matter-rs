@@ -19,7 +19,7 @@ fn main() {
     });
     println!("Accessory: {:#?}", a);
 
-    let transport_mgr = transport::mgr::Mgr::new().unwrap();
+    let mut transport_mgr = transport::mgr::Mgr::new().unwrap();
     transport_mgr.start().unwrap();
 }
 
