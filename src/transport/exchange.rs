@@ -8,6 +8,7 @@ pub enum ExchangeRole {
 pub struct Exchange {
     id: u16,
     role: ExchangeRole,
+    // The spec only allows a single pending ACK per exchange
     pending_ack: Option<u32>,
 }
 

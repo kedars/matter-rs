@@ -12,6 +12,11 @@ impl<'a> ParseBuf<'a> {
         ParseBuf{buf: &mut buf[..len], read_off: 0, left: len}
     }
 
+    // Return the data that is valid as a slice
+    pub fn as_slice(&self) -> &[u8] {
+        &self.buf[self.read_off..(self.read_off + self.left)]
+    }
+
     pub fn truncate(&mut self, truncate_by: usize) -> Result<(), Error> {
         if truncate_by < self.left {
             self.left -= truncate_by;

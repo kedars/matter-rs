@@ -2,6 +2,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use log::info;
 
 use crate::error::*;
+use crate::proto_demux;
 use crate::transport::plain_hdr;
 use crate::transport::enc_hdr;
 use crate::transport::mrp;
@@ -21,19 +22,24 @@ pub struct TxCtx {
 
 }
 
-pub struct Mgr {
+pub struct Mgr<'a> {
     transport: udp::UdpListener,
     sess_mgr:  session::SessionMgr,
+    proto_demux: proto_demux::ProtoDemux<'a>,
 }
 
-/* Currently matches with the one in connectedhomeip repo */
-const MAX_BUF_SIZE: usize = 1583;
+// Currently matches with the one in connectedhomeip repo
+const MAX_RX_BUF_SIZE: usize = 1583;
 
-impl Mgr {
-    pub fn new() -> Result<Mgr, Error> {
+// Keeping it conservative for now
+const MAX_TX_BUF_SIZE: usize = 512;
+
+impl<'a> Mgr<'a> {
+    pub fn new() -> Result<Mgr<'a>, Error> {
         let mut mgr = Mgr{
             transport: udp::UdpListener::new()?,
             sess_mgr: session::SessionMgr::new(),
+            proto_demux: proto_demux::ProtoDemux::new(),
         };
 
         // Create a fake entry as hard-coded in the 'bypass mode' in chip-tool
@@ -44,9 +50,14 @@ impl Mgr {
         Ok(mgr)
     }
 
+    // Allows registration of different protocols with the Transport/Protocol Demux
+    pub fn register_protocol(&mut self, proto_id_handle: &'a mut dyn proto_demux::HandleProto) -> Result<(), Error> {
+        return self.proto_demux.register(proto_id_handle);
+    }
+
     pub fn start(&mut self) -> Result<(), Error>{
         /* I would have liked this in .bss instead of the stack, will likely move this later */
-        let mut in_buf: [u8; MAX_BUF_SIZE] = [0; MAX_BUF_SIZE];
+        let mut in_buf: [u8; MAX_RX_BUF_SIZE] = [0; MAX_RX_BUF_SIZE];
 
 
         loop {
@@ -88,7 +99,8 @@ impl Mgr {
 
             info!("Exchange is {:?}", exchange);
             // Proto Dispatch
-            
+            self.proto_demux.handle(rx_ctx.enc_hdr.proto_id.into(), rx_ctx.enc_hdr.proto_opcode,
+                                    parse_buf.as_slice());
         }
     }
 }

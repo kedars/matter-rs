@@ -5,8 +5,30 @@ use matter::data_model::Attribute;
 use matter::data_model::Cluster;
 use matter::data_model::AttrValue;
 use matter::transport;
+use matter::im_demux::*;
+use matter::tlv::*;
+use matter::error::*;
 
 use log::{info};
+
+// Temporary fake data model
+struct MyDataModel {
+    a: u32,
+}
+
+impl MyDataModel {
+    fn new() -> MyDataModel {
+        MyDataModel{a: 12}
+    }
+}
+
+impl HandleInteraction for MyDataModel {
+    fn handle_invoke_cmd(&mut self, cmd_path_ib: &CmdPathIb, variable: TLVElement) -> Result<(), Error> {
+        info!("In Data Model's Invoke Commmand Handler");
+        println!("Found cmd_path_ib: {:?} and variable: {}", cmd_path_ib, variable);
+        Ok(())
+    }
+}
 
 fn main() {
     env_logger::init();
@@ -19,7 +41,10 @@ fn main() {
     });
     println!("Accessory: {:#?}", a);
 
+    let mut data_model = MyDataModel::new();
+    let mut interaction_model = InteractionModel::init(&mut data_model);
     let mut transport_mgr = transport::mgr::Mgr::new().unwrap();
+    transport_mgr.register_protocol(&mut interaction_model);
     transport_mgr.start().unwrap();
 }
 
