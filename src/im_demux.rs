@@ -106,7 +106,6 @@ impl <'a> proto_demux::HandleProto for InteractionModel<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::tlv::*;
     use crate::im_demux::*;
     use crate::proto_demux::HandleProto;
 
@@ -127,7 +126,7 @@ mod tests {
     }
 
     impl HandleInteraction for TestDataModel {
-        fn handle_invoke_cmd(&mut self, cmd_path_ib: &CmdPathIb, variable: TLVElement) -> Result<(), Error> {
+        fn handle_invoke_cmd(&mut self, cmd_path_ib: &CmdPathIb, variable: TLVElement, _resp_buf: WriteBuf) -> Result<(), Error> {
             self.endpoint = cmd_path_ib.endpoint;
             self.cluster = cmd_path_ib.cluster;
             self.command = cmd_path_ib.command;
@@ -147,7 +146,9 @@ mod tests {
 
         let mut data_model = TestDataModel::init();
         let mut interaction_model = InteractionModel::init(&mut data_model);
-        interaction_model.handle_proto_id(0x08, &b);
+        let mut tx_ctx = TxCtx::new();
+        let _result = interaction_model.handle_proto_id(0x08, &b, &mut tx_ctx);
+
         assert_eq!(data_model.endpoint, Some(0));
         assert_eq!(data_model.cluster, Some(49));
         assert_eq!(data_model.command, Some(12));

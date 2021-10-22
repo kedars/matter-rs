@@ -14,12 +14,12 @@ use log::{info};
 
 // Temporary fake data model
 struct MyDataModel {
-    a: u32,
+    _a: u32,
 }
 
 impl MyDataModel {
     fn new() -> MyDataModel {
-        MyDataModel{a: 12}
+        MyDataModel{_a: 12}
     }
 }
 

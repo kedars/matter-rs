@@ -422,7 +422,6 @@ pub fn get_root_node_list<'a>(b: &'a [u8]) -> Option<TLVElement<'a>> {
 #[cfg(test)]
 mod tests {
     use crate::tlv::*;
-    use std::mem;
 
     #[test]
     fn test_short_length_tag() {
