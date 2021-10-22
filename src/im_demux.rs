@@ -1,6 +1,8 @@
 use crate::error::*;
 use crate::proto_demux;
 use crate::tlv::*;
+use crate::utils::WriteBuf;
+use crate::transport::tx_ctx::TxCtx;
 use log::{error, info};
 use num;
 use num_derive::FromPrimitive;
@@ -30,7 +32,7 @@ enum OpCode {
 }
 
 pub trait HandleInteraction {
-    fn handle_invoke_cmd(&mut self, cmd_path_ib: &CmdPathIb, variable: TLVElement) -> Result<(), Error>;
+    fn handle_invoke_cmd(&mut self, cmd_path_ib: &CmdPathIb, variable: TLVElement, resp_buf: WriteBuf) -> Result<(), Error>;
 }
 
 pub struct InteractionModel<'a> {
@@ -60,8 +62,9 @@ impl<'a> InteractionModel<'a> {
 
 
     // For now, we just return without doing anything to this exchange. This needs change
-    fn invoke_req_handler(&mut self, _opcode: OpCode, buf: &[u8]) -> Result<(), Error> {
+    fn invoke_req_handler(&mut self, _opcode: OpCode, buf: &[u8], tx_ctx: &mut TxCtx) -> Result<(), Error> {
         info!("In invoke req handler");
+        tx_ctx.set_proto_opcode(OpCode::InvokeResponse as u8);
         let root = get_root_node_struct(buf).ok_or(Error::InvalidData)?;
 
         // Spec says tag should be 2, but CHIP Tool sends the tag as 0
@@ -76,17 +79,18 @@ impl<'a> InteractionModel<'a> {
             let cmd_path_ib = get_cmd_path_ib(&cmd_data_ib.find_element(0).ok_or(Error::InvalidData)?
                                            .confirm_list().ok_or(Error::InvalidData)?);
             let variable  = cmd_data_ib.find_element(1).ok_or(Error::InvalidData)?;
-            return self.handler.handle_invoke_cmd(&cmd_path_ib, variable);
+            return self.handler.handle_invoke_cmd(&cmd_path_ib, variable, tx_ctx.get_payload_buf());
         }
     }
 }
 
 impl <'a> proto_demux::HandleProto for InteractionModel<'a> {
-    fn handle_proto_id(&mut self, proto_id: u8, buf: &[u8]) -> Result<(), Error> {
-        let proto_id: OpCode = num::FromPrimitive::from_u8(proto_id).
+    fn handle_proto_id(&mut self, proto_opcode: u8, buf: &[u8], tx_ctx: &mut TxCtx) -> Result<(), Error> {
+        let proto_opcode: OpCode = num::FromPrimitive::from_u8(proto_opcode).
             ok_or(Error::Invalid)?;
-        match proto_id {
-            OpCode::InvokeRequest => return self.invoke_req_handler(proto_id, buf),
+        tx_ctx.set_proto_id(PROTO_ID_INTERACTION_MODEL as u16);
+        match proto_opcode {
+            OpCode::InvokeRequest => return self.invoke_req_handler(proto_opcode, buf, tx_ctx),
             _ => {
                 error!("Invalid Opcode");
                 return Err(Error::InvalidOpcode);

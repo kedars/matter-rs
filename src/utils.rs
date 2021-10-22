@@ -73,6 +73,19 @@ impl<'a> WriteBuf<'a> {
         WriteBuf{buf: &mut buf[..len], write_off: 0}
     }
 
+    pub fn len(&self) -> usize {
+        self.write_off
+    }
+
+    pub fn copy_from_slice(&mut self, src: &[u8]) -> Result<(), Error> {
+        let expected_len = self.write_off + src.len();
+        if expected_len >= self.buf.len() {
+            return Err(Error::NoSpace);
+        }
+        self.buf[self.write_off..expected_len].copy_from_slice(src);
+        Ok(())
+    }
+
     pub fn le_u16(& mut self, data: u16) -> Result<(), Error> {
         if self.buf.len() > 2 {
             LittleEndian::write_u16(&mut self.buf[self.write_off..], data);

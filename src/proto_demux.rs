@@ -1,4 +1,5 @@
 use crate::error::*;
+use crate::transport::tx_ctx::TxCtx;
 
 const MAX_PROTOCOLS: usize = 4;
 
@@ -7,7 +8,7 @@ pub struct ProtoDemux<'a> {
 }
 
 pub trait HandleProto {
-    fn handle_proto_id(&mut self, proto_id: u8, buf: &[u8]) -> Result<(), Error>;
+    fn handle_proto_id(&mut self, proto_id: u8, buf: &[u8], tx_ctx: &mut TxCtx) -> Result<(), Error>;
     fn get_proto_id(& self) -> usize;
 }
 
@@ -22,11 +23,11 @@ impl<'a> ProtoDemux<'a> {
         Ok(())
     }
 
-    pub fn handle(&mut self, proto_id: usize, proto_opcode: u8, buf: &[u8]) -> Result<(), Error> {
+    pub fn handle(&mut self, proto_id: usize, proto_opcode: u8, buf: &[u8], tx_ctx: &mut TxCtx) -> Result<(), Error> {
         if proto_id >= MAX_PROTOCOLS {
             return Err(Error::Invalid);
         }
         return self.proto_id_handlers[proto_id]
-                .as_mut().ok_or(Error::NoHandler)?.handle_proto_id(proto_opcode, buf);
+                .as_mut().ok_or(Error::NoHandler)?.handle_proto_id(proto_opcode, buf, tx_ctx);
     }
 }

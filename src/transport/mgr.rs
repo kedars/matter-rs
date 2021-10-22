@@ -7,19 +7,29 @@ use crate::transport::plain_hdr;
 use crate::transport::enc_hdr;
 use crate::transport::mrp;
 use crate::transport::session;
+use crate::transport::tx_ctx;
 use crate::transport::udp;
 use crate::utils::ParseBuf;
+
+// Currently matches with the one in connectedhomeip repo
+const MAX_RX_BUF_SIZE: usize = 1583;
 
 #[derive(Default)]
 pub struct RxCtx {
     src: Option<std::net::SocketAddr>,
-    len: usize,
+    _len: usize,
     plain_hdr: plain_hdr::PlainHdr,
     enc_hdr: enc_hdr::EncHdr,
 }
 
-pub struct TxCtx {
-
+impl RxCtx {
+    pub fn new(len: usize, src: std::net::SocketAddr) -> RxCtx {
+        RxCtx{plain_hdr: plain_hdr::PlainHdr::default(),
+              enc_hdr: enc_hdr::EncHdr::default(),
+              _len: len,
+              src: Some(src),
+        }
+    }
 }
 
 pub struct Mgr<'a> {
@@ -27,12 +37,6 @@ pub struct Mgr<'a> {
     sess_mgr:  session::SessionMgr,
     proto_demux: proto_demux::ProtoDemux<'a>,
 }
-
-// Currently matches with the one in connectedhomeip repo
-const MAX_RX_BUF_SIZE: usize = 1583;
-
-// Keeping it conservative for now
-const MAX_TX_BUF_SIZE: usize = 512;
 
 impl<'a> Mgr<'a> {
     pub fn new() -> Result<Mgr<'a>, Error> {
@@ -59,14 +63,10 @@ impl<'a> Mgr<'a> {
         /* I would have liked this in .bss instead of the stack, will likely move this later */
         let mut in_buf: [u8; MAX_RX_BUF_SIZE] = [0; MAX_RX_BUF_SIZE];
 
-
         loop {
-            let mut rx_ctx = RxCtx::default();
-
             // Read from the transport
             let (len, src) = self.transport.recv(&mut in_buf)?;
-            rx_ctx.len = len;
-            rx_ctx.src = Some(src);
+            let mut rx_ctx = RxCtx::new(len, src);
             let mut parse_buf = ParseBuf::new(&mut in_buf, len);
 
             // Read unencrypted packet header
@@ -77,7 +77,7 @@ impl<'a> Mgr<'a> {
 
             // Get session
             //      Ok to use unwrap here since we know 'src' is certainly not None
-            let mut session = match self.sess_mgr.get(rx_ctx.plain_hdr.sess_id, rx_ctx.src.unwrap().ip()) {
+            let session = match self.sess_mgr.get(rx_ctx.plain_hdr.sess_id, rx_ctx.src.unwrap().ip()) {
                 Some(a) => a,
                 None => continue,
             };
@@ -89,7 +89,7 @@ impl<'a> Mgr<'a> {
             };
 
             // Get the exchange
-            let mut exchange = match session.get_exchange(rx_ctx.enc_hdr.exch_id, rx_ctx.enc_hdr.is_initiator()) {
+            let exchange = match session.get_exchange(rx_ctx.enc_hdr.exch_id, rx_ctx.enc_hdr.is_initiator()) {
                 Some(e) => e,
                 None => continue,
             };
@@ -99,8 +99,17 @@ impl<'a> Mgr<'a> {
 
             info!("Exchange is {:?}", exchange);
             // Proto Dispatch
-            self.proto_demux.handle(rx_ctx.enc_hdr.proto_id.into(), rx_ctx.enc_hdr.proto_opcode,
-                                    parse_buf.as_slice());
+            let mut tx_ctx = tx_ctx::TxCtx::new();
+            match self.proto_demux.handle(rx_ctx.enc_hdr.proto_id.into(), rx_ctx.enc_hdr.proto_opcode,
+                                          parse_buf.as_slice(), &mut tx_ctx) {
+                Ok(_) => (),
+                Err(_) => continue,
+            }
+
+            match tx_ctx.send(session, Some(rx_ctx.enc_hdr.exch_id)) {
+                Ok(_) => (),
+                Err(_) => continue,
+            }
         }
     }
 }

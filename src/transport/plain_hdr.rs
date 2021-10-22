@@ -44,3 +44,20 @@ pub fn parse_plain_hdr(msg: & mut ParseBuf) -> Result<PlainHdr, Error> {
     Ok(PlainHdr{flags, sess_type, sess_id, ctr})
 }
 
+pub const fn max_plain_hdr_len() -> usize {
+    return
+    // [optional] msg len only for TCP
+        2 +
+    // flags
+        1 +
+    // security flags
+        1 +
+    // session ID
+        2 +
+    // message ctr
+        4 +
+    // [optional] source node ID
+        8 +
+    // [optional] destination node ID
+        8;
+}

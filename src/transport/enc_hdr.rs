@@ -138,3 +138,18 @@ fn decrypt_in_place(plain_hdr: &plain_hdr::PlainHdr,
     Ok(())
 }
 
+pub const fn max_enc_hdr_len() -> usize {
+    return
+    // exchange flags
+        1 +
+    // protocol opcode
+        1 +
+    // exchange ID
+        2 +
+    // protocol ID
+        2 +
+    // [optional] protocol vendor ID
+        2 +
+    // [optional] acknowledged message counter
+        4;
+}
