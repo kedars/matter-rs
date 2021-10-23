@@ -24,4 +24,21 @@ impl Exchange {
     pub fn ack_pending(&mut self, ack_ctr: u32) {
         self.pending_ack = Some(ack_ctr);
     }
+
+    pub fn is_ack_pending(&self) -> Option<u32> {
+        return self.pending_ack;
+    }
+
+    pub fn clear_ack_pending(&mut self) {
+        self.pending_ack = None;
+    }
+}
+
+pub fn get_exchange_role(is_initiator: bool) -> ExchangeRole {
+    if is_initiator { 
+        ExchangeRole::Initiator
+    } else {
+        ExchangeRole::Responder
+    }
+
 }

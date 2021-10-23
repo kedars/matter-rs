@@ -30,17 +30,38 @@ impl EncHdr {
     pub fn is_vendor(&self) -> bool {
         (self.exch_flags & EXCHANGE_FLAG_VENDOR_MASK) != 0
     }
+ 
+    pub fn set_vendor(&mut self, proto_vendor_id: u16) {
+        self.exch_flags |= EXCHANGE_FLAG_RELIABLE_MASK;
+        self.proto_vendor_id = Some(proto_vendor_id);
+    }
+    
     pub fn is_security_ext(&self) -> bool {
         (self.exch_flags & EXCHANGE_FLAG_SECEX_MASK) != 0
     }
     pub fn is_reliable(&self) -> bool {
         (self.exch_flags & EXCHANGE_FLAG_RELIABLE_MASK) != 0
     }
+
+    pub fn set_reliable(&mut self) {
+        self.exch_flags |= EXCHANGE_FLAG_RELIABLE_MASK;
+    }
+    
     pub fn is_ack(&self) -> bool {
         (self.exch_flags & EXCHANGE_FLAG_ACK_MASK) != 0
     }
+
+    pub fn set_ack(&mut self, ack_msg_ctr: u32) {
+        self.exch_flags |= EXCHANGE_FLAG_ACK_MASK;
+        self.ack_msg_ctr = Some(ack_msg_ctr);
+    }
+    
     pub fn is_initiator(&self) -> bool {
         (self.exch_flags & EXCHANGE_FLAG_INITIATOR_MASK) != 0
+    }
+    
+    pub fn set_initiator(&mut self) {
+        self.exch_flags |= EXCHANGE_FLAG_INITIATOR_MASK;
     }
 }
 
@@ -84,6 +105,11 @@ pub fn parse_enc_hdr(plain_hdr: &plain_hdr::PlainHdr, parsebuf: &mut ParseBuf, d
     }
     info!("payload: {:x?}", &parsebuf.buf[parsebuf.read_off..(parsebuf.read_off + parsebuf.left)]);
     Ok(enc_hdr)
+}
+
+pub fn gen_enc_hdr(plain_hdr: &plain_hdr::PlainHdr, resp_buf: &mut WriteBuf, enc_key: &[u8]) -> Result<(), Error> {
+
+    Ok(())
 }
 
 // Values as per the Matter spec

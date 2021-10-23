@@ -5,6 +5,7 @@ use crate::error::*;
 use crate::proto_demux;
 use crate::transport::plain_hdr;
 use crate::transport::enc_hdr;
+use crate::transport::exchange;
 use crate::transport::mrp;
 use crate::transport::session;
 use crate::transport::tx_ctx;
@@ -89,7 +90,10 @@ impl<'a> Mgr<'a> {
             };
 
             // Get the exchange
-            let exchange = match session.get_exchange(rx_ctx.enc_hdr.exch_id, rx_ctx.enc_hdr.is_initiator()) {
+            let exchange = match session.get_exchange(rx_ctx.enc_hdr.exch_id,
+                                                    exchange::get_exchange_role(rx_ctx.enc_hdr.is_initiator()),
+                                                    // We create a new exchange, only if the peer is the initiator
+                                                    rx_ctx.enc_hdr.is_initiator()) {
                 Some(e) => e,
                 None => continue,
             };
@@ -106,7 +110,8 @@ impl<'a> Mgr<'a> {
                 Err(_) => continue,
             }
 
-            match tx_ctx.send(session, Some(rx_ctx.enc_hdr.exch_id)) {
+            // tx_ctx now contains the response payload, send it out
+            match tx_ctx.send(session, rx_ctx.enc_hdr.exch_id, exchange::ExchangeRole::Responder) {
                 Ok(_) => (),
                 Err(_) => continue,
             }

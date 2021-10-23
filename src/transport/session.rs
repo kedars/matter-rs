@@ -26,12 +26,12 @@ pub struct Session {
      *    - 
      */
     session_id: u16,
+    msg_ctr: u32,
     exchanges: Vec::<Exchange, 4>,
 }
 
 impl Session {
-    pub fn get_exchange(&mut self, id: u16, is_peer_initiator: bool) -> Option<&mut Exchange> {
-        let role = if is_peer_initiator { ExchangeRole::Responder } else { ExchangeRole::Initiator};
+    pub fn get_exchange(&mut self, id: u16, role: ExchangeRole, create_new: bool) -> Option<&mut Exchange> {
         let index = self.exchanges.iter()
             .position(|x| x.is_match(id, role));
 
@@ -39,7 +39,7 @@ impl Session {
             Some(&mut self.exchanges[i])
         } else {
             // If an exchange doesn't exist, create a new one
-            if is_peer_initiator {
+            if create_new {
                 info!("Creating new exchange");
                 let e = Exchange::new(id, role);
                 match self.exchanges.push(e) {
@@ -51,10 +51,34 @@ impl Session {
                     Err(_) => return None,
                 }
             } else {
-                // Got a message that has no Exchange object, and the peer isn't initiator
+                // Got a message that has no Exchange object
                 return None;
             }
         }
+    }
+
+    pub fn new(session_id: u16,
+        dec_key: [u8; MATTER_AES128_KEY_SIZE],
+        enc_key: [u8; MATTER_AES128_KEY_SIZE],
+        peer_addr: std::net::IpAddr) -> Session {
+        Session {
+            peer_addr  : Some(peer_addr),
+            dec_key,
+            enc_key,
+            session_id,
+            msg_ctr: 1,
+            exchanges: Vec::new(),
+        }
+    }
+
+    pub fn get_sess_id(&self) -> u16 {
+        self.session_id
+    }
+    
+    pub fn get_msg_ctr(&mut self) -> u32 {
+        let ctr = self.msg_ctr;
+        self.msg_ctr += 1;
+        ctr
     }
 }
 
@@ -74,13 +98,7 @@ impl SessionMgr {
                dec_key: [u8; MATTER_AES128_KEY_SIZE],
                enc_key: [u8; MATTER_AES128_KEY_SIZE],
                peer_addr: std::net::IpAddr) -> Result<(), &'static str> {
-        let session = Session {
-            peer_addr  : Some(peer_addr),
-            dec_key,
-            enc_key,
-            session_id,
-            exchanges: Vec::new(),
-        };
+        let session = Session::new(session_id, dec_key, enc_key, peer_addr);
         match self.sessions.push(session) {
             Ok(_) => return Ok(()),
             Err(_) => return Err("All sessions full"),
