@@ -7,6 +7,8 @@ use crate::transport::mrp;
 use crate::transport::session;
 use crate::utils::WriteBuf;
 
+use log::info;
+
 // Keeping it conservative for now
 const MAX_TX_BUF_SIZE: usize = 512;
 
@@ -46,12 +48,12 @@ impl TxCtx {
 
     // Send the payload, exch_id is None for new exchange
     pub fn send(&mut self, session: &mut session::Session, exch_id: u16, role: exchange::ExchangeRole) -> Result<(), Error> {
-        println!("payload: {:?}", self.buf);
+        info!("payload: {:x?}", self.buf);
         
         // Set up the parameters        
         self.enc_hdr.exch_id = exch_id;
         if role == ExchangeRole::Initiator { self.enc_hdr.set_initiator() }
-        self.plain_hdr.sess_id = session.get_sess_id();
+        self.plain_hdr.sess_id = session.get_peer_sess_id();
         self.plain_hdr.ctr = session.get_msg_ctr();
         self.plain_hdr.sess_type = plain_hdr::SessionType::Encrypted;
 
@@ -59,9 +61,19 @@ impl TxCtx {
         let mut exchange = session.get_exchange(exch_id, role, role == ExchangeRole::Initiator).ok_or(Error::Invalid)?;
 
         // Handle message reliability
-        mrp::before_msg_send(&mut exchange, &mut self.plain_hdr, &mut self.enc_hdr)?;
+        mrp::before_msg_send(&mut exchange, &self.plain_hdr, &mut self.enc_hdr)?;
 
-        // Start with encrypted header
+        // Generate encrypted header
+        let mut tmp_buf: [u8; enc_hdr::max_enc_hdr_len()] = [0; enc_hdr::max_enc_hdr_len()];
+        let mut write_buf = WriteBuf::new(&mut tmp_buf[..], enc_hdr::max_enc_hdr_len());
+        self.enc_hdr.encode(&self.plain_hdr, &mut write_buf)?;
+        info!("enc_hdr: {:x?}", tmp_buf);
+
+        let mut tmp_buf: [u8; plain_hdr::max_plain_hdr_len()] = [0; plain_hdr::max_plain_hdr_len()];
+        let mut write_buf = WriteBuf::new(&mut tmp_buf[..], plain_hdr::max_plain_hdr_len());
+        self.plain_hdr.encode(&mut write_buf)?;
+        info!("plain_hdr: {:x?}", tmp_buf);
+
         Ok(())
     }
 }

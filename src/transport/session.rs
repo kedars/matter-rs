@@ -19,13 +19,9 @@ pub struct Session {
      * - message reception state (a list of counters already received from the peer) to detect duplicates
      * - peer Node ID - instead of the IP Address, which can change, the Node ID should be used
      * - This is all for 'unicast' sessions
-     * - List of Exchanges: which in turn will have
-     *    - message ack pending with the message counter to be ACKed
-     *    - Exchange ID
-     *    - Role: Initiator/Responder
-     *    - 
      */
-    session_id: u16,
+    sess_id: u16,
+    peer_sess_id: u16,
     msg_ctr: u32,
     exchanges: Vec::<Exchange, 4>,
 }
@@ -34,7 +30,6 @@ impl Session {
     pub fn get_exchange(&mut self, id: u16, role: ExchangeRole, create_new: bool) -> Option<&mut Exchange> {
         let index = self.exchanges.iter()
             .position(|x| x.is_match(id, role));
-
         if let Some(i) = index {
             Some(&mut self.exchanges[i])
         } else {
@@ -57,7 +52,8 @@ impl Session {
         }
     }
 
-    pub fn new(session_id: u16,
+    pub fn new(sess_id: u16,
+        peer_sess_id: u16,
         dec_key: [u8; MATTER_AES128_KEY_SIZE],
         enc_key: [u8; MATTER_AES128_KEY_SIZE],
         peer_addr: std::net::IpAddr) -> Session {
@@ -65,16 +61,20 @@ impl Session {
             peer_addr  : Some(peer_addr),
             dec_key,
             enc_key,
-            session_id,
+            sess_id,
+            peer_sess_id,
             msg_ctr: 1,
             exchanges: Vec::new(),
         }
     }
 
     pub fn get_sess_id(&self) -> u16 {
-        self.session_id
+        self.sess_id
     }
-    
+
+    pub fn get_peer_sess_id(&self) -> u16 {
+        self.peer_sess_id
+    }
     pub fn get_msg_ctr(&mut self) -> u32 {
         let ctr = self.msg_ctr;
         self.msg_ctr += 1;
@@ -94,20 +94,21 @@ impl SessionMgr {
         }
     }
  
-    pub fn add(&mut self, session_id: u16,
+    pub fn add(&mut self, sess_id: u16,
+               peer_sess_id: u16,
                dec_key: [u8; MATTER_AES128_KEY_SIZE],
                enc_key: [u8; MATTER_AES128_KEY_SIZE],
                peer_addr: std::net::IpAddr) -> Result<(), &'static str> {
-        let session = Session::new(session_id, dec_key, enc_key, peer_addr);
+        let session = Session::new(sess_id, peer_sess_id, dec_key, enc_key, peer_addr);
         match self.sessions.push(session) {
             Ok(_) => return Ok(()),
             Err(_) => return Err("All sessions full"),
         }
     }
 
-    pub fn get(&mut self, session_id: u16, peer_addr: std::net::IpAddr) -> Option<&mut Session> {
+    pub fn get(&mut self, sess_id: u16, peer_addr: std::net::IpAddr) -> Option<&mut Session> {
         if let Some(index) = self.sessions.iter().position(|x| {
-            x.session_id == session_id &&
+            x.sess_id == sess_id &&
                 x.peer_addr == Some(peer_addr)
         }) {
             return Some(&mut self.sessions[index]);

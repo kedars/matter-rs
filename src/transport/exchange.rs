@@ -34,11 +34,20 @@ impl Exchange {
     }
 }
 
-pub fn get_exchange_role(is_initiator: bool) -> ExchangeRole {
+pub fn get_role(is_initiator: bool) -> ExchangeRole {
     if is_initiator { 
         ExchangeRole::Initiator
     } else {
         ExchangeRole::Responder
+    }
+
+}
+
+pub fn get_complementary_role(is_initiator: bool) -> ExchangeRole {
+    if is_initiator { 
+        ExchangeRole::Responder
+    } else {
+        ExchangeRole::Initiator
     }
 
 }

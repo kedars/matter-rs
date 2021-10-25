@@ -63,6 +63,41 @@ impl EncHdr {
     pub fn set_initiator(&mut self) {
         self.exch_flags |= EXCHANGE_FLAG_INITIATOR_MASK;
     }
+
+    pub fn decrypt_and_decode(&mut self, plain_hdr: &plain_hdr::PlainHdr, parsebuf: &mut ParseBuf, dec_key: &[u8]) -> Result<(), Error> {
+        decrypt_in_place(&plain_hdr, parsebuf, dec_key)?;
+
+        self.exch_flags   = parsebuf.le_u8()?;
+        self.proto_opcode = parsebuf.le_u8()?;
+        self.exch_id      = parsebuf.le_u16()?;
+        self.proto_id     = parsebuf.le_u16()?;
+
+        info!("[enc_hdr] {} ", self);
+        if self.is_vendor() {
+            self.proto_vendor_id = Some(parsebuf.le_u16()?);
+        }
+        if self.is_ack() {
+            self.ack_msg_ctr = Some(parsebuf.le_u32()?);
+        }
+        info!("payload: {:x?}", &parsebuf.buf[parsebuf.read_off..(parsebuf.read_off + parsebuf.left)]);
+        Ok(())
+    }
+
+    pub fn encode(&mut self, plain_hdr: &plain_hdr::PlainHdr, resp_buf: &mut WriteBuf) -> Result<(), Error> {
+        info!("[enc_hdr] {}", self);
+        resp_buf.le_u8(self.exch_flags)?;
+        resp_buf.le_u8(self.proto_opcode)?;
+        resp_buf.le_u16(self.exch_id)?;
+        resp_buf.le_u16(self.proto_id)?;
+        if self.is_vendor() {
+            resp_buf.le_u16(self.proto_vendor_id.ok_or(Error::Invalid)?)?;
+        }
+        if self.is_ack() {
+            resp_buf.le_u32(self.ack_msg_ctr.ok_or(Error::Invalid)?)?;
+        }
+        // Perform encryption
+        Ok(())
+    }
 }
 
 impl fmt::Display for EncHdr {
@@ -85,31 +120,6 @@ impl fmt::Display for EncHdr {
         }
         write!(f, "ExId: {}, Proto: {}, Opcode: {}, Flags: {}", self.exch_id, self.proto_id, self.proto_opcode, flag_str)
     }
-}
-
-pub fn parse_enc_hdr(plain_hdr: &plain_hdr::PlainHdr, parsebuf: &mut ParseBuf, dec_key: &[u8]) -> Result<EncHdr, Error> {
-    decrypt_in_place(&plain_hdr, parsebuf, dec_key)?;
-
-    let mut enc_hdr = EncHdr::default();
-    enc_hdr.exch_flags   = parsebuf.le_u8()?;
-    enc_hdr.proto_opcode = parsebuf.le_u8()?;
-    enc_hdr.exch_id      = parsebuf.le_u16()?;
-    enc_hdr.proto_id     = parsebuf.le_u16()?;
-
-    info!("[enc_hdr] {} ", enc_hdr);
-    if enc_hdr.is_vendor() {
-        enc_hdr.proto_vendor_id = Some(parsebuf.le_u16()?);
-    }
-    if enc_hdr.is_ack() {
-        enc_hdr.ack_msg_ctr = Some(parsebuf.le_u32()?);
-    }
-    info!("payload: {:x?}", &parsebuf.buf[parsebuf.read_off..(parsebuf.read_off + parsebuf.left)]);
-    Ok(enc_hdr)
-}
-
-pub fn gen_enc_hdr(plain_hdr: &plain_hdr::PlainHdr, resp_buf: &mut WriteBuf, enc_key: &[u8]) -> Result<(), Error> {
-
-    Ok(())
 }
 
 // Values as per the Matter spec

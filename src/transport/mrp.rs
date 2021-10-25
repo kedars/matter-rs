@@ -18,7 +18,7 @@ pub fn on_msg_recv(e: &mut Exchange, plain_hdr: &plain_hdr::PlainHdr, enc_hdr: &
     }
 }
 
-pub fn before_msg_send(e: &mut Exchange, _plain_hdr: &mut plain_hdr::PlainHdr, enc_hdr: &mut enc_hdr::EncHdr) -> Result<(), Error> {
+pub fn before_msg_send(e: &mut Exchange, _plain_hdr: &plain_hdr::PlainHdr, enc_hdr: &mut enc_hdr::EncHdr) -> Result<(), Error> {
     // Check if any pending acknowledgements are pending for this exchange,
     // if so, piggy back in the encoded header here
     if let Some(pending_ack) = e.is_ack_pending() {

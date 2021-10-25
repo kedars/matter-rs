@@ -50,7 +50,7 @@ impl<'a> Mgr<'a> {
         // Create a fake entry as hard-coded in the 'bypass mode' in chip-tool
         let test_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
         let i2r_key = [ 0x44, 0xd4, 0x3c, 0x91, 0xd2, 0x27, 0xf3, 0xba, 0x08, 0x24, 0xc5, 0xd8, 0x7c, 0xb8, 0x1b, 0x33];
-        mgr.sess_mgr.add(0, i2r_key, i2r_key, test_addr.ip()).unwrap();
+        mgr.sess_mgr.add(0, 0, i2r_key, i2r_key, test_addr.ip()).unwrap();
 
         Ok(mgr)
     }
@@ -71,8 +71,8 @@ impl<'a> Mgr<'a> {
             let mut parse_buf = ParseBuf::new(&mut in_buf, len);
 
             // Read unencrypted packet header
-            rx_ctx.plain_hdr = match plain_hdr::parse_plain_hdr(&mut parse_buf) {
-                Ok(h) => h,
+            match rx_ctx.plain_hdr.decode(&mut parse_buf) {
+                Ok(_) => (),
                 Err(_) => continue,
             };
 
@@ -84,14 +84,14 @@ impl<'a> Mgr<'a> {
             };
             
             // Read encrypted header
-            rx_ctx.enc_hdr = match enc_hdr::parse_enc_hdr(&rx_ctx.plain_hdr, &mut parse_buf, &session.dec_key) {
-                Ok(h) => h,
+            match rx_ctx.enc_hdr.decrypt_and_decode(&rx_ctx.plain_hdr, &mut parse_buf, &session.dec_key) {
+                Ok(_) => (),
                 Err(_) => continue,
             };
 
             // Get the exchange
             let exchange = match session.get_exchange(rx_ctx.enc_hdr.exch_id,
-                                                    exchange::get_exchange_role(rx_ctx.enc_hdr.is_initiator()),
+                                                    exchange::get_complementary_role(rx_ctx.enc_hdr.is_initiator()),
                                                     // We create a new exchange, only if the peer is the initiator
                                                     rx_ctx.enc_hdr.is_initiator()) {
                 Some(e) => e,

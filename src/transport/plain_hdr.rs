@@ -1,10 +1,11 @@
 use crate::error::*;
 use crate::utils::ParseBuf;
+use crate::utils::WriteBuf;
 use log::info;
     
 const SESSION_TYPE_MASK: u8 = 0x01;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum SessionType {
     None,
     Encrypted,
@@ -29,19 +30,27 @@ pub struct PlainHdr {
     pub ctr: u32,
 }
 
-// it will have an additional 'message length' field first
-pub fn parse_plain_hdr(msg: & mut ParseBuf) -> Result<PlainHdr, Error> {
+impl PlainHdr {
+    // it will have an additional 'message length' field first
+    pub fn decode(&mut self, msg: & mut ParseBuf) -> Result<(), Error> {
 
-    let flags = msg.le_u8()?;
-    let sec_flags = msg.le_u8()?;
-    let sess_id = msg.le_u16()?;
-    let ctr = msg.le_u32()?;
+        self.flags = msg.le_u8()?;
+        let sec_flags = msg.le_u8()?;
+        self.sess_type = if (sec_flags & SESSION_TYPE_MASK) == 1 { SessionType::Encrypted } else { SessionType::None };
+        self.sess_id = msg.le_u16()?;
+        self.ctr = msg.le_u32()?;
 
-    let sess_type = if (sec_flags & SESSION_TYPE_MASK) == 1 { SessionType::Encrypted } else { SessionType::None };
+        info!("[plain_hdr] flags: {:x}, session type: {:#?}, sess_id: {}, ctr: {}", self.flags, self.sess_type, self.sess_id, self.ctr);
+        Ok(())
+    }
 
-    info!("[plain_hdr] flags: {:x}, session type: {:#?}, sess_id: {}, ctr: {}", flags, sess_type, sess_id, ctr);
-
-    Ok(PlainHdr{flags, sess_type, sess_id, ctr})
+    pub fn encode(&mut self, resp_buf: &mut WriteBuf) -> Result<(), Error> {
+        resp_buf.le_u8(self.flags)?;
+        resp_buf.le_u8(if self.sess_type == SessionType::Encrypted { 1 } else { 0 } )?;
+        resp_buf.le_u16(self.sess_id)?;
+        resp_buf.le_u32(self.ctr)?;
+        Ok(())
+    }
 }
 
 pub const fn max_plain_hdr_len() -> usize {
