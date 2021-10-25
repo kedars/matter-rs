@@ -86,6 +86,15 @@ impl<'a> WriteBuf<'a> {
         Ok(())
     }
 
+    pub fn le_u8(& mut self, data: u8) -> Result<(), Error> {
+        if self.buf.len() > 1 {
+            self.buf[self.write_off] = data;
+            self.write_off += 1;
+            Ok(())
+        } else {
+            return Err(Error::NoSpace);
+        }
+    }
     pub fn le_u16(& mut self, data: u16) -> Result<(), Error> {
         if self.buf.len() > 2 {
             LittleEndian::write_u16(&mut self.buf[self.write_off..], data);
