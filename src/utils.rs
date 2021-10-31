@@ -73,6 +73,10 @@ impl<'a> WriteBuf<'a> {
         WriteBuf{buf: &mut buf[..len], write_off: 0}
     }
 
+    pub fn as_slice(&self) -> &[u8] {
+        &self.buf[0..self.write_off]
+    }
+
     pub fn len(&self) -> usize {
         self.write_off
     }
@@ -82,7 +86,8 @@ impl<'a> WriteBuf<'a> {
         if expected_len >= self.buf.len() {
             return Err(Error::NoSpace);
         }
-        self.buf[self.write_off..expected_len].copy_from_slice(src);
+        self.buf[self.write_off..src.len()].copy_from_slice(src);
+        self.write_off += src.len();
         Ok(())
     }
 
