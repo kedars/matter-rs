@@ -24,7 +24,7 @@ impl<'a> TxCtx<'a> {
         let mut txctx = TxCtx{_dst: None,
               plain_hdr: plain_hdr::PlainHdr::default(),
               enc_hdr: enc_hdr::EncHdr::default(),
-              write_buf: WriteBuf::new(buf, MAX_TX_BUF_SIZE),
+              write_buf: WriteBuf::new(buf, buf.len()),
         };
         txctx.write_buf.reserve(plain_hdr::max_plain_hdr_len() + enc_hdr::max_enc_hdr_len());
         txctx
