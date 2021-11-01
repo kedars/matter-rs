@@ -63,6 +63,7 @@ impl<'a> Mgr<'a> {
     pub fn start(&mut self) -> Result<(), Error>{
         /* I would have liked this in .bss instead of the stack, will likely move this later */
         let mut in_buf: [u8; MAX_RX_BUF_SIZE] = [0; MAX_RX_BUF_SIZE];
+        let mut out_buf: [u8; MAX_RX_BUF_SIZE] = [0; MAX_RX_BUF_SIZE];
 
         loop {
             // Read from the transport
@@ -103,7 +104,7 @@ impl<'a> Mgr<'a> {
 
             info!("Exchange is {:?}", exchange);
             // Proto Dispatch
-            let mut tx_ctx = tx_ctx::TxCtx::new();
+            let mut tx_ctx = tx_ctx::TxCtx::new(&mut out_buf);
             match self.proto_demux.handle(rx_ctx.enc_hdr.proto_id.into(), rx_ctx.enc_hdr.proto_opcode,
                                           parse_buf.as_slice(), &mut tx_ctx) {
                 Ok(_) => (),

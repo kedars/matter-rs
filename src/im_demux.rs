@@ -32,7 +32,7 @@ enum OpCode {
 }
 
 pub trait HandleInteraction {
-    fn handle_invoke_cmd(&mut self, cmd_path_ib: &CmdPathIb, variable: TLVElement, resp_buf: WriteBuf) -> Result<(), Error>;
+    fn handle_invoke_cmd(&mut self, cmd_path_ib: &CmdPathIb, variable: TLVElement, resp_buf: &mut WriteBuf) -> Result<(), Error>;
 }
 
 pub struct InteractionModel<'a> {
@@ -79,7 +79,7 @@ impl<'a> InteractionModel<'a> {
             let cmd_path_ib = get_cmd_path_ib(&cmd_data_ib.find_element(0).ok_or(Error::InvalidData)?
                                            .confirm_list().ok_or(Error::InvalidData)?);
             let variable  = cmd_data_ib.find_element(1).ok_or(Error::InvalidData)?;
-            return self.handler.handle_invoke_cmd(&cmd_path_ib, variable, tx_ctx.get_payload_buf());
+            return self.handler.handle_invoke_cmd(&cmd_path_ib, variable, tx_ctx.get_write_buf());
         }
     }
 }
@@ -126,7 +126,7 @@ mod tests {
     }
 
     impl HandleInteraction for TestDataModel {
-        fn handle_invoke_cmd(&mut self, cmd_path_ib: &CmdPathIb, variable: TLVElement, _resp_buf: WriteBuf) -> Result<(), Error> {
+        fn handle_invoke_cmd(&mut self, cmd_path_ib: &CmdPathIb, variable: TLVElement, _resp_buf: &mut WriteBuf) -> Result<(), Error> {
             self.endpoint = cmd_path_ib.endpoint;
             self.cluster = cmd_path_ib.cluster;
             self.command = cmd_path_ib.command;
@@ -146,7 +146,8 @@ mod tests {
 
         let mut data_model = TestDataModel::init();
         let mut interaction_model = InteractionModel::init(&mut data_model);
-        let mut tx_ctx = TxCtx::new();
+        let mut buf: [u8; 20] = [0; 20];
+        let mut tx_ctx = TxCtx::new(&mut buf);
         let _result = interaction_model.handle_proto_id(0x08, &b, &mut tx_ctx);
 
         assert_eq!(data_model.endpoint, Some(0));
