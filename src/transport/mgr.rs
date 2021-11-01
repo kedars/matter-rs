@@ -1,5 +1,5 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use log::info;
+use log::{info, error};
 
 use crate::error::*;
 use crate::proto_demux;
@@ -104,7 +104,11 @@ impl<'a> Mgr<'a> {
 
             info!("Exchange is {:?}", exchange);
             // Proto Dispatch
-            let mut tx_ctx = tx_ctx::TxCtx::new(&mut out_buf)?;
+            let mut tx_ctx = match tx_ctx::TxCtx::new(&mut out_buf) {
+                Ok(t) => t,
+                Err(e) => { error!("Error while creating TxCtx: {:?}", e); continue; },
+            };
+
             match self.proto_demux.handle(rx_ctx.enc_hdr.proto_id.into(), rx_ctx.enc_hdr.proto_opcode,
                                           parse_buf.as_slice(), &mut tx_ctx) {
                 Ok(_) => (),
