@@ -83,7 +83,7 @@ impl EncHdr {
         Ok(())
     }
 
-    pub fn encode(&mut self, plain_hdr: &plain_hdr::PlainHdr, resp_buf: &mut WriteBuf) -> Result<(), Error> {
+    pub fn encode(&mut self, resp_buf: &mut WriteBuf) -> Result<(), Error> {
         info!("[enc_hdr] {}", self);
         resp_buf.le_u8(self.exch_flags)?;
         resp_buf.le_u8(self.proto_opcode)?;

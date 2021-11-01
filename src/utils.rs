@@ -153,7 +153,6 @@ impl<'a> WriteBuf<'a> {
 #[cfg(test)]
 mod tests {
     use crate::utils::WriteBuf;
-    use crate::error::*;
 
     #[test]
     fn test_append_le_with_success() {

@@ -9,9 +9,6 @@ use crate::utils::WriteBuf;
 
 use log::info;
 
-// Keeping it conservative for now
-const MAX_TX_BUF_SIZE: usize = 512;
-
 pub struct TxCtx<'a> {
     _dst: Option<std::net::SocketAddr>,
     plain_hdr: plain_hdr::PlainHdr,
@@ -20,14 +17,14 @@ pub struct TxCtx<'a> {
 }
 
 impl<'a> TxCtx<'a> {
-    pub fn new(buf: &'a mut[u8]) -> TxCtx<'a> {
+    pub fn new(buf: &'a mut[u8]) -> Result<TxCtx<'a>, Error> {
         let mut txctx = TxCtx{_dst: None,
               plain_hdr: plain_hdr::PlainHdr::default(),
               enc_hdr: enc_hdr::EncHdr::default(),
               write_buf: WriteBuf::new(buf, buf.len()),
         };
-        txctx.write_buf.reserve(plain_hdr::max_plain_hdr_len() + enc_hdr::max_enc_hdr_len());
-        txctx
+        txctx.write_buf.reserve(plain_hdr::max_plain_hdr_len() + enc_hdr::max_enc_hdr_len())?;
+        Ok(txctx)
     }
 
     pub fn get_write_buf(&mut self) -> &mut WriteBuf<'a> {
@@ -66,7 +63,7 @@ impl<'a> TxCtx<'a> {
         // Generate encrypted header
         let mut tmp_buf: [u8; enc_hdr::max_enc_hdr_len()] = [0; enc_hdr::max_enc_hdr_len()];
         let mut write_buf = WriteBuf::new(&mut tmp_buf[..], enc_hdr::max_enc_hdr_len());
-        self.enc_hdr.encode(&self.plain_hdr, &mut write_buf)?;
+        self.enc_hdr.encode(&mut write_buf)?;
         self.write_buf.prepend(write_buf.as_slice())?;
         info!("enc_hdr: {:x?}", tmp_buf);
 

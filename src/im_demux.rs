@@ -137,7 +137,7 @@ mod tests {
     }
 
     #[test]
-    fn test_valid_invoke_cmd() {
+    fn test_valid_invoke_cmd() -> Result<(), Error> {
         // An invoke command for endpoint 0, cluster 49, command 12 and a u8 variable value of 0x05
         let b = [ 0x15, 0x36, 0x00, 0x15, 0x37, 0x00, 0x24, 0x00, 0x00, 0x24,
                   0x02, 0x31, 0x24, 0x03, 0x0c, 0x18, 0x35, 0x01, 0x24, 0x01, 0x05, 0x18, 0x18, 0x18,
@@ -147,12 +147,13 @@ mod tests {
         let mut data_model = TestDataModel::init();
         let mut interaction_model = InteractionModel::init(&mut data_model);
         let mut buf: [u8; 20] = [0; 20];
-        let mut tx_ctx = TxCtx::new(&mut buf);
+        let mut tx_ctx = TxCtx::new(&mut buf)?;
         let _result = interaction_model.handle_proto_id(0x08, &b, &mut tx_ctx);
 
         assert_eq!(data_model.endpoint, Some(0));
         assert_eq!(data_model.cluster, Some(49));
         assert_eq!(data_model.command, Some(12));
         assert_eq!(data_model.variable, Some(5));
+        Ok(())
     }
 }

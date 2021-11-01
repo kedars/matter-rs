@@ -104,7 +104,7 @@ impl<'a> Mgr<'a> {
 
             info!("Exchange is {:?}", exchange);
             // Proto Dispatch
-            let mut tx_ctx = tx_ctx::TxCtx::new(&mut out_buf);
+            let mut tx_ctx = tx_ctx::TxCtx::new(&mut out_buf)?;
             match self.proto_demux.handle(rx_ctx.enc_hdr.proto_id.into(), rx_ctx.enc_hdr.proto_opcode,
                                           parse_buf.as_slice(), &mut tx_ctx) {
                 Ok(_) => (),

@@ -24,7 +24,7 @@ impl MyDataModel {
 }
 
 impl HandleInteraction for MyDataModel {
-    fn handle_invoke_cmd(&mut self, cmd_path_ib: &CmdPathIb, variable: TLVElement, mut resp_buf: &mut WriteBuf) -> Result<(), Error> {
+    fn handle_invoke_cmd(&mut self, cmd_path_ib: &CmdPathIb, variable: TLVElement, resp_buf: &mut WriteBuf) -> Result<(), Error> {
         info!("In Data Model's Invoke Commmand Handler");
         println!("Found cmd_path_ib: {:?} and variable: {}", cmd_path_ib, variable);
         let dummy_invoke_resp = [0x15, 0x36, 0x00, 0x15, 0x37, 0x00, 0x24, 0x00, 0x00, 0x24,
