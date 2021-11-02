@@ -5,7 +5,7 @@ use crate::transport::exchange::ExchangeRole;
 use crate::transport::plain_hdr;
 use crate::transport::mrp;
 use crate::transport::session;
-use crate::utils::WriteBuf;
+use crate::utils::writebuf::*;
 
 use log::info;
 

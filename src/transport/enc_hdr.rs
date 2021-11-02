@@ -1,8 +1,8 @@
 use std::fmt;
 
 use crate::error::*;
-use crate::utils::ParseBuf;
-use crate::utils::WriteBuf;
+use crate::utils::parsebuf::ParseBuf;
+use crate::utils::writebuf::WriteBuf;
 use crate::transport::plain_hdr;
 
 use aes::Aes128;

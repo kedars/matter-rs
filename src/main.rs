@@ -8,7 +8,7 @@ use matter::error::*;
 use matter::transport;
 use matter::im_demux::*;
 use matter::tlv::*;
-use matter::utils::WriteBuf;
+use matter::utils::writebuf::WriteBuf;
 
 use log::{info};
 

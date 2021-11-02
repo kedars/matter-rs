@@ -10,7 +10,7 @@ use crate::transport::mrp;
 use crate::transport::session;
 use crate::transport::tx_ctx;
 use crate::transport::udp;
-use crate::utils::ParseBuf;
+use crate::utils::parsebuf::ParseBuf;
 
 // Currently matches with the one in connectedhomeip repo
 const MAX_RX_BUF_SIZE: usize = 1583;
