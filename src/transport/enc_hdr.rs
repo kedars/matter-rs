@@ -79,7 +79,7 @@ impl EncHdr {
         if self.is_ack() {
             self.ack_msg_ctr = Some(parsebuf.le_u32()?);
         }
-        info!("payload: {:x?}", &parsebuf.buf[parsebuf.read_off..(parsebuf.read_off + parsebuf.left)]);
+        info!("payload: {:x?}", parsebuf.as_slice());
         Ok(())
     }
 
@@ -142,13 +142,12 @@ fn decrypt_in_place(plain_hdr: &plain_hdr::PlainHdr,
     // AAD:
     //    the unencrypted header of this packet
     let mut aad: [u8; AAD_LEN] = [0; AAD_LEN];
-    aad.copy_from_slice(&parsebuf.buf[0..parsebuf.read_off]);
+    aad.copy_from_slice(parsebuf.parsed_as_slice());
 
     // Tag:
     //    the last TAG_LEN bytes of the packet
-    let tag_start = parsebuf.read_off + parsebuf.left - TAG_LEN;
     let mut tag: [u8; TAG_LEN] = [0; TAG_LEN];
-    tag.copy_from_slice(&parsebuf.buf[tag_start..]);
+    tag.copy_from_slice(parsebuf.tail(TAG_LEN)?);
     let tag = GenericArray::from_slice(&tag);
     
     // IV:
@@ -157,20 +156,17 @@ fn decrypt_in_place(plain_hdr: &plain_hdr::PlainHdr,
     get_iv(&plain_hdr, &mut iv[0..])?;
     let nonce = GenericArray::from_slice(&iv);
 
-    let mut cipher_text = &mut parsebuf.buf[parsebuf.read_off..tag_start];
-    //println!("AAD: {:x?}", aad);
-    //println!("tag_start: {}", tag_start);
-    //println!("Tag: {:x?}", &parsebuf.buf[tag_start..]);
-    //println!("Cipher Text: {:x?}", cipher_text);
-    //println!("IV: {:x?}", iv);
+    let cipher_text = parsebuf.as_slice();
+    println!("AAD: {:x?}", aad);
+    println!("Tag: {:x?}", tag);
+    println!("Cipher Text: {:x?}", cipher_text);
+    println!("IV: {:x?}", iv);
 
     // Matter Spec says Nonce size is 13, but the code has 12
     type AesCcm = Ccm<Aes128, U16, U12>;
     let cipher = AesCcm::new(GenericArray::from_slice(key));
-    cipher.decrypt_in_place_detached(nonce, &aad, &mut cipher_text, &tag)?;
+    cipher.decrypt_in_place_detached(nonce, &aad, cipher_text, &tag)?;
 
-    // Truncate the parsebuf by TAG_LEN bytes
-    parsebuf.truncate(TAG_LEN)?;
     Ok(())
 }
 
