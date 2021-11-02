@@ -35,15 +35,6 @@ impl<'a> ParseBuf<'a> {
         return Err(Error::TruncatedPacket);
     }
 
-    pub fn truncate(&mut self, truncate_by: usize) -> Result<(), Error> {
-        if truncate_by < self.left {
-            self.left -= truncate_by;
-            Ok(())
-        } else {
-            return Err(Error::Invalid);
-        }
-    }
-
     fn advance(&mut self, len: usize) {
         self.read_off += len;
         self.left -= len;
@@ -51,7 +42,7 @@ impl<'a> ParseBuf<'a> {
 
     pub fn parse_head_with<F, T>(&mut self, size: usize, f: F) -> Result<T, Error>
                             where F: FnOnce(&mut Self) -> T {
-        if self.left > size {
+        if self.left >= size {
             let data: T = f(self);
             self.advance(size);
             return Ok(data);
@@ -76,4 +67,91 @@ impl<'a> ParseBuf<'a> {
             LittleEndian::read_u32(&x.buf[x.read_off..])
         })
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::utils::parsebuf::*;
+
+    #[test]
+    fn test_parse_with_success() {
+        let mut test_slice: [u8; 11] = [0x01, 65, 0, 0xbe, 0xba, 0xfe, 0xca, 0xa, 0xb, 0xc, 0xd];
+        let mut buf = ParseBuf::new(&mut test_slice, 11);
+
+        assert_eq!(buf.le_u8().unwrap(), 0x01);
+        assert_eq!(buf.le_u16().unwrap(), 65);
+        assert_eq!(buf.le_u32().unwrap(), 0xcafebabe);
+        assert_eq!(buf.as_slice(), [0xa, 0xb, 0xc, 0xd]);
+    }
+
+    #[test]
+    fn test_parse_with_overrun() {
+        let mut test_slice: [u8; 2] = [0x01, 65];
+        let mut buf = ParseBuf::new(&mut test_slice, 2);
+
+        assert_eq!(buf.le_u8().unwrap(), 0x01);
+
+        match buf.le_u16() {
+            Ok(_) => panic!("This should have returned error"),
+            Err(_) => (),
+        }
+
+        match buf.le_u32() {
+            Ok(_) => panic!("This should have returned error"),
+            Err(_) => (),
+        }
+
+        // Now consume the leftover byte
+        assert_eq!(buf.le_u8().unwrap(), 65);
+
+        match buf.le_u8() {
+            Ok(_) => panic!("This should have returned error"),
+            Err(_) => (),
+        }
+        assert_eq!(buf.as_slice(), []);
+    }
+
+    #[test]
+    fn test_tail_with_success() {
+        let mut test_slice: [u8; 11] = [0x01, 65, 0, 0xbe, 0xba, 0xfe, 0xca, 0xa, 0xb, 0xc, 0xd];
+        let mut buf = ParseBuf::new(&mut test_slice, 11);
+
+        assert_eq!(buf.le_u8().unwrap(), 0x01);
+        assert_eq!(buf.le_u16().unwrap(), 65);
+        assert_eq!(buf.le_u32().unwrap(), 0xcafebabe);
+
+        assert_eq!(buf.tail(2).unwrap(), [0xc, 0xd]);
+        assert_eq!(buf.as_slice(), [0xa, 0xb]);
+
+        assert_eq!(buf.tail(2).unwrap(), [0xa, 0xb]);
+        assert_eq!(buf.as_slice(), []);
+    }
+
+    #[test]
+    fn test_tail_with_overrun() {
+        let mut test_slice: [u8; 11] = [0x01, 65, 0, 0xbe, 0xba, 0xfe, 0xca, 0xa, 0xb, 0xc, 0xd];
+        let mut buf = ParseBuf::new(&mut test_slice, 11);
+
+        assert_eq!(buf.le_u8().unwrap(), 0x01);
+        assert_eq!(buf.le_u16().unwrap(), 65);
+        assert_eq!(buf.le_u32().unwrap(), 0xcafebabe);
+        match buf.tail(5) {
+            Ok(_) => panic!("This should have returned error"),
+            Err(_) => (),
+        }
+        assert_eq!(buf.tail(2).unwrap(), [0xc, 0xd]);
+    }
+
+    #[test]
+    fn test_parsed_as_slice() {
+        let mut test_slice: [u8; 11] = [0x01, 65, 0, 0xbe, 0xba, 0xfe, 0xca, 0xa, 0xb, 0xc, 0xd];
+        let mut buf = ParseBuf::new(&mut test_slice, 11);
+
+        assert_eq!(buf.parsed_as_slice(), []);
+        assert_eq!(buf.le_u8().unwrap(), 0x1);
+        assert_eq!(buf.le_u16().unwrap(), 65);
+        assert_eq!(buf.le_u32().unwrap(), 0xcafebabe);
+        assert_eq!(buf.parsed_as_slice(), [0x01, 65, 0, 0xbe, 0xba, 0xfe, 0xca]);
+    }
+
 }
