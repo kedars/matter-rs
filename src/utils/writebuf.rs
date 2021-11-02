@@ -3,9 +3,9 @@ use byteorder::{ByteOrder, LittleEndian};
 
 #[derive(Debug)]
 pub struct WriteBuf<'a> {
-    pub buf: &'a mut[u8],
-    pub start: usize,
-    pub end: usize,
+    buf: &'a mut[u8],
+    start: usize,
+    end: usize,
 }
 
 impl<'a> WriteBuf<'a> {
