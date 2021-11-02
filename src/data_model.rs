@@ -1,4 +1,3 @@
-use crate::sbox;
 use std::borrow::BorrowMut;
 
 pub const ENDPTS_PER_ACC:     usize = 1;
@@ -26,7 +25,7 @@ impl Default for Attribute {
 
 impl Attribute {
     pub fn new (id: u32, val: AttrValue) -> Result<Box<Attribute>, &'static str> {
-        let mut a = sbox::sbox_new(Attribute::default())?;
+        let mut a = Box::new(Attribute::default());
         a.id = id;
         a.value = val;
         Ok(a)
@@ -41,7 +40,7 @@ pub struct Cluster {
 
 impl Cluster {
     pub fn new (id: u32) -> Result<Box<Cluster>, &'static str> {
-        let mut a = sbox::sbox_new(Cluster::default())?;
+        let mut a = Box::new(Cluster::default());
         a.id = id;
         Ok(a)
     }
@@ -65,7 +64,7 @@ pub struct Endpoint {
 
 impl Endpoint {
     pub fn new (id: u32) -> Result<Box<Endpoint>, &'static str> {
-        let mut a = sbox::sbox_new(Endpoint::default())?;
+        let mut a = Box::new(Endpoint::default());
         a.id = id;
         Ok(a)
     }

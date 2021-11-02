@@ -1,5 +1,4 @@
 use std::process;
-use matter::sbox;
 use matter::data_model;
 use matter::data_model::Attribute;
 use matter::data_model::Cluster;
@@ -37,8 +36,6 @@ impl HandleInteraction for MyDataModel {
 
 fn main() {
     env_logger::init();
-    let x = sbox::sbox_new("Hello How are you").unwrap();
-    println!("Hello, world!: {}", x);
 
     let a = data_model_init().unwrap_or_else(|err| {
         eprintln!("Error creating data model: {}", err);

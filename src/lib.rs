@@ -5,11 +5,3 @@ pub mod tlv;
 pub mod proto_demux;
 pub mod error;
 pub mod im_demux;
-
-pub mod sbox {
-    pub fn sbox_new<T> (var: T) -> Result<Box<T>, &'static str> {
-        // Always success for now, since Box:new() always succeeds
-        Ok(Box::new(var))
-    }
-}
-
