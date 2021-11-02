@@ -135,6 +135,28 @@ fn get_iv(recvd_ctr: u32, iv: &mut [u8]) -> Result<(), Error>{
     Ok(())
 }
 
+pub fn encrypt_in_place(send_ctr: u32,
+                    plain_hdr: &[u8],
+                    writebuf: &mut WriteBuf,
+                    key: &[u8]) -> Result<(), Error> {
+    // IV
+    let mut iv: [u8; IV_LEN] = [0; IV_LEN];
+    get_iv(send_ctr, &mut iv)?;
+    let nonce = GenericArray::from_slice(&iv);
+
+    // Cipher Text
+    let cipher_text = writebuf.as_slice();
+
+    type AesCcm = Ccm<Aes128, U16, U12>;
+    let cipher = AesCcm::new(GenericArray::from_slice(key));
+    let tag = cipher.encrypt_in_place_detached(nonce, &plain_hdr, cipher_text)?;
+    //println!("Tag: {:x?}", tag);
+    //println!("Cipher Text: {:x?}", cipher_text);
+    writebuf.append(tag.as_slice())?;
+
+    Ok(())
+}
+
 fn decrypt_in_place(recvd_ctr: u32,
                     parsebuf: &mut ParseBuf,
                     key: &[u8]) -> Result<(), Error> {
@@ -159,14 +181,14 @@ fn decrypt_in_place(recvd_ctr: u32,
     // IV:
     //   the specific way for creating IV is in get_iv
     let mut iv: [u8; IV_LEN] = [0; IV_LEN];
-    get_iv(recvd_ctr, &mut iv[0..])?;
+    get_iv(recvd_ctr, &mut iv)?;
     let nonce = GenericArray::from_slice(&iv);
 
     let cipher_text = parsebuf.as_slice();
-    println!("AAD: {:x?}", aad);
-    println!("Tag: {:x?}", tag);
-    println!("Cipher Text: {:x?}", cipher_text);
-    println!("IV: {:x?}", iv);
+    // println!("AAD: {:x?}", aad);
+    // println!("Tag: {:x?}", tag);
+    // println!("Cipher Text: {:x?}", cipher_text);
+    // println!("IV: {:x?}", iv);
 
     // Matter Spec says Nonce size is 13, but the code has 12
     type AesCcm = Ccm<Aes128, U16, U12>;
@@ -218,6 +240,33 @@ mod tests {
         assert_eq!(parsebuf.as_slice(), [5, 8, 0x58, 0x28, 0x01, 0x00, 0x15, 0x36, 0x00, 0x15,
                                             0x37, 0x00, 0x24, 0x00, 0x01, 0x24, 0x02, 0x06, 0x24,
                                             0x03, 0x01, 0x18, 0x35, 0x01, 0x18, 0x18, 0x18, 0x18]);
+    }
+
+    #[test]
+    pub fn test_encrypt_success() {
+        // These values are captured from an execution run of the chip-tool binary
+        let send_ctr = 41;
+
+        let mut main_buf: [u8; 52] = [0; 52];
+        let main_buf_len = main_buf.len();
+        let mut writebuf = WriteBuf::new(&mut main_buf, main_buf_len);
+
+        let plain_hdr: [u8; 8] = [0x0, 0x11, 0x0, 0x0, 0x29, 0x0, 0x0, 0x0];
+
+        let plain_text: [u8; 28] = [5, 8, 0x58, 0x28, 0x01, 0x00, 0x15, 0x36, 0x00, 0x15,
+                                    0x37, 0x00, 0x24, 0x00, 0x01, 0x24, 0x02, 0x06, 0x24,
+                                    0x03, 0x01, 0x18, 0x35, 0x01, 0x18, 0x18, 0x18, 0x18];
+        writebuf.append(&plain_text).unwrap();
+
+        let key = [0x44, 0xd4, 0x3c, 0x91, 0xd2, 0x27, 0xf3, 0xba, 0x08, 0x24, 0xc5, 0xd8, 0x7c, 0xb8, 0x1b, 0x33];
+
+        encrypt_in_place(send_ctr, &plain_hdr, &mut writebuf, &key).unwrap();
+        assert_eq!(writebuf.as_slice(), [0xb7, 0xb0,
+                                            0xa0, 0xb2, 0xfb, 0xa9, 0x3b, 0x66, 0x66, 0xb4, 0xec,
+                                            0xba, 0x4b, 0xa5, 0x3c, 0xfa, 0x0d, 0xe0, 0x04, 0xbb,
+                                            0xa6, 0xa6, 0xfa, 0x04, 0x2c, 0xd0, 0xd4, 0x73, 0xd8,
+                                            0x41, 0x6a, 0xaa, 0x08, 0x5f, 0xe8, 0xf7, 0x67, 0x8b,
+                                            0xfe, 0xaa, 0x43, 0xb1, 0x59, 0xe2]);
     }
 
 }
