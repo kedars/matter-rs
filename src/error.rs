@@ -5,6 +5,7 @@ pub enum Error {
     NoHandler,
     StdIoError,
     Invalid,
+    InvalidAAD,
     InvalidData,
     InvalidOpcode,
     TruncatedPacket,

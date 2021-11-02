@@ -141,7 +141,14 @@ fn decrypt_in_place(recvd_ctr: u32,
     // AAD:
     //    the unencrypted header of this packet
     let mut aad: [u8; AAD_LEN] = [0; AAD_LEN];
-    aad.copy_from_slice(parsebuf.parsed_as_slice());
+    let parsed_slice = parsebuf.parsed_as_slice();
+    if parsed_slice.len() == aad.len() {
+        // The plain_header is variable sized in length, I wonder if the AAD is fixed at 8, or the variable size.
+        // If so, we need to handle it cleanly here.
+        aad.copy_from_slice(parsed_slice);
+    } else {
+        return Err(Error::InvalidAAD);
+    }
 
     // Tag:
     //    the last TAG_LEN bytes of the packet
