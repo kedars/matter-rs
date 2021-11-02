@@ -65,7 +65,7 @@ impl EncHdr {
     }
 
     pub fn decrypt_and_decode(&mut self, plain_hdr: &plain_hdr::PlainHdr, parsebuf: &mut ParseBuf, dec_key: &[u8]) -> Result<(), Error> {
-        decrypt_in_place(&plain_hdr, parsebuf, dec_key)?;
+        decrypt_in_place(plain_hdr.ctr, parsebuf, dec_key)?;
 
         self.exch_flags   = parsebuf.le_u8()?;
         self.proto_opcode = parsebuf.le_u8()?;
@@ -95,7 +95,6 @@ impl EncHdr {
         if self.is_ack() {
             resp_buf.le_u32(self.ack_msg_ctr.ok_or(Error::Invalid)?)?;
         }
-        // Perform encryption
         Ok(())
     }
 }
@@ -127,16 +126,16 @@ const AAD_LEN: usize = 8;
 const TAG_LEN: usize = 16;
 const IV_LEN: usize = 12;
 
-fn get_iv(plain_hdr: &plain_hdr::PlainHdr, iv: &mut [u8]) -> Result<(), Error>{
+fn get_iv(recvd_ctr: u32, iv: &mut [u8]) -> Result<(), Error>{
     // The IV is the source address (64-bit) followed by the message counter (32-bit)
     let mut write_buf = WriteBuf::new(iv, IV_LEN);
     // For some reason, this is 0 in the 'bypass' mode
     write_buf.le_u64(0)?;
-    write_buf.le_u32(plain_hdr.ctr)?;
+    write_buf.le_u32(recvd_ctr)?;
     Ok(())
 }
 
-fn decrypt_in_place(plain_hdr: &plain_hdr::PlainHdr,
+fn decrypt_in_place(recvd_ctr: u32,
                     parsebuf: &mut ParseBuf,
                     key: &[u8]) -> Result<(), Error> {
     // AAD:
@@ -153,7 +152,7 @@ fn decrypt_in_place(plain_hdr: &plain_hdr::PlainHdr,
     // IV:
     //   the specific way for creating IV is in get_iv
     let mut iv: [u8; IV_LEN] = [0; IV_LEN];
-    get_iv(&plain_hdr, &mut iv[0..])?;
+    get_iv(recvd_ctr, &mut iv[0..])?;
     let nonce = GenericArray::from_slice(&iv);
 
     let cipher_text = parsebuf.as_slice();
@@ -184,4 +183,27 @@ pub const fn max_enc_hdr_len() -> usize {
         2 +
     // [optional] acknowledged message counter
         4;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    pub fn test_decrypt_success() {
+        // These values are captured from an execution run of the chip-tool binary
+        let recvd_ctr = 41;
+        let mut input_buf: [u8; 52] = [0x0, 0x11, 0x0, 0x0, 0x29, 0x0, 0x0, 0x0, 0xb7, 0xb0, 0xa0, 0xb2, 0xfb, 0xa9, 0x3b, 0x66, 0x66, 0xb4, 0xec, 0xba, 0x4b, 0xa5, 0x3c, 0xfa, 0xd, 0xe0, 0x4, 0xbb, 0xa6, 0xa6, 0xfa, 0x4, 0x2c, 0xd0, 0xd4, 0x73, 0xd8, 0x41, 0x6a, 0xaa, 0x8, 0x5f, 0xe8, 0xf7, 0x67, 0x8b, 0xfe, 0xaa, 0x43, 0xb1, 0x59, 0xe2];
+        let input_buf_len = input_buf.len();
+        let mut parsebuf = ParseBuf::new(&mut input_buf, input_buf_len);
+        let key = [0x44, 0xd4, 0x3c, 0x91, 0xd2, 0x27, 0xf3, 0xba, 0x08, 0x24, 0xc5, 0xd8, 0x7c, 0xb8, 0x1b, 0x33];
+
+        // decrypt_in_place() requires that the plain_text buffer of 8 bytes must be already parsed as AAD, we'll just fake it here
+        parsebuf.le_u32().unwrap();
+        parsebuf.le_u32().unwrap();
+
+        decrypt_in_place(recvd_ctr, &mut parsebuf, &key).unwrap();
+        assert_eq!(parsebuf.as_slice(), [5, 8, 0x58, 0x28, 0x01, 0x00, 0x15, 0x36, 0x00, 0x15, 0x37, 0x00, 0x24, 0x00, 0x01, 0x24, 0x02, 0x06, 0x24, 0x03, 0x01, 0x18, 0x35, 0x01, 0x18, 0x18, 0x18, 0x18]);
+    }
+
 }
