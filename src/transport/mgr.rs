@@ -50,7 +50,8 @@ impl<'a> Mgr<'a> {
         // Create a fake entry as hard-coded in the 'bypass mode' in chip-tool
         let test_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
         let i2r_key = [ 0x44, 0xd4, 0x3c, 0x91, 0xd2, 0x27, 0xf3, 0xba, 0x08, 0x24, 0xc5, 0xd8, 0x7c, 0xb8, 0x1b, 0x33];
-        mgr.sess_mgr.add(0, 0, i2r_key, i2r_key, test_addr.ip()).unwrap();
+        let r2i_key = [0xac, 0xc1, 0x8f, 0x06, 0xc7, 0xbc, 0x9b, 0xe8, 0x24, 0x6a, 0x67, 0x8c, 0xb1, 0xf8, 0xba, 0x3d];
+        mgr.sess_mgr.add(0, 0, i2r_key, r2i_key, test_addr.ip()).unwrap();
 
         Ok(mgr)
     }
@@ -67,9 +68,10 @@ impl<'a> Mgr<'a> {
 
         loop {
             // Read from the transport
-            let (len, src) = self.transport.recv(&mut in_buf)?;
+            let (len, src) = self.transport.recv_from(&mut in_buf)?;
             let mut rx_ctx = RxCtx::new(len, src);
             let mut parse_buf = ParseBuf::new(&mut in_buf, len);
+            info!("Received payload: {:x?} from src: {}", parse_buf.as_slice(), src);
 
             // Read unencrypted packet header
             match rx_ctx.plain_hdr.decode(&mut parse_buf) {
@@ -115,10 +117,18 @@ impl<'a> Mgr<'a> {
                 Err(_) => continue,
             }
 
-            // tx_ctx now contains the response payload, send it out
-            match tx_ctx.send(session, rx_ctx.enc_hdr.exch_id, exchange::ExchangeRole::Responder) {
+            // tx_ctx now contains the response payload, prepare the send packet
+            match tx_ctx.prepare_send(session, rx_ctx.enc_hdr.exch_id, exchange::ExchangeRole::Responder) {
                 Ok(_) => (),
                 Err(_) => continue,
+            }
+
+            match self.transport.send_to(tx_ctx.as_slice(), src) {
+                Ok(_) => (),
+                Err(e) => {
+                        error!("Error sending data: {:?}", e);
+                        continue;
+                    },
             }
         }
     }

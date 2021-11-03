@@ -46,7 +46,8 @@ impl PlainHdr {
 
     pub fn encode(&mut self, resp_buf: &mut WriteBuf) -> Result<(), Error> {
         resp_buf.le_u8(self.flags)?;
-        resp_buf.le_u8(if self.sess_type == SessionType::Encrypted { 1 } else { 0 } )?;
+        // XXX Not sure why this is 0x11, instead of 0x01
+        resp_buf.le_u8(if self.sess_type == SessionType::Encrypted { 0x11 } else { 0 } )?;
         resp_buf.le_u16(self.sess_id)?;
         resp_buf.le_u32(self.ctr)?;
         Ok(())

@@ -10,15 +10,14 @@ use crate::utils::writebuf::*;
 use log::info;
 
 pub struct TxCtx<'a> {
-    _dst: Option<std::net::SocketAddr>,
     plain_hdr: plain_hdr::PlainHdr,
     enc_hdr: enc_hdr::EncHdr,
-    pub write_buf: WriteBuf<'a>,
+    write_buf: WriteBuf<'a>,
 }
 
 impl<'a> TxCtx<'a> {
     pub fn new(buf: &'a mut[u8]) -> Result<TxCtx<'a>, Error> {
-        let mut txctx = TxCtx{_dst: None,
+        let mut txctx = TxCtx{
               plain_hdr: plain_hdr::PlainHdr::default(),
               enc_hdr: enc_hdr::EncHdr::default(),
               write_buf: WriteBuf::new(buf, buf.len()),
@@ -43,8 +42,12 @@ impl<'a> TxCtx<'a> {
         self.enc_hdr.set_vendor(proto_vendor_id);
     }
 
+    pub fn as_slice(&self) -> &[u8] {
+        self.write_buf.as_slice()
+    }
+
     // Send the payload, exch_id is None for new exchange
-    pub fn send(&mut self, session: &mut session::Session, exch_id: u16, role: exchange::ExchangeRole) -> Result<(), Error> {
+    pub fn prepare_send(&mut self, session: &mut session::Session, exch_id: u16, role: exchange::ExchangeRole) -> Result<(), Error> {
         info!("payload: {:x?}", self.write_buf.as_slice());
         
         // Set up the parameters        
@@ -67,6 +70,7 @@ impl<'a> TxCtx<'a> {
         self.write_buf.prepend(write_buf.as_slice())?;
         info!("enc_hdr: {:x?}", tmp_buf);
 
+        // Generate plain-text header
         let mut tmp_buf: [u8; plain_hdr::max_plain_hdr_len()] = [0; plain_hdr::max_plain_hdr_len()];
         let mut write_buf = WriteBuf::new(&mut tmp_buf[..], plain_hdr::max_plain_hdr_len());
         self.plain_hdr.encode(&mut write_buf)?;
