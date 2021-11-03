@@ -40,7 +40,7 @@ impl PlainHdr {
         self.sess_id = msg.le_u16()?;
         self.ctr = msg.le_u32()?;
 
-        info!("[plain_hdr] flags: {:x}, session type: {:#?}, sess_id: {}, ctr: {}", self.flags, self.sess_type, self.sess_id, self.ctr);
+        info!("[decode] flags: {:x}, session type: {:#?}, sess_id: {}, ctr: {}", self.flags, self.sess_type, self.sess_id, self.ctr);
         Ok(())
     }
 

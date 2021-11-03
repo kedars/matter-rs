@@ -72,19 +72,19 @@ impl EncHdr {
         self.exch_id      = parsebuf.le_u16()?;
         self.proto_id     = parsebuf.le_u16()?;
 
-        info!("[enc_hdr] {} ", self);
+        info!("[decode] {} ", self);
         if self.is_vendor() {
             self.proto_vendor_id = Some(parsebuf.le_u16()?);
         }
         if self.is_ack() {
             self.ack_msg_ctr = Some(parsebuf.le_u32()?);
         }
-        info!("payload: {:x?}", parsebuf.as_slice());
+        info!("[rx payload]: {:x?}", parsebuf.as_slice());
         Ok(())
     }
 
     pub fn encode(&mut self, resp_buf: &mut WriteBuf) -> Result<(), Error> {
-        info!("[enc_hdr] {}", self);
+        info!("[encode] {}", self);
         resp_buf.le_u8(self.exch_flags)?;
         resp_buf.le_u8(self.proto_opcode)?;
         resp_buf.le_u16(self.exch_id)?;
