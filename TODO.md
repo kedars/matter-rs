@@ -10,6 +10,7 @@
   * Implement the IntoIterator Trait as well for the TLVElement. This was done earlier, but I backtracker after I ran into same lifetime issues
 * Stack Optimisation: Currently the message flows from the bottom to the callback in sequence of callbacks. This may be consuming too much stack.
   * We could restructure this where there is a base function that gets data from the listener, and then makes calls to different layers (parse unencrypted, parse encrypted) in a sequence. Since each layer goes away after getting called, it doesn't end up consuming the stack.
-* Need to check the use of the 'unsafe' for accessing static mut variables (sessionMgr). For example, only one entity should ever take from this
 * static mut is used, to place structures in BSS instead of heap/stack. Currently an 'init' call is used to indicate this is a singleton. Should enforce some method so that only a single reference to this is acquired.
 * Some configurable values like number of exchanges per session, number of sessions supported etc, can be bubbled up to some configurator for this crate. I wonder how that is done.
+* About outgoing counter, is it incremented if we send mutliple acknowledgements to the same retransmitted packet? So let's say peer retransmits a packet with ctr 4, for 3 times. Our response ctr, is, say 20. Then should we respond with 20, 21, 22, or 20, 20, 20?
+* Need to manage the I2R and R2I stuff well, based on who is the Initiator and Responder
