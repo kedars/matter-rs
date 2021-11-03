@@ -145,7 +145,7 @@ pub fn encrypt_in_place(send_ctr: u32,
     let nonce = GenericArray::from_slice(&iv);
 
     // Cipher Text
-    let cipher_text = writebuf.as_slice();
+    let cipher_text = writebuf.as_mut_slice();
 
     type AesCcm = Ccm<Aes128, U16, U12>;
     let cipher = AesCcm::new(GenericArray::from_slice(key));

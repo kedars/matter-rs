@@ -70,9 +70,15 @@ impl<'a> TxCtx<'a> {
         let mut tmp_buf: [u8; plain_hdr::max_plain_hdr_len()] = [0; plain_hdr::max_plain_hdr_len()];
         let mut write_buf = WriteBuf::new(&mut tmp_buf[..], plain_hdr::max_plain_hdr_len());
         self.plain_hdr.encode(&mut write_buf)?;
-        self.write_buf.prepend(write_buf.as_slice())?;
-        info!("plain_hdr: {:x?}", tmp_buf);
-        info!("Full unencrypted packet: {:x?}", self.write_buf.as_slice());
+        let plain_hdr = write_buf.as_slice();
+        info!("plain_hdr: {:x?}", plain_hdr);
+
+        info!("unencrypted packet: {:x?}", self.write_buf.as_slice());
+        enc_hdr::encrypt_in_place(self.plain_hdr.ctr, plain_hdr, &mut self.write_buf, &session.enc_key)?;
+
+        self.write_buf.prepend(plain_hdr)?;
+        info!("Full encrypted packet: {:x?}", self.write_buf.as_slice());
+
         Ok(())
     }
 }

@@ -13,7 +13,11 @@ impl<'a> WriteBuf<'a> {
         WriteBuf{buf: &mut buf[..len], start: 0, end: 0}
     }
 
-    pub fn as_slice(&mut self) -> &mut [u8] {
+    pub fn as_slice(&self) -> &[u8] {
+        &self.buf[self.start..self.end]
+    }
+
+    pub fn as_mut_slice(&mut self) -> &mut [u8] {
         &mut self.buf[self.start..self.end]
     }
 
