@@ -17,7 +17,7 @@ struct MyDataModel {
 }
 
 impl MyDataModel {
-    fn new() -> MyDataModel {
+    const fn new() -> MyDataModel {
         MyDataModel{_a: 12}
     }
 }
@@ -43,8 +43,7 @@ fn main() {
     });
     println!("Accessory: {:#?}", a);
 
-    let mut data_model = MyDataModel::new();
-    let mut interaction_model = InteractionModel::init(&mut data_model);
+    let mut interaction_model = InteractionModel::new(Box::new(MyDataModel::new()));
     let mut transport_mgr = transport::mgr::Mgr::new().unwrap();
     transport_mgr.register_protocol(&mut interaction_model).unwrap();
     transport_mgr.start().unwrap();

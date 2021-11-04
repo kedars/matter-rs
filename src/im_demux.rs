@@ -35,8 +35,8 @@ pub trait HandleInteraction {
     fn handle_invoke_cmd(&mut self, cmd_path_ib: &CmdPathIb, variable: TLVElement, resp_buf: &mut WriteBuf) -> Result<(), Error>;
 }
 
-pub struct InteractionModel<'a> {
-    handler: &'a mut dyn HandleInteraction,
+pub struct InteractionModel {
+    handler: Box<dyn HandleInteraction>,
 }
 
 #[derive(Debug)]
@@ -55,8 +55,8 @@ fn get_cmd_path_ib(cmd_path: &TLVElement) -> CmdPathIb {
     }
 }
 
-impl<'a> InteractionModel<'a> {
-    pub fn init(handler: &'a mut dyn HandleInteraction) -> InteractionModel {
+impl InteractionModel {
+    pub fn new(handler: Box<dyn HandleInteraction>) -> InteractionModel {
         InteractionModel{handler}
     }
 
@@ -84,7 +84,7 @@ impl<'a> InteractionModel<'a> {
     }
 }
 
-impl <'a> proto_demux::HandleProto for InteractionModel<'a> {
+impl proto_demux::HandleProto for InteractionModel {
     fn handle_proto_id(&mut self, proto_opcode: u8, buf: &[u8], tx_ctx: &mut TxCtx) -> Result<(), Error> {
         let proto_opcode: OpCode = num::FromPrimitive::from_u8(proto_opcode).
             ok_or(Error::Invalid)?;
@@ -108,30 +108,33 @@ impl <'a> proto_demux::HandleProto for InteractionModel<'a> {
 mod tests {
     use crate::im_demux::*;
     use crate::proto_demux::HandleProto;
+    use std::sync::Arc;
+    use std::sync::Mutex;
 
+    struct TestData {
+        pub endpoint: u8,
+        pub cluster: u8,
+        pub command: u8,
+        pub variable: u8,
+    }
     struct TestDataModel {
-        pub endpoint: Option<u8>,
-        pub cluster: Option<u8>,
-        pub command: Option<u8>,
-        pub variable: Option<u8>,
+        test_data: Arc<Mutex<TestData>>,
     }
 
     impl TestDataModel {
-        fn init() -> TestDataModel {
-            TestDataModel{endpoint: None,
-                          cluster: None,
-                          command: None,
-                          variable: None}
+        fn new(test_data: Arc<Mutex<TestData>>) -> TestDataModel {
+            TestDataModel{test_data}
         }
     }
 
     impl HandleInteraction for TestDataModel {
         fn handle_invoke_cmd(&mut self, cmd_path_ib: &CmdPathIb, variable: TLVElement, _resp_buf: &mut WriteBuf) -> Result<(), Error> {
-            self.endpoint = cmd_path_ib.endpoint;
-            self.cluster = cmd_path_ib.cluster;
-            self.command = cmd_path_ib.command;
+            let mut data = self.test_data.lock().unwrap();
+            data.endpoint = cmd_path_ib.endpoint.unwrap();
+            data.cluster = cmd_path_ib.cluster.unwrap();
+            data.command = cmd_path_ib.command.unwrap();
             variable.confirm_struct().unwrap();
-            self.variable = variable.find_element(1).unwrap().get_u8();
+            data.variable = variable.find_element(1).unwrap().get_u8().unwrap();
             Ok(())
         }
     }
@@ -144,16 +147,18 @@ mod tests {
                   0x18];
 
 
-        let mut data_model = TestDataModel::init();
-        let mut interaction_model = InteractionModel::init(&mut data_model);
+        let test_data = Arc::new(Mutex::new(TestData{endpoint: 0, cluster: 0, command: 0, variable: 0}));
+        let data_model = Box::new(TestDataModel::new(test_data.clone()));
+        let mut interaction_model = InteractionModel::new(data_model);
         let mut buf: [u8; 20] = [0; 20];
         let mut tx_ctx = TxCtx::new(&mut buf)?;
         let _result = interaction_model.handle_proto_id(0x08, &b, &mut tx_ctx);
 
-        assert_eq!(data_model.endpoint, Some(0));
-        assert_eq!(data_model.cluster, Some(49));
-        assert_eq!(data_model.command, Some(12));
-        assert_eq!(data_model.variable, Some(5));
+        let data = test_data.lock().unwrap();
+        assert_eq!(data.endpoint, 0);
+        assert_eq!(data.cluster, 49);
+        assert_eq!(data.command, 12);
+        assert_eq!(data.variable, 5);
         Ok(())
     }
 }
