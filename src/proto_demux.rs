@@ -3,8 +3,8 @@ use crate::transport::tx_ctx::TxCtx;
 
 const MAX_PROTOCOLS: usize = 4;
 
-pub struct ProtoDemux<'a> {
-    proto_id_handlers: [Option<&'a mut dyn HandleProto>; MAX_PROTOCOLS],
+pub struct ProtoDemux {
+    proto_id_handlers: [Option<Box<dyn HandleProto>>; MAX_PROTOCOLS],
 }
 
 pub trait HandleProto {
@@ -12,12 +12,12 @@ pub trait HandleProto {
     fn get_proto_id(& self) -> usize;
 }
 
-impl<'a> ProtoDemux<'a> {
-    pub fn new() -> ProtoDemux<'a> {
+impl ProtoDemux {
+    pub fn new() -> ProtoDemux {
         ProtoDemux{proto_id_handlers: [None, None, None, None]}
     }
 
-    pub fn register(&mut self, proto_id_handle: &'a mut dyn HandleProto) -> Result<(), Error> {
+    pub fn register(&mut self, proto_id_handle: Box<dyn HandleProto>) -> Result<(), Error> {
         let proto_id = proto_id_handle.get_proto_id();
         self.proto_id_handlers[proto_id] = Some(proto_id_handle);
         Ok(())

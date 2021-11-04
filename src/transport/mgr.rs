@@ -33,14 +33,14 @@ impl RxCtx {
     }
 }
 
-pub struct Mgr<'a> {
+pub struct Mgr {
     transport: udp::UdpListener,
     sess_mgr:  session::SessionMgr,
-    proto_demux: proto_demux::ProtoDemux<'a>,
+    proto_demux: proto_demux::ProtoDemux,
 }
 
-impl<'a> Mgr<'a> {
-    pub fn new() -> Result<Mgr<'a>, Error> {
+impl Mgr {
+    pub fn new() -> Result<Mgr, Error> {
         let mut mgr = Mgr{
             transport: udp::UdpListener::new()?,
             sess_mgr: session::SessionMgr::new(),
@@ -57,7 +57,7 @@ impl<'a> Mgr<'a> {
     }
 
     // Allows registration of different protocols with the Transport/Protocol Demux
-    pub fn register_protocol(&mut self, proto_id_handle: &'a mut dyn proto_demux::HandleProto) -> Result<(), Error> {
+    pub fn register_protocol(&mut self, proto_id_handle: Box<dyn proto_demux::HandleProto>) -> Result<(), Error> {
         return self.proto_demux.register(proto_id_handle);
     }
 
