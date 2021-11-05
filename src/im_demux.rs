@@ -1,5 +1,6 @@
 use crate::error::*;
 use crate::proto_demux;
+use crate::proto_demux::ResponseRequired;
 use crate::tlv::*;
 use crate::utils::writebuf::WriteBuf;
 use crate::transport::tx_ctx::TxCtx;
@@ -8,8 +9,6 @@ use num;
 use num_derive::FromPrimitive;
 
 /* Handle messages related to the Interation Model
- *
- * I am going to try doing this without an InteractionModel object, just to check what kind of complexity I incur/not-incur
  */
 
 
@@ -62,7 +61,7 @@ impl InteractionModel {
 
 
     // For now, we just return without doing anything to this exchange. This needs change
-    fn invoke_req_handler(&mut self, _opcode: OpCode, buf: &[u8], tx_ctx: &mut TxCtx) -> Result<(), Error> {
+    fn invoke_req_handler(&mut self, _opcode: OpCode, buf: &[u8], tx_ctx: &mut TxCtx) -> Result<ResponseRequired, Error> {
         info!("In invoke req handler");
         tx_ctx.set_proto_opcode(OpCode::InvokeResponse as u8);
         let root = get_root_node_struct(buf).ok_or(Error::InvalidData)?;
@@ -73,19 +72,23 @@ impl InteractionModel {
             .into_iter().ok_or(Error::InvalidData)?;
         loop {
             // This is an array of CommandDataIB
-            let cmd_data_ib = cmd_list_iter.next().ok_or(Error::InvalidData)?;
+            let cmd_data_ib = match cmd_list_iter.next() {
+                Some(c) => c,
+                None => break,
+            };
 
             // CommandDataIB has CommandPath(0) + Variable(1)
             let cmd_path_ib = get_cmd_path_ib(&cmd_data_ib.find_element(0).ok_or(Error::InvalidData)?
                                            .confirm_list().ok_or(Error::InvalidData)?);
             let variable  = cmd_data_ib.find_element(1).ok_or(Error::InvalidData)?;
-            return self.handler.handle_invoke_cmd(&cmd_path_ib, variable, tx_ctx.get_write_buf());
+            self.handler.handle_invoke_cmd(&cmd_path_ib, variable, tx_ctx.get_write_buf())?;
         }
+        return Ok(ResponseRequired::Yes);
     }
 }
 
 impl proto_demux::HandleProto for InteractionModel {
-    fn handle_proto_id(&mut self, proto_opcode: u8, buf: &[u8], tx_ctx: &mut TxCtx) -> Result<(), Error> {
+    fn handle_proto_id(&mut self, proto_opcode: u8, buf: &[u8], tx_ctx: &mut TxCtx) -> Result<ResponseRequired, Error> {
         let proto_opcode: OpCode = num::FromPrimitive::from_u8(proto_opcode).
             ok_or(Error::Invalid)?;
         tx_ctx.set_proto_id(PROTO_ID_INTERACTION_MODEL as u16);

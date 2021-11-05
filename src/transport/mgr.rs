@@ -113,7 +113,10 @@ impl Mgr {
 
             match self.proto_demux.handle(rx_ctx.enc_hdr.proto_id.into(), rx_ctx.enc_hdr.proto_opcode,
                                           parse_buf.as_slice(), &mut tx_ctx) {
-                Ok(_) => (),
+                Ok(r) => match r {
+                    proto_demux::ResponseRequired::No => continue,
+                    _ => (),
+                },
                 Err(_) => continue,
             }
 
