@@ -17,7 +17,7 @@ const EXCHANGE_FLAG_ACK_MASK:          u8 = 0x02;
 const EXCHANGE_FLAG_INITIATOR_MASK:    u8 = 0x01;
 
 #[derive(Default)]
-pub struct EncHdr {
+pub struct ProtoHdr {
     pub exch_id: u16,
     pub exch_flags: u8,
     pub proto_id: u16,
@@ -26,7 +26,7 @@ pub struct EncHdr {
     pub ack_msg_ctr: Option<u32>,
 }
 
-impl EncHdr {
+impl ProtoHdr {
     pub fn is_vendor(&self) -> bool {
         (self.exch_flags & EXCHANGE_FLAG_VENDOR_MASK) != 0
     }
@@ -99,7 +99,7 @@ impl EncHdr {
     }
 }
 
-impl fmt::Display for EncHdr {
+impl fmt::Display for ProtoHdr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut flag_str: String = "".to_owned();
         if self.is_vendor() {
@@ -198,7 +198,7 @@ fn decrypt_in_place(recvd_ctr: u32,
     Ok(())
 }
 
-pub const fn max_enc_hdr_len() -> usize {
+pub const fn max_proto_hdr_len() -> usize {
     return
     // exchange flags
         1 +

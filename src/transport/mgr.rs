@@ -4,7 +4,7 @@ use log::{info, error};
 use crate::error::*;
 use crate::proto_demux;
 use crate::transport::plain_hdr;
-use crate::transport::enc_hdr;
+use crate::transport::proto_hdr;
 use crate::transport::exchange;
 use crate::transport::mrp;
 use crate::transport::session;
@@ -20,13 +20,13 @@ pub struct RxCtx {
     src: Option<std::net::SocketAddr>,
     _len: usize,
     plain_hdr: plain_hdr::PlainHdr,
-    enc_hdr: enc_hdr::EncHdr,
+    proto_hdr: proto_hdr::ProtoHdr,
 }
 
 impl RxCtx {
     pub fn new(len: usize, src: std::net::SocketAddr) -> RxCtx {
         RxCtx{plain_hdr: plain_hdr::PlainHdr::default(),
-              enc_hdr: enc_hdr::EncHdr::default(),
+              proto_hdr: proto_hdr::ProtoHdr::default(),
               _len: len,
               src: Some(src),
         }
@@ -87,22 +87,22 @@ impl Mgr {
             };
             
             // Read encrypted header
-            match rx_ctx.enc_hdr.decrypt_and_decode(&rx_ctx.plain_hdr, &mut parse_buf, &session.dec_key) {
+            match rx_ctx.proto_hdr.decrypt_and_decode(&rx_ctx.plain_hdr, &mut parse_buf, &session.dec_key) {
                 Ok(_) => (),
                 Err(_) => continue,
             };
 
             // Get the exchange
-            let exchange = match session.get_exchange(rx_ctx.enc_hdr.exch_id,
-                                                    exchange::get_complementary_role(rx_ctx.enc_hdr.is_initiator()),
+            let exchange = match session.get_exchange(rx_ctx.proto_hdr.exch_id,
+                                                    exchange::get_complementary_role(rx_ctx.proto_hdr.is_initiator()),
                                                     // We create a new exchange, only if the peer is the initiator
-                                                    rx_ctx.enc_hdr.is_initiator()) {
+                                                    rx_ctx.proto_hdr.is_initiator()) {
                 Some(e) => e,
                 None => continue,
             };
 
             // Message Reliability Protocol
-            mrp::on_msg_recv(exchange, &rx_ctx.plain_hdr, &rx_ctx.enc_hdr);
+            mrp::on_msg_recv(exchange, &rx_ctx.plain_hdr, &rx_ctx.proto_hdr);
 
             info!("Exchange is {:?}", exchange);
             // Proto Dispatch
@@ -111,7 +111,7 @@ impl Mgr {
                 Err(e) => { error!("Error while creating TxCtx: {:?}", e); continue; },
             };
 
-            match self.proto_demux.handle(rx_ctx.enc_hdr.proto_id.into(), rx_ctx.enc_hdr.proto_opcode,
+            match self.proto_demux.handle(rx_ctx.proto_hdr.proto_id.into(), rx_ctx.proto_hdr.proto_opcode,
                                           parse_buf.as_slice(), &mut tx_ctx) {
                 Ok(r) => match r {
                     proto_demux::ResponseRequired::No => continue,
@@ -121,7 +121,7 @@ impl Mgr {
             }
 
             // tx_ctx now contains the response payload, prepare the send packet
-            match tx_ctx.prepare_send(session, rx_ctx.enc_hdr.exch_id, exchange::ExchangeRole::Responder) {
+            match tx_ctx.prepare_send(session, rx_ctx.proto_hdr.exch_id, exchange::ExchangeRole::Responder) {
                 Ok(_) => (),
                 Err(_) => continue,
             }
