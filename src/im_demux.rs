@@ -15,7 +15,7 @@ use num_derive::FromPrimitive;
 /* Interaction Model ID as per the Matter Spec */
 const PROTO_ID_INTERACTION_MODEL: usize = 0x01;
 
-#[derive(FromPrimitive)]
+#[derive(FromPrimitive, Debug)]
 enum OpCode {
     Reserved          = 0,
     StatusResponse    = 1,
@@ -95,7 +95,7 @@ impl proto_demux::HandleProto for InteractionModel {
         match proto_opcode {
             OpCode::InvokeRequest => return self.invoke_req_handler(proto_opcode, buf, tx_ctx),
             _ => {
-                error!("Invalid Opcode");
+                error!("Opcode Not Handled: {:?}", proto_opcode);
                 return Err(Error::InvalidOpcode);
             }
         }

@@ -14,7 +14,7 @@ use num_derive::FromPrimitive;
 /* Interaction Model ID as per the Matter Spec */
 const PROTO_ID_SECURE_CHANNEL: usize = 0x00;
 
-#[derive(FromPrimitive)]
+#[derive(FromPrimitive, Debug)]
 enum OpCode {
     MsgCounterSyncReq     = 0x00,
     MsgCounterSyncResp    = 0x01,
@@ -55,7 +55,7 @@ impl proto_demux::HandleProto for SecureChannel {
         match proto_opcode {
             OpCode::MRPStandAloneAck => return self.mrpstandaloneack_handler(proto_opcode, buf, tx_ctx),
             _ => {
-                error!("Invalid Opcode");
+                error!("OpCode Not Handled: {:?}", proto_opcode);
                 return Err(Error::InvalidOpcode);
             }
         }
