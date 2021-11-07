@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(Debug)]
 pub enum Error {
     Crypto(ccm::aead::Error),
@@ -21,5 +23,12 @@ impl From<std::io::Error> for Error {
 impl From<ccm::aead::Error> for Error {
     fn from(e: ccm::aead::Error) -> Self {
         Self::Crypto(e)
+    }
+}
+
+
+impl<'a> fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
