@@ -1,6 +1,7 @@
 use std::process;
 use matter::core;
 use matter::data_model::*;
+use matter::error::*;
 
 fn main() {
     env_logger::init();
@@ -16,13 +17,15 @@ fn main() {
 
 }
 
-fn data_model_init() -> Result <Box<Accessory>, &'static str> {
-    let val: AttrValue = AttrValue::Int8(12);
-    let mut a = Box::new(Accessory::default());
-    a.add_endpoint(3)?
-        .add_cluster(Cluster::new(12)?)?
-        .add_attribute(Attribute::new(1, val)?)?;
+fn data_model_init() -> Result <Box<Node>, Error> {
+    let mut node = Node::new()?;
+    node.add_endpoint(3)?;
 
-    Ok(a)
+    let mut test_cluster = Cluster::new(12)?;
+    test_cluster.add_attribute(Attribute::new(1, AttrValue::Int8(2))?)?;
+
+    node.add_cluster(test_cluster)?;
+
+    Ok(node)
 }
 

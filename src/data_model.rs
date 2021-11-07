@@ -1,4 +1,9 @@
-use std::borrow::BorrowMut;
+use crate::error::*;
+
+/* This file needs some major revamp. 
+ * - instead of allocating all over the heap, we should use some kind of slab/block allocator
+ * - instead of arrays, can use linked-lists to conserve space and avoid the internal fragmentation
+ */
 
 pub const ENDPTS_PER_ACC:     usize = 1;
 pub const CLUSTERS_PER_ENDPT: usize = 4;
@@ -24,7 +29,7 @@ impl Default for Attribute {
 }
 
 impl Attribute {
-    pub fn new (id: u32, val: AttrValue) -> Result<Box<Attribute>, &'static str> {
+    pub fn new (id: u32, val: AttrValue) -> Result<Box<Attribute>, Error> {
         let mut a = Box::new(Attribute::default());
         a.id = id;
         a.value = val;
@@ -39,20 +44,20 @@ pub struct Cluster {
 }
 
 impl Cluster {
-    pub fn new (id: u32) -> Result<Box<Cluster>, &'static str> {
+    pub fn new (id: u32) -> Result<Box<Cluster>, Error> {
         let mut a = Box::new(Cluster::default());
         a.id = id;
         Ok(a)
     }
 
-    pub fn add_attribute(&mut self, attr: Box<Attribute>) -> Result<&mut Attribute, &'static str> {
+    pub fn add_attribute(&mut self, attr: Box<Attribute>) -> Result<(), Error> {
         for c in self.attributes.iter_mut() {
             if let None = c {
                 *c = Some(attr);
-                return Ok(c.as_mut().unwrap().borrow_mut());
+                return Ok(());
             }
         }
-        return Err("No space available");
+        return Err(Error::NoSpace);
     }
 }
 
@@ -63,41 +68,46 @@ pub struct Endpoint {
 }
 
 impl Endpoint {
-    pub fn new (id: u32) -> Result<Box<Endpoint>, &'static str> {
+    pub fn new (id: u32) -> Result<Box<Endpoint>, Error> {
         let mut a = Box::new(Endpoint::default());
         a.id = id;
         Ok(a)
     }
 
-    pub fn add_cluster(&mut self, cluster: Box<Cluster>) -> Result<&mut Cluster, &'static str> {
+    pub fn add_cluster(&mut self, cluster: Box<Cluster>) -> Result<(), Error> {
         for c in self.clusters.iter_mut() {
             if let None = c {
                 *c = Some(cluster);
-                return Ok(c.as_mut().unwrap().borrow_mut());
+                return Ok(());
             }
         }
-        return Err("No space available");
+        return Err(Error::NoSpace);
     }
 }
 
 #[derive(Debug, Default)]
-pub struct Accessory {
+pub struct Node {
     endpoints: [Option<Box<Endpoint>>; ENDPTS_PER_ACC],
 }
 
-impl Accessory {
-    pub fn add_endpoint(&mut self, id: u32) -> Result<&mut Endpoint, &'static str> {
+impl Node {
+    pub fn new () -> Result<Box<Node>, Error> {
+        let node = Box::new(Node::default());
+        Ok(node)
+    }
+
+    pub fn add_endpoint(&mut self, id: u32) -> Result<(), Error> {
         for e in self.endpoints.iter_mut() {
             if let None = e {
                 let a = Endpoint::new(id)?;
                 *e = Some(a);
-                return Ok(e.as_mut().unwrap().borrow_mut());
+                return Ok(());
             }
         }
-        return Err("Hit Endpoint Limit");
+        return Err(Error::NoSpace);
     }
 
-    pub fn add_cluster(&mut self, cluster: Box<Cluster>) -> Result<&mut Cluster, &'static str> {
+    pub fn add_cluster(&mut self, cluster: Box<Cluster>) -> Result<(), Error> {
         if let None = self.endpoints[0] {
             self.add_endpoint(1)?;
         }
