@@ -1,6 +1,6 @@
 use std::process;
 use matter::core;
-use matter::data_model::*;
+use matter::data_model::objects::*;
 use matter::error::*;
 
 fn main() {

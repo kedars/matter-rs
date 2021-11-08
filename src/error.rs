@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, sync::PoisonError};
 
 #[derive(Debug)]
 pub enum Error {
@@ -10,6 +10,7 @@ pub enum Error {
     InvalidAAD,
     InvalidData,
     InvalidOpcode,
+    RwLock,
     TruncatedPacket,
 }
 
@@ -26,7 +27,11 @@ impl From<ccm::aead::Error> for Error {
     }
 }
 
-
+impl<T> From<PoisonError<T>> for Error {
+    fn from(_e: PoisonError<T>) -> Self {
+        Self::RwLock
+    }
+}
 impl<'a> fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self)
