@@ -1,13 +1,15 @@
 use crate::error::*;
+use std::fmt;
 
 /* This file needs some major revamp. 
  * - instead of allocating all over the heap, we should use some kind of slab/block allocator
  * - instead of arrays, can use linked-lists to conserve space and avoid the internal fragmentation
  */
 
-pub const ENDPTS_PER_ACC:     usize = 1;
+pub const ENDPTS_PER_ACC:     usize = 3;
 pub const CLUSTERS_PER_ENDPT: usize = 4;
 pub const ATTRS_PER_CLUSTER:  usize = 4;
+pub const CMDS_PER_CLUSTER:   usize = 4;
 
 #[derive(Debug)]
 pub enum AttrValue {
@@ -38,10 +40,39 @@ impl Attribute {
     }
 }
 
-#[derive(Debug, Default)]
+
+impl std::fmt::Display for Attribute {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {:?}", self.id, self.value)
+    }
+}
+
+pub type CommandCb = fn(&mut Cluster, id: u16) -> Result<(), Error>;
+
+pub struct Command {
+    id: u16,
+    _cb: CommandCb,
+}
+
+impl std::fmt::Display for Command {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "id:{}", self.id)
+    }
+
+}
+
+impl Command {
+    pub fn new (id: u16, cb: CommandCb) -> Result<Box<Command>, Error> {
+        Ok(Box::new(Command{id, _cb: cb}))
+    }
+}
+
+
+#[derive(Default)]
 pub struct Cluster {
     id: u32,
     attributes: [Option<Box<Attribute>>; ATTRS_PER_CLUSTER],
+    commands: [Option<Box<Command>>; CMDS_PER_CLUSTER],
 }
 
 impl Cluster {
@@ -60,19 +91,51 @@ impl Cluster {
         }
         return Err(Error::NoSpace);
     }
+
+    pub fn add_command(&mut self, command: Box<Command>) -> Result<(), Error> {
+        for c in self.commands.iter_mut() {
+            if let None = c {
+                *c = Some(command);
+                return Ok(());
+            }
+        }
+        return Err(Error::NoSpace);
+    }
 }
 
-#[derive(Debug, Default)]
+impl std::fmt::Display for Cluster {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "id:{}, ", self.id)?;
+        write!(f, "attrs[")?;
+        let mut comma = "";
+        for element in self.attributes.iter() {
+            if let Some(e) = element {
+                write!(f, "{} {}", comma, e)?;
+            }
+            comma = ",";
+        }
+        write!(f, " ], ")?;
+        write!(f, "cmds[")?;
+        let mut comma = "";
+        for element in self.commands.iter() {
+            if let Some(e) = element {
+                write!(f, "{} {}", comma, e)?;
+            }
+            comma = ",";
+        }
+        write!(f, " ]")
+    }
+
+}
+
+#[derive(Default)]
 pub struct Endpoint {
-    id: u32,
     clusters: [Option<Box<Cluster>>; CLUSTERS_PER_ENDPT],
 }
 
 impl Endpoint {
-    pub fn new (id: u32) -> Result<Box<Endpoint>, Error> {
-        let mut a = Box::new(Endpoint::default());
-        a.id = id;
-        Ok(a)
+    pub fn new () -> Result<Box<Endpoint>, Error> {
+        Ok(Box::new(Endpoint::default()))
     }
 
     pub fn add_cluster(&mut self, cluster: Box<Cluster>) -> Result<(), Error> {
@@ -86,9 +149,38 @@ impl Endpoint {
     }
 }
 
-#[derive(Debug, Default)]
+
+impl std::fmt::Display for Endpoint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "clusters:[")?;
+        let mut comma = "";
+        for element in self.clusters.iter() {
+            if let Some(e) = element {
+                write!(f, "{} {{ {} }}", comma, e)?;
+                comma = ", ";
+            }
+        }
+        write!(f, "]")
+    }
+
+}
+
+#[derive(Default)]
 pub struct Node {
     endpoints: [Option<Box<Endpoint>>; ENDPTS_PER_ACC],
+}
+
+impl std::fmt::Display for Node {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "node:\n")?;
+        for (i, element) in self.endpoints.iter().enumerate() {
+            if let Some(e) = element {
+                write!(f, "endpoint {}: {}\n",i, e)?;
+            }
+        }
+        write!(f, "")
+    }
+
 }
 
 impl Node {
@@ -97,21 +189,19 @@ impl Node {
         Ok(node)
     }
 
-    pub fn add_endpoint(&mut self, id: u32) -> Result<(), Error> {
-        for e in self.endpoints.iter_mut() {
-            if let None = e {
-                let a = Endpoint::new(id)?;
-                *e = Some(a);
-                return Ok(());
-            }
-        }
-        return Err(Error::NoSpace);
+    pub fn add_endpoint(&mut self) -> Result<u32, Error> {
+        let index = self.endpoints.iter()
+                                        .position(|x|{x.is_none()})
+                                        .ok_or(Error::NoSpace)?;
+        self.endpoints[index] = Some(Endpoint::new()?);
+        Ok(index as u32)
     }
 
-    pub fn add_cluster(&mut self, cluster: Box<Cluster>) -> Result<(), Error> {
-        if let None = self.endpoints[0] {
-            self.add_endpoint(1)?;
-        }
-        self.endpoints[0].as_mut().unwrap().add_cluster(cluster)
+    pub fn add_cluster(&mut self, endpoint_id: u32, cluster: Box<Cluster>) -> Result<(), Error> {
+        let endpoint_id = endpoint_id as usize;
+
+        self.endpoints[endpoint_id].as_mut()
+                                    .ok_or(Error::NoEndpoint)?
+                                    .add_cluster(cluster)
     }
 }

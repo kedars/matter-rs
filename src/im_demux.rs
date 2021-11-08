@@ -7,6 +7,7 @@ use crate::transport::tx_ctx::TxCtx;
 use log::{error, info};
 use num;
 use num_derive::FromPrimitive;
+use std::sync::Arc;
 
 /* Handle messages related to the Interation Model
  */
@@ -31,11 +32,11 @@ enum OpCode {
 }
 
 pub trait HandleInteraction {
-    fn handle_invoke_cmd(&mut self, cmd_path_ib: &CmdPathIb, variable: TLVElement, resp_buf: &mut WriteBuf) -> Result<(), Error>;
+    fn handle_invoke_cmd(&self, cmd_path_ib: &CmdPathIb, variable: TLVElement, resp_buf: &mut WriteBuf) -> Result<(), Error>;
 }
 
 pub struct InteractionModel {
-    handler: Box<dyn HandleInteraction>,
+    handler: Arc<dyn HandleInteraction>,
 }
 
 #[derive(Debug)]
@@ -55,7 +56,7 @@ fn get_cmd_path_ib(cmd_path: &TLVElement) -> CmdPathIb {
 }
 
 impl InteractionModel {
-    pub fn new(handler: Box<dyn HandleInteraction>) -> InteractionModel {
+    pub fn new(handler: Arc<dyn HandleInteraction>) -> InteractionModel {
         InteractionModel{handler}
     }
 
@@ -114,25 +115,25 @@ mod tests {
     use std::sync::Arc;
     use std::sync::Mutex;
 
-    struct TestData {
+    struct Node {
         pub endpoint: u8,
         pub cluster: u8,
         pub command: u8,
         pub variable: u8,
     }
-    struct TestDataModel {
-        test_data: Arc<Mutex<TestData>>,
+
+    struct DataModel{
+        node: Mutex<Node>,
     }
 
-    impl TestDataModel {
-        fn new(test_data: Arc<Mutex<TestData>>) -> TestDataModel {
-            TestDataModel{test_data}
+    impl DataModel {
+        pub fn new(node: Node) -> Self {
+            DataModel{ node: Mutex::new(node)}
         }
     }
-
-    impl HandleInteraction for TestDataModel {
-        fn handle_invoke_cmd(&mut self, cmd_path_ib: &CmdPathIb, variable: TLVElement, _resp_buf: &mut WriteBuf) -> Result<(), Error> {
-            let mut data = self.test_data.lock().unwrap();
+    impl HandleInteraction for DataModel {
+        fn handle_invoke_cmd(&self, cmd_path_ib: &CmdPathIb, variable: TLVElement, _resp_buf: &mut WriteBuf) -> Result<(), Error> {
+            let mut data = self.node.lock().unwrap();
             data.endpoint = cmd_path_ib.endpoint.unwrap();
             data.cluster = cmd_path_ib.cluster.unwrap();
             data.command = cmd_path_ib.command.unwrap();
@@ -150,14 +151,13 @@ mod tests {
                   0x18];
 
 
-        let test_data = Arc::new(Mutex::new(TestData{endpoint: 0, cluster: 0, command: 0, variable: 0}));
-        let data_model = Box::new(TestDataModel::new(test_data.clone()));
-        let mut interaction_model = InteractionModel::new(data_model);
+        let data_model = Arc::new(DataModel::new(Node{endpoint: 0, cluster: 0, command: 0, variable: 0}));
+        let mut interaction_model = InteractionModel::new(data_model.clone());
         let mut buf: [u8; 20] = [0; 20];
         let mut tx_ctx = TxCtx::new(&mut buf)?;
         let _result = interaction_model.handle_proto_id(0x08, &b, &mut tx_ctx);
 
-        let data = test_data.lock().unwrap();
+        let data = data_model.node.lock().unwrap();
         assert_eq!(data.endpoint, 0);
         assert_eq!(data.cluster, 49);
         assert_eq!(data.command, 12);

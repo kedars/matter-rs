@@ -6,15 +6,20 @@ use super::cluster_on_off::*;
 
 type WriteNode<'a> = RwLockWriteGuard<'a, Box<Node>>;
 
-pub fn device_type_add_root_node(node: &mut WriteNode) -> Result<(), Error> {
+pub fn device_type_add_root_node(node: &mut WriteNode) -> Result<u32, Error> {
     // Add the root endpoint
-    node.add_endpoint(0)?;
+    let endpoint = node.add_endpoint()?;
+    if endpoint != 0 {
+        // Somehow endpoint 0 was already added, this shouldn't be the case
+        return Err(Error::Invalid);
+    };
     // Add the mandatory clusters
-    node.add_cluster(cluster_basic_information_new()?)?;
-    Ok(())
+    node.add_cluster(0, cluster_basic_information_new()?)?;
+    Ok(endpoint)
 }
 
-pub fn device_type_add_on_off_light(endpoint_id: u32, node: &mut WriteNode) -> Result<(), Error> {
-    node.add_cluster(cluster_on_off_new()?)?;
-    Ok(())
+pub fn device_type_add_on_off_light(node: &mut WriteNode) -> Result<u32, Error> {
+    let endpoint = node.add_endpoint()?;
+    node.add_cluster(endpoint, cluster_on_off_new()?)?;
+    Ok(endpoint)
 }

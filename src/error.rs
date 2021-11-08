@@ -3,8 +3,9 @@ use std::{fmt, sync::PoisonError};
 #[derive(Debug)]
 pub enum Error {
     Crypto(ccm::aead::Error),
-    NoSpace,
+    NoEndpoint,
     NoHandler,
+    NoSpace,
     StdIoError,
     Invalid,
     InvalidAAD,
