@@ -26,9 +26,8 @@ impl DataModel {
 }
 
 impl HandleInteraction for DataModel {
-    fn handle_invoke_cmd(&self, cmd_path_ib: &CmdPathIb, variable: TLVElement, resp_buf: &mut WriteBuf) -> Result<(), Error> {
-        info!("In Data Model's Invoke Commmand Handler");
-        println!("Found cmd_path_ib: {:?} and variable: {}", cmd_path_ib, variable);
+    fn handle_invoke_cmd(&self, cmd_path_ib: &CmdPathIb, _variable: TLVElement, resp_buf: &mut WriteBuf) -> Result<(), Error> {
+        info!("Invoke Commmand Handler executing: {:?}", cmd_path_ib);
         {
             let mut node = self.node.write()?;
             // For now, let's not support wildcard

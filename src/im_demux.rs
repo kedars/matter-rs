@@ -63,21 +63,15 @@ impl InteractionModel {
 
     // For now, we just return without doing anything to this exchange. This needs change
     fn invoke_req_handler(&mut self, _opcode: OpCode, buf: &[u8], tx_ctx: &mut TxCtx) -> Result<ResponseRequired, Error> {
-        info!("In invoke req handler");
         tx_ctx.set_proto_opcode(OpCode::InvokeResponse as u8);
-        let root = get_root_node_struct(buf).ok_or(Error::InvalidData)?;
 
+        let root = get_root_node_struct(buf).ok_or(Error::InvalidData)?;
         // Spec says tag should be 2, but CHIP Tool sends the tag as 0
         let mut cmd_list_iter = root.find_element(0).ok_or(Error::InvalidData)?
-            .confirm_array().ok_or(Error::InvalidData)?
-            .into_iter().ok_or(Error::InvalidData)?;
-        loop {
-            // This is an array of CommandDataIB
-            let cmd_data_ib = match cmd_list_iter.next() {
-                Some(c) => c,
-                None => break,
-            };
+                                                       .confirm_array().ok_or(Error::InvalidData)?
+                                                       .into_iter().ok_or(Error::InvalidData)?;
 
+        while let Some(cmd_data_ib)  =  cmd_list_iter.next() {
             // CommandDataIB has CommandPath(0) + Variable(1)
             let cmd_path_ib = get_cmd_path_ib(&cmd_data_ib.find_element(0).ok_or(Error::InvalidData)?
                                            .confirm_list().ok_or(Error::InvalidData)?);
