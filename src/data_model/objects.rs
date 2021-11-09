@@ -51,7 +51,7 @@ pub type CommandCb = fn(&mut Cluster, id: u16) -> Result<(), Error>;
 
 pub struct Command {
     id: u16,
-    _cb: CommandCb,
+    cb: CommandCb,
 }
 
 impl std::fmt::Display for Command {
@@ -63,7 +63,7 @@ impl std::fmt::Display for Command {
 
 impl Command {
     pub fn new (id: u16, cb: CommandCb) -> Result<Box<Command>, Error> {
-        Ok(Box::new(Command{id, _cb: cb}))
+        Ok(Box::new(Command{id, cb}))
     }
 }
 
@@ -100,6 +100,17 @@ impl Cluster {
             }
         }
         return Err(Error::NoSpace);
+    }
+
+
+    pub fn handle_command(&mut self, cmd_id: u16) -> Result<(), Error> {
+        let cmd = self.commands.iter()
+                                            .find(|x| {
+                                                x.as_ref().map_or(false, |c| c.id == cmd_id)
+                                            }).ok_or(Error::Invalid)?
+                                            .as_ref()
+                                            .ok_or(Error::Invalid)?;
+        (cmd.cb)(self, cmd_id)
     }
 }
 
@@ -146,6 +157,15 @@ impl Endpoint {
             }
         }
         return Err(Error::NoSpace);
+    }
+
+    pub fn get_cluster(&mut self, cluster_id: u32) -> Result<&mut Box<Cluster>, Error> {
+        let index = self.clusters.iter()
+                                          .position(|x|{
+                                                 x.as_ref().map_or(false, |c| c.id == cluster_id)
+                                               })
+                                          .ok_or(Error::Invalid)?;
+        Ok(self.clusters[index].as_mut().unwrap())
     }
 }
 
@@ -195,6 +215,11 @@ impl Node {
                                         .ok_or(Error::NoSpace)?;
         self.endpoints[index] = Some(Endpoint::new()?);
         Ok(index as u32)
+    }
+
+    pub fn get_endpoint(&mut self, endpoint_id: u32) -> Result<&mut Box<Endpoint>, Error> {
+        let endpoint = self.endpoints[endpoint_id as usize].as_mut().ok_or(Error::Invalid)?;
+        Ok(endpoint)
     }
 
     pub fn add_cluster(&mut self, endpoint_id: u32, cluster: Box<Cluster>) -> Result<(), Error> {

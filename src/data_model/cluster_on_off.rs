@@ -1,5 +1,6 @@
 use crate::error::*;
 use super::objects::*;
+use log::info;
 
 const CLUSTER_ONOFF_ID: u32 = 0x0006;
 
@@ -14,7 +15,13 @@ fn attr_on_off_new() -> Result<Box<Attribute>, Error> {
     Attribute::new(ATTR_ON_OFF_ID, AttrValue::Bool(false))
 }
 
-fn handle_command_on_off(_cluster: &mut Cluster, _cmd_id: u16) -> Result<(), Error> {
+fn handle_command_on_off(_cluster: &mut Cluster, cmd_id: u16) -> Result<(), Error> {
+    match cmd_id {
+        CMD_OFF_ID => info!("Handling off"),
+        CMD_ON_ID => info!("Handling on"),
+        CMD_TOGGLE_ID => info!("Handling toggle"),
+        _ => info!("Command not supported"),
+    }
     Ok(())
 }
 

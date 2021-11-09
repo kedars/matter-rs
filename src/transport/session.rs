@@ -1,6 +1,9 @@
 use heapless::Vec;
 use log::info;
-use crate::transport::exchange::*;
+use crate::{
+    error::*,
+    transport::exchange::*
+};
 
 const MATTER_AES128_KEY_SIZE: usize = 16;
 
@@ -98,11 +101,11 @@ impl SessionMgr {
                peer_sess_id: u16,
                dec_key: [u8; MATTER_AES128_KEY_SIZE],
                enc_key: [u8; MATTER_AES128_KEY_SIZE],
-               peer_addr: std::net::IpAddr) -> Result<(), &'static str> {
+               peer_addr: std::net::IpAddr) -> Result<(), Error> {
         let session = Session::new(sess_id, peer_sess_id, dec_key, enc_key, peer_addr);
         match self.sessions.push(session) {
             Ok(_) => return Ok(()),
-            Err(_) => return Err("All sessions full"),
+            Err(_) => return Err(Error::NoSpace),
         }
     }
 

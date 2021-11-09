@@ -42,14 +42,14 @@ pub struct InteractionModel {
 #[derive(Debug)]
 pub struct CmdPathIb {
     /* As per the spec these should be U16, U32, and U16 respectively */
-    endpoint: Option<u8>,
-    cluster: Option<u8>,
-    command: Option<u8>,
+    pub endpoint: Option<u8>,
+    pub cluster: Option<u8>,
+    pub command: Option<u8>,
 }
 
 fn get_cmd_path_ib(cmd_path: &TLVElement) -> CmdPathIb {
     CmdPathIb {
-        endpoint: cmd_path.find_element(0).map_or(Some(2), |x| x.get_u8()),
+        endpoint: cmd_path.find_element(0).map_or(None, |x| x.get_u8()),
         cluster: cmd_path.find_element(2).map_or(None, |x| x.get_u8()),
         command: cmd_path.find_element(3).map_or(None, |x| x.get_u8()),
     }
