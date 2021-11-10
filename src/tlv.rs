@@ -2,6 +2,7 @@ use std::fmt;
 use byteorder::{ByteOrder,LittleEndian};
 use num;
 use num_derive::FromPrimitive;
+use log::{error, info};
 
 pub struct TLVList<'a> {
     buf: &'a [u8],
@@ -74,7 +75,7 @@ pub enum ElementType<'a> {
     Utf16l,
     Utf32l,
     Utf64l,
-    Str8l(&'a str),
+    Str8l(&'a [u8]),
     Str16l,
     Str32l,
     Str64l,
@@ -184,6 +185,21 @@ impl<'a> TLVElement<'a> {
         }
     }
     
+    pub fn get_slice(&self) -> Option<&[u8]> {
+        match self.element_type {
+            ElementType::Str8l(s) => Some(s),
+            _ => None,
+        }
+    }
+ 
+    pub fn get_bool(&self) -> Option<bool> {
+        match self.element_type {
+            ElementType::False => Some(false),
+            ElementType::True => Some(true),
+            _ => None,
+        }
+    }
+
     pub fn confirm_struct(&self) -> Option<TLVElement<'a>> {
         match self.element_type {
             ElementType::Struct(_) => Some(*self),
@@ -229,7 +245,13 @@ impl<'a> fmt::Display for TLVElement<'a> {
             ElementType::EndCnt => write!(f, ">"),
             ElementType::True =>   write!(f, "True"),
             ElementType::False =>  write!(f, "False"),
-            ElementType::Str8l(a) =>  write!(f, "{}", a),
+            ElementType::Str8l(a) =>  {
+                if let Ok(s) = std::str::from_utf8(a) {
+                    write!(f, "len[{}]\"{}\"", s.len(), s)
+                } else {
+                    write!(f, "len[{}]{:x?}", a.len(), a)
+                }
+            },
             _ => write!(f, "{:?}", self.element_type),
         }
     }
@@ -293,16 +315,14 @@ impl<'a> TLVListIterator<'a> {
                 if size > self.left {
                     return None;
                 }
-                Str8l(std::str::from_utf8(
-                    &self.buf[(self.current + 1)..(self.current + string_size)])
-                    .unwrap_or_default())
+                Str8l(&self.buf[(self.current + 1)..(self.current + 1 + string_size)])
             },
             20 => Null,
             21 => Struct(Pointer{buf: &self.buf[..], current: self.current, left: self.left}),
             22 => Array(Pointer{buf: &self.buf[..], current: self.current, left: self.left}),
             23 => List(Pointer{buf: &self.buf[..], current: self.current, left: self.left}),
             24 => EndCnt,
-            _ => {println!("Found invalid element: {}", element_type); return None;},
+            _ => {error!("Found invalid element: {}", element_type); return None;},
         };
 
         self.advance(size);
@@ -419,6 +439,20 @@ pub fn get_root_node_list<'a>(b: &'a [u8]) -> Option<TLVElement<'a>> {
     return TLVList::new(&b, b.len()).into_iter().next()?.confirm_list();
 }
 
+pub fn print_tlv_list(b: &[u8]) {
+    let tlvlist = TLVList::new(&b, b.len());
+
+    info!("TLV list:");
+    let mut iter = tlvlist.into_iter();
+    loop {
+        match iter.next() {
+            Some(a) =>  info!("{}", a),
+            None => break,
+        }
+    }
+    info!("---------");
+}
+
 #[cfg(test)]
 mod tests {
     use crate::tlv::*;
@@ -499,7 +533,7 @@ mod tests {
         tlv_iter.next();
         assert_eq!(tlv_iter.next(), Some(TLVElement {
             tag_type: TagType::Context,
-            element_type: ElementType::Str8l("sma"),
+            element_type: ElementType::Str8l(&[0x73, 0x6d, 0x61, 0x72]),
             tag: 5 }));
     }
 
@@ -521,7 +555,7 @@ mod tests {
         let mut root_iter = get_root_node_struct(&b).unwrap().into_iter().unwrap();
         assert_eq!(root_iter.next(), Some(TLVElement { tag_type: TagType::Context, element_type: ElementType::U8(2), tag: 0 }));
         assert_eq!(root_iter.next(), Some(TLVElement { tag_type: TagType::Context, element_type: ElementType::U32(135246), tag: 2 }));
-        assert_eq!(root_iter.next(), Some(TLVElement { tag_type: TagType::Context, element_type: ElementType::Str8l("sma"), tag: 3 }));
+        assert_eq!(root_iter.next(), Some(TLVElement { tag_type: TagType::Context, element_type: ElementType::Str8l(&[0x73, 0x6d, 0x61, 0x72]), tag: 3 }));
     }
 
     #[test]
@@ -532,7 +566,7 @@ mod tests {
             
         assert_eq!(root.find_element(0), Some(TLVElement { tag_type: TagType::Context, element_type: ElementType::U8(2), tag: 0 }));
         assert_eq!(root.find_element(2), Some(TLVElement { tag_type: TagType::Context, element_type: ElementType::U32(135246), tag: 2 }));
-        assert_eq!(root.find_element(3), Some(TLVElement { tag_type: TagType::Context, element_type: ElementType::Str8l("sma"), tag: 3 }));
+        assert_eq!(root.find_element(3), Some(TLVElement { tag_type: TagType::Context, element_type: ElementType::Str8l(&[0x73, 0x6d, 0x61, 0x72]), tag: 3 }));
     }
 
     #[test]
@@ -542,7 +576,7 @@ mod tests {
         let mut root_iter = get_root_node_list(&b).unwrap().into_iter().unwrap();
         assert_eq!(root_iter.next(), Some(TLVElement { tag_type: TagType::Context, element_type: ElementType::U8(2), tag: 0 }));
         assert_eq!(root_iter.next(), Some(TLVElement { tag_type: TagType::Context, element_type: ElementType::U32(135246), tag: 2 }));
-        assert_eq!(root_iter.next(), Some(TLVElement { tag_type: TagType::Context, element_type: ElementType::Str8l("sma"), tag: 3 }));
+        assert_eq!(root_iter.next(), Some(TLVElement { tag_type: TagType::Context, element_type: ElementType::Str8l(&[0x73, 0x6d, 0x61, 0x72]), tag: 3 }));
     }
 
     #[test]
