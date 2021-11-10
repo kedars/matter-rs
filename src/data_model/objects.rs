@@ -84,22 +84,22 @@ impl Cluster {
 
     pub fn add_attribute(&mut self, attr: Box<Attribute>) -> Result<(), Error> {
         for c in self.attributes.iter_mut() {
-            if let None = c {
+            if c.is_none() {
                 *c = Some(attr);
                 return Ok(());
             }
         }
-        return Err(Error::NoSpace);
+        Err(Error::NoSpace)
     }
 
     pub fn add_command(&mut self, command: Box<Command>) -> Result<(), Error> {
         for c in self.commands.iter_mut() {
-            if let None = c {
+            if c.is_none() {
                 *c = Some(command);
                 return Ok(());
             }
         }
-        return Err(Error::NoSpace);
+        Err(Error::NoSpace)
     }
 
     pub fn handle_command(&mut self, cmd_id: u16) -> Result<(), Error> {
@@ -150,12 +150,12 @@ impl Endpoint {
 
     pub fn add_cluster(&mut self, cluster: Box<Cluster>) -> Result<(), Error> {
         for c in self.clusters.iter_mut() {
-            if let None = c {
+            if c.is_none() {
                 *c = Some(cluster);
                 return Ok(());
             }
         }
-        return Err(Error::NoSpace);
+        Err(Error::NoSpace)
     }
 
     pub fn get_cluster(&mut self, cluster_id: u32) -> Result<&mut Box<Cluster>, Error> {

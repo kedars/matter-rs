@@ -61,11 +61,11 @@ impl Session {
                         // Return the exchange that was just added
                         return self.exchanges.iter_mut().find(|x| x.is_match(id, role));
                     }
-                    Err(_) => return None,
+                    Err(_) => None,
                 }
             } else {
                 // Got a message that has no Exchange object
-                return None;
+                None
             }
         }
     }
@@ -142,8 +142,8 @@ impl SessionMgr {
     ) -> Result<(), Error> {
         let session = Session::new(sess_id, peer_sess_id, dec_key, enc_key, peer_addr, mode);
         match self.sessions.push(session) {
-            Ok(_) => return Ok(()),
-            Err(_) => return Err(Error::NoSpace),
+            Ok(_) => Ok(()),
+            Err(_) => Err(Error::NoSpace),
         }
     }
 

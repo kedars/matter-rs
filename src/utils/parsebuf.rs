@@ -32,7 +32,7 @@ impl<'a> ParseBuf<'a> {
             self.left -= size;
             return Ok(tail);
         }
-        return Err(Error::TruncatedPacket);
+        Err(Error::TruncatedPacket)
     }
 
     fn advance(&mut self, len: usize) {

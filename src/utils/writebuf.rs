@@ -43,7 +43,7 @@ impl<'a> WriteBuf<'a> {
             self.start -= size;
             return Ok(());
         }
-        return Err(Error::NoSpace);
+        Err(Error::NoSpace)
     }
 
     pub fn prepend(&mut self, src: &[u8]) -> Result<(), Error> {

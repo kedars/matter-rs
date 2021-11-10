@@ -153,10 +153,11 @@ impl Mgr {
                 parse_buf.as_slice(),
                 &mut tx_ctx,
             ) {
-                Ok(r) => match r {
-                    proto_demux::ResponseRequired::No => continue,
-                    _ => (),
-                },
+                Ok(r) => {
+                    if let proto_demux::ResponseRequired::No = r {
+                        continue;
+                    }
+                }
                 Err(_) => continue,
             }
 

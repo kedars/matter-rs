@@ -21,6 +21,12 @@ pub trait HandleProto {
     fn get_proto_id(&self) -> usize;
 }
 
+impl Default for ProtoDemux {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProtoDemux {
     pub fn new() -> ProtoDemux {
         ProtoDemux {

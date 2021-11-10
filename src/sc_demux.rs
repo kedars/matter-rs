@@ -34,6 +34,12 @@ pub struct SecureChannel {
     _dummy: u32,
 }
 
+impl Default for SecureChannel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SecureChannel {
     pub fn new() -> SecureChannel {
         SecureChannel { _dummy: 10 }
@@ -97,15 +103,11 @@ impl proto_demux::HandleProto for SecureChannel {
             num::FromPrimitive::from_u8(proto_opcode).ok_or(Error::Invalid)?;
         tx_ctx.set_proto_id(PROTO_ID_SECURE_CHANNEL as u16);
         match proto_opcode {
-            OpCode::MRPStandAloneAck => {
-                return self.mrpstandaloneack_handler(proto_opcode, buf, tx_ctx)
-            }
-            OpCode::PBKDFParamRequest => {
-                return self.pbkdfparamreq_handler(proto_opcode, buf, tx_ctx)
-            }
+            OpCode::MRPStandAloneAck => self.mrpstandaloneack_handler(proto_opcode, buf, tx_ctx),
+            OpCode::PBKDFParamRequest => self.pbkdfparamreq_handler(proto_opcode, buf, tx_ctx),
             _ => {
                 error!("OpCode Not Handled: {:?}", proto_opcode);
-                return Err(Error::InvalidOpcode);
+                Err(Error::InvalidOpcode)
             }
         }
     }

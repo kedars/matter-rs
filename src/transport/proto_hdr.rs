@@ -166,7 +166,7 @@ pub fn encrypt_in_place(
 
     type AesCcm = Ccm<Aes128, U16, U12>;
     let cipher = AesCcm::new(GenericArray::from_slice(key));
-    let tag = cipher.encrypt_in_place_detached(nonce, &plain_hdr, cipher_text)?;
+    let tag = cipher.encrypt_in_place_detached(nonce, plain_hdr, cipher_text)?;
     //println!("Tag: {:x?}", tag);
     //println!("Cipher Text: {:x?}", cipher_text);
     writebuf.append(tag.as_slice())?;
@@ -208,15 +208,14 @@ fn decrypt_in_place(recvd_ctr: u32, parsebuf: &mut ParseBuf, key: &[u8]) -> Resu
     // Matter Spec says Nonce size is 13, but the code has 12
     type AesCcm = Ccm<Aes128, U16, U12>;
     let cipher = AesCcm::new(GenericArray::from_slice(key));
-    cipher.decrypt_in_place_detached(nonce, &aad, cipher_text, &tag)?;
+    cipher.decrypt_in_place_detached(nonce, &aad, cipher_text, tag)?;
 
     Ok(())
 }
 
 pub const fn max_proto_hdr_len() -> usize {
-    return
     // exchange flags
-        1 +
+    1 +
     // protocol opcode
         1 +
     // exchange ID
@@ -226,7 +225,7 @@ pub const fn max_proto_hdr_len() -> usize {
     // [optional] protocol vendor ID
         2 +
     // [optional] acknowledged message counter
-        4;
+        4
 }
 
 #[cfg(test)]

@@ -69,9 +69,8 @@ impl PlainHdr {
 }
 
 pub const fn max_plain_hdr_len() -> usize {
-    return
     // [optional] msg len only for TCP
-        2 +
+    2 +
     // flags
         1 +
     // security flags
@@ -83,5 +82,5 @@ pub const fn max_plain_hdr_len() -> usize {
     // [optional] source node ID
         8 +
     // [optional] destination node ID
-        8;
+        8
 }

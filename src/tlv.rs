@@ -128,11 +128,11 @@ impl<'a> TLVElement<'a> {
             current: ptr.current,
             left: ptr.left,
         };
-        return Some(TLVContainerIterator {
+        Some(TLVContainerIterator {
             list_iter,
             prev_container: false,
             iterator_consumed: false,
-        });
+        })
     }
 
     pub fn get_u8(&self) -> Option<u8> {
@@ -253,7 +253,7 @@ impl<'a> TLVListIterator<'a> {
             return None;
         }
         let tag: u32 = match tag_type {
-            TagType::Anonymous => 0 as u32,
+            TagType::Anonymous => 0_u32,
             TagType::Context => self.buf[self.current] as u32,
             TagType::CommonPrf16 | TagType::ImplPrf16 => {
                 LittleEndian::read_u16(&self.buf[self.current..]) as u32
@@ -268,7 +268,7 @@ impl<'a> TLVListIterator<'a> {
             }
         };
         self.advance(tag_size);
-        return Some(tag);
+        Some(tag)
     }
 
     fn read_this_value(&mut self, element_type: u8) -> Option<ElementType<'a>> {
@@ -300,17 +300,17 @@ impl<'a> TLVListIterator<'a> {
             }
             20 => Null,
             21 => Struct(Pointer {
-                buf: &self.buf[..],
+                buf: self.buf,
                 current: self.current,
                 left: self.left,
             }),
             22 => Array(Pointer {
-                buf: &self.buf[..],
+                buf: self.buf,
                 current: self.current,
                 left: self.left,
             }),
             23 => List(Pointer {
-                buf: &self.buf[..],
+                buf: self.buf,
                 current: self.current,
                 left: self.left,
             }),
@@ -322,7 +322,7 @@ impl<'a> TLVListIterator<'a> {
         };
 
         self.advance(size);
-        return Some(element);
+        Some(element)
     }
 }
 
@@ -363,11 +363,11 @@ impl<'a> TLVList<'a> {
     }
 }
 
-fn is_container<'a>(element_type: ElementType<'a>) -> bool {
-    match element_type {
-        ElementType::Struct(_) | ElementType::Array(_) | ElementType::List(_) => true,
-        _ => false,
-    }
+fn is_container(element_type: ElementType) -> bool {
+    matches!(
+        element_type,
+        ElementType::Struct(_) | ElementType::Array(_) | ElementType::List(_)
+    )
 }
 
 // This is a Container iterator, it iterates over containers in a TLV list
@@ -420,7 +420,7 @@ impl<'a> TLVContainerIterator<'a> {
         if self.iterator_consumed {
             return None;
         }
-        let element: TLVElement = if self.prev_container == true {
+        let element: TLVElement = if self.prev_container {
             //            println!("Calling skip to end of container");
             self.skip_to_end_of_container()?
         } else {
@@ -428,13 +428,11 @@ impl<'a> TLVContainerIterator<'a> {
         };
         //        println!("Found element: {:x?}", element);
         /* If we found end of container, that means our own container is over */
-        match element.element_type {
-            ElementType::EndCnt => {
-                self.iterator_consumed = true;
-                return None;
-            }
-            _ => (),
+        if element.element_type == ElementType::EndCnt {
+            self.iterator_consumed = true;
+            return None;
         }
+
         if is_container(element.element_type) {
             self.prev_container = true;
         } else {
@@ -444,27 +442,24 @@ impl<'a> TLVContainerIterator<'a> {
     }
 }
 
-pub fn get_root_node_struct<'a>(b: &'a [u8]) -> Option<TLVElement<'a>> {
-    return TLVList::new(&b, b.len())
+pub fn get_root_node_struct(b: &[u8]) -> Option<TLVElement> {
+    return TLVList::new(b, b.len())
         .into_iter()
         .next()?
         .confirm_struct();
 }
 
-pub fn get_root_node_list<'a>(b: &'a [u8]) -> Option<TLVElement<'a>> {
+pub fn get_root_node_list(b: &[u8]) -> Option<TLVElement> {
     return TLVList::new(&b, b.len()).into_iter().next()?.confirm_list();
 }
 
 pub fn print_tlv_list(b: &[u8]) {
-    let tlvlist = TLVList::new(&b, b.len());
+    let tlvlist = TLVList::new(b, b.len());
 
     info!("TLV list:");
     let mut iter = tlvlist.into_iter();
-    loop {
-        match iter.next() {
-            Some(a) => info!("{}", a),
-            None => break,
-        }
+    while let Some(a) = iter.next() {
+        info!("{}", a)
     }
     info!("---------");
 }

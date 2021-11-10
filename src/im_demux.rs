@@ -53,9 +53,9 @@ pub struct CmdPathIb {
 
 fn get_cmd_path_ib(cmd_path: &TLVElement) -> CmdPathIb {
     CmdPathIb {
-        endpoint: cmd_path.find_element(0).map_or(None, |x| x.get_u8()),
-        cluster: cmd_path.find_element(2).map_or(None, |x| x.get_u8()),
-        command: cmd_path.find_element(3).map_or(None, |x| x.get_u8()),
+        endpoint: cmd_path.find_element(0).and_then(|x| x.get_u8()),
+        cluster: cmd_path.find_element(2).and_then(|x| x.get_u8()),
+        command: cmd_path.find_element(3).and_then(|x| x.get_u8()),
     }
 }
 
@@ -96,7 +96,7 @@ impl InteractionModel {
             self.handler
                 .handle_invoke_cmd(&cmd_path_ib, variable, tx_ctx.get_write_buf())?;
         }
-        return Ok(ResponseRequired::Yes);
+        Ok(ResponseRequired::Yes)
     }
 }
 
@@ -111,10 +111,10 @@ impl proto_demux::HandleProto for InteractionModel {
             num::FromPrimitive::from_u8(proto_opcode).ok_or(Error::Invalid)?;
         tx_ctx.set_proto_id(PROTO_ID_INTERACTION_MODEL as u16);
         match proto_opcode {
-            OpCode::InvokeRequest => return self.invoke_req_handler(proto_opcode, buf, tx_ctx),
+            OpCode::InvokeRequest => self.invoke_req_handler(proto_opcode, buf, tx_ctx),
             _ => {
                 error!("Opcode Not Handled: {:?}", proto_opcode);
-                return Err(Error::InvalidOpcode);
+                Err(Error::InvalidOpcode)
             }
         }
     }
