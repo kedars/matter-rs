@@ -8,11 +8,24 @@ use crate::{
 const MATTER_AES128_KEY_SIZE: usize = 16;
 
 #[derive(Debug)]
+pub enum SessionMode {
+    Encrypted,
+    PlainText,
+}
+
+#[derive(Debug)]
+pub enum SessionState {
+    // When we say raw, we mean the session id and keys are not populated
+    Raw,
+    Initialised,
+}
+
+#[derive(Debug)]
 pub struct Session {
     // If this field is None, the rest of the members are ignored
     peer_addr: Option<std::net::IpAddr>,
-    pub dec_key: [u8; MATTER_AES128_KEY_SIZE],
-    pub enc_key: [u8; MATTER_AES128_KEY_SIZE],
+    dec_key: [u8; MATTER_AES128_KEY_SIZE],
+    enc_key: [u8; MATTER_AES128_KEY_SIZE],
     /*
      *
      * - Session Role (whether we are session-Initiator or Session-Responder (use the correct key accordingly(
@@ -27,6 +40,8 @@ pub struct Session {
     peer_sess_id: u16,
     msg_ctr: u32,
     exchanges: Vec::<Exchange, 4>,
+    mode: SessionMode,
+    state: SessionState,
 }
 
 impl Session {
@@ -59,7 +74,8 @@ impl Session {
         peer_sess_id: u16,
         dec_key: [u8; MATTER_AES128_KEY_SIZE],
         enc_key: [u8; MATTER_AES128_KEY_SIZE],
-        peer_addr: std::net::IpAddr) -> Session {
+        peer_addr: std::net::IpAddr,
+        mode: SessionMode) -> Session {
         Session {
             peer_addr  : Some(peer_addr),
             dec_key,
@@ -68,6 +84,8 @@ impl Session {
             peer_sess_id,
             msg_ctr: 1,
             exchanges: Vec::new(),
+            mode,
+            state: SessionState::Raw,
         }
     }
 
@@ -82,6 +100,20 @@ impl Session {
         let ctr = self.msg_ctr;
         self.msg_ctr += 1;
         ctr
+    }
+
+    pub fn get_dec_key(&self) -> Option<&[u8]> {
+        match self.mode {
+            SessionMode::Encrypted => Some(&self.dec_key),
+            SessionMode::PlainText => None,
+        }
+    }
+
+    pub fn get_enc_key(&self) -> Option<&[u8]> {
+        match self.mode {
+            SessionMode::Encrypted => Some(&self.enc_key),
+            SessionMode::PlainText => None,
+        }
     }
 }
 
@@ -101,21 +133,30 @@ impl SessionMgr {
                peer_sess_id: u16,
                dec_key: [u8; MATTER_AES128_KEY_SIZE],
                enc_key: [u8; MATTER_AES128_KEY_SIZE],
-               peer_addr: std::net::IpAddr) -> Result<(), Error> {
-        let session = Session::new(sess_id, peer_sess_id, dec_key, enc_key, peer_addr);
+               peer_addr: std::net::IpAddr,
+               mode: SessionMode) -> Result<(), Error> {
+        let session = Session::new(sess_id, peer_sess_id, dec_key, enc_key, peer_addr, mode);
         match self.sessions.push(session) {
             Ok(_) => return Ok(()),
             Err(_) => return Err(Error::NoSpace),
         }
     }
 
-    pub fn get(&mut self, sess_id: u16, peer_addr: std::net::IpAddr) -> Option<&mut Session> {
-        if let Some(index) = self.sessions.iter().position(|x| {
-            x.sess_id == sess_id &&
-                x.peer_addr == Some(peer_addr)
-        }) {
-            return Some(&mut self.sessions[index]);
+    fn _get(&self, sess_id: u16, peer_addr: std::net::IpAddr) -> Option<usize> {
+        self.sessions.iter()
+                     .position(|x| {
+                                x.sess_id == sess_id &&
+                                x.peer_addr == Some(peer_addr)
+                      })
+    }
+
+    pub fn get(&mut self, sess_id: u16, peer_addr: std::net::IpAddr, is_encrypted: bool) -> Option<&mut Session> {
+        let mut index = self._get(sess_id, peer_addr);
+        if index == None && sess_id == 0 && ! is_encrypted {
+            // We must create a new session for this case
+            self.add(0, 0, [0; MATTER_AES128_KEY_SIZE], [0; MATTER_AES128_KEY_SIZE], peer_addr, SessionMode::PlainText).ok()?;
+            index = self._get(sess_id, peer_addr);
         }
-        return None;
+        index.map(move |x| &mut self.sessions[x])
     }
 }

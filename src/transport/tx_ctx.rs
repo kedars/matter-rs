@@ -78,7 +78,10 @@ impl<'a> TxCtx<'a> {
         info!("plain_hdr: {:x?}", plain_hdr);
 
         info!("unencrypted packet: {:x?}", self.write_buf.as_slice());
-        proto_hdr::encrypt_in_place(self.plain_hdr.ctr, plain_hdr, &mut self.write_buf, &session.enc_key)?;
+        let enc_key = session.get_enc_key();
+        if let Some(e) = enc_key {
+            proto_hdr::encrypt_in_place(self.plain_hdr.ctr, plain_hdr, &mut self.write_buf, e)?;
+        }
 
         self.write_buf.prepend(plain_hdr)?;
         info!("Full encrypted packet: {:x?}", self.write_buf.as_slice());

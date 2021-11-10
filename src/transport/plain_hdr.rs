@@ -52,6 +52,10 @@ impl PlainHdr {
         resp_buf.le_u32(self.ctr)?;
         Ok(())
     }
+
+    pub fn is_encrypted(&self) -> bool {
+        self.sess_type == SessionType::Encrypted
+    }
 }
 
 pub const fn max_plain_hdr_len() -> usize {

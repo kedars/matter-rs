@@ -4,7 +4,7 @@ use crate::proto_demux::ResponseRequired;
 use crate::tlv::*;
 use crate::utils::writebuf::WriteBuf;
 use crate::transport::tx_ctx::TxCtx;
-use log::{error, info};
+use log::{error};
 use num;
 use num_derive::FromPrimitive;
 use std::sync::Arc;

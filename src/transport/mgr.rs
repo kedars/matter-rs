@@ -51,7 +51,7 @@ impl Mgr {
         let test_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
         let i2r_key = [ 0x44, 0xd4, 0x3c, 0x91, 0xd2, 0x27, 0xf3, 0xba, 0x08, 0x24, 0xc5, 0xd8, 0x7c, 0xb8, 0x1b, 0x33];
         let r2i_key = [0xac, 0xc1, 0x8f, 0x06, 0xc7, 0xbc, 0x9b, 0xe8, 0x24, 0x6a, 0x67, 0x8c, 0xb1, 0xf8, 0xba, 0x3d];
-        mgr.sess_mgr.add(0, 0, i2r_key, r2i_key, test_addr.ip()).unwrap();
+        mgr.sess_mgr.add(0, 0, i2r_key, r2i_key, test_addr.ip(), session::SessionMode::Encrypted).unwrap();
 
         Ok(mgr)
     }
@@ -81,13 +81,15 @@ impl Mgr {
 
             // Get session
             //      Ok to use unwrap here since we know 'src' is certainly not None
-            let session = match self.sess_mgr.get(rx_ctx.plain_hdr.sess_id, rx_ctx.src.unwrap().ip()) {
+            let session = match self.sess_mgr.get(rx_ctx.plain_hdr.sess_id,
+                                                                rx_ctx.src.unwrap().ip(),
+                                                                rx_ctx.plain_hdr.is_encrypted()) {
                 Some(a) => a,
                 None => continue,
             };
             
             // Read encrypted header
-            match rx_ctx.proto_hdr.decrypt_and_decode(&rx_ctx.plain_hdr, &mut parse_buf, &session.dec_key) {
+            match rx_ctx.proto_hdr.decrypt_and_decode(&rx_ctx.plain_hdr, &mut parse_buf, session.get_dec_key()) {
                 Ok(_) => (),
                 Err(_) => continue,
             };

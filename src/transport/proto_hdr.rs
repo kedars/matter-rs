@@ -64,8 +64,11 @@ impl ProtoHdr {
         self.exch_flags |= EXCHANGE_FLAG_INITIATOR_MASK;
     }
 
-    pub fn decrypt_and_decode(&mut self, plain_hdr: &plain_hdr::PlainHdr, parsebuf: &mut ParseBuf, dec_key: &[u8]) -> Result<(), Error> {
-        decrypt_in_place(plain_hdr.ctr, parsebuf, dec_key)?;
+    pub fn decrypt_and_decode(&mut self, plain_hdr: &plain_hdr::PlainHdr, parsebuf: &mut ParseBuf, dec_key: Option<&[u8]>) -> Result<(), Error> {
+        if let Some(d) = dec_key {
+            // We decrypt only if the decryption key is valid
+            decrypt_in_place(plain_hdr.ctr, parsebuf, d)?;
+        }
 
         self.exch_flags   = parsebuf.le_u8()?;
         self.proto_opcode = parsebuf.le_u8()?;
