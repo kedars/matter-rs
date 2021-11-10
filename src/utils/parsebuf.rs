@@ -41,7 +41,9 @@ impl<'a> ParseBuf<'a> {
     }
 
     pub fn parse_head_with<F, T>(&mut self, size: usize, f: F) -> Result<T, Error>
-                            where F: FnOnce(&mut Self) -> T {
+    where
+        F: FnOnce(&mut Self) -> T,
+    {
         if self.left >= size {
             let data: T = f(self);
             self.advance(size);
@@ -51,21 +53,15 @@ impl<'a> ParseBuf<'a> {
     }
 
     pub fn le_u8(&mut self) -> Result<u8, Error> {
-        self.parse_head_with(1, |x| {
-            x.buf[x.read_off]
-        })
+        self.parse_head_with(1, |x| x.buf[x.read_off])
     }
 
     pub fn le_u16(&mut self) -> Result<u16, Error> {
-        self.parse_head_with(2, |x| {
-            LittleEndian::read_u16(&x.buf[x.read_off..])
-        })
+        self.parse_head_with(2, |x| LittleEndian::read_u16(&x.buf[x.read_off..]))
     }
 
     pub fn le_u32(&mut self) -> Result<u32, Error> {
-        self.parse_head_with(4, |x| {
-            LittleEndian::read_u32(&x.buf[x.read_off..])
-        })
+        self.parse_head_with(4, |x| LittleEndian::read_u32(&x.buf[x.read_off..]))
     }
 }
 
@@ -153,5 +149,4 @@ mod tests {
         assert_eq!(buf.le_u32().unwrap(), 0xcafebabe);
         assert_eq!(buf.parsed_as_slice(), [0x01, 65, 0, 0xbe, 0xba, 0xfe, 0xca]);
     }
-
 }

@@ -1,5 +1,5 @@
-use std::net::{Ipv4Addr, UdpSocket};
 use crate::error::*;
+use std::net::{Ipv4Addr, UdpSocket};
 
 pub struct UdpListener {
     socket: UdpSocket,
@@ -15,7 +15,7 @@ pub trait ConsumeMsg {
 impl UdpListener {
     pub fn new() -> Result<UdpListener, Error> {
         let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, MATTER_PORT))?;
-        Ok(UdpListener{socket})
+        Ok(UdpListener { socket })
     }
 
     pub fn recv_from(&self, in_buf: &mut [u8]) -> Result<(usize, std::net::SocketAddr), Error> {

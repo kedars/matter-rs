@@ -14,7 +14,11 @@ pub struct Exchange {
 
 impl Exchange {
     pub fn new(id: u16, role: ExchangeRole) -> Exchange {
-        Exchange{id, role, pending_ack: None}
+        Exchange {
+            id,
+            role,
+            pending_ack: None,
+        }
     }
 
     pub fn is_match(&self, id: u16, role: ExchangeRole) -> bool {
@@ -35,19 +39,17 @@ impl Exchange {
 }
 
 pub fn get_role(is_initiator: bool) -> ExchangeRole {
-    if is_initiator { 
+    if is_initiator {
         ExchangeRole::Initiator
     } else {
         ExchangeRole::Responder
     }
-
 }
 
 pub fn get_complementary_role(is_initiator: bool) -> ExchangeRole {
-    if is_initiator { 
+    if is_initiator {
         ExchangeRole::Responder
     } else {
         ExchangeRole::Initiator
     }
-
 }

@@ -1,8 +1,8 @@
-use std::sync::RwLockWriteGuard;
-use crate::error::*;
-use super::objects::*;
 use super::cluster_basic_information::*;
 use super::cluster_on_off::*;
+use super::objects::*;
+use crate::error::*;
+use std::sync::RwLockWriteGuard;
 
 type WriteNode<'a> = RwLockWriteGuard<'a, Box<Node>>;
 

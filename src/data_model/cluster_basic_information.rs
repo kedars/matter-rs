@@ -1,5 +1,5 @@
-use crate::error::*;
 use super::objects::*;
+use crate::error::*;
 
 const CLUSTER_BASIC_INFORMATION_ID: u32 = 0x0028;
 

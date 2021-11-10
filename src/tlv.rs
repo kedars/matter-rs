@@ -1,8 +1,8 @@
-use std::fmt;
-use byteorder::{ByteOrder,LittleEndian};
+use byteorder::{ByteOrder, LittleEndian};
+use log::{error, info};
 use num;
 use num_derive::FromPrimitive;
-use log::{error, info};
+use std::fmt;
 
 pub struct TLVList<'a> {
     buf: &'a [u8],
@@ -11,48 +11,40 @@ pub struct TLVList<'a> {
 
 impl<'a> TLVList<'a> {
     pub fn new(buf: &'a [u8], len: usize) -> TLVList<'a> {
-        TLVList{buf, len}
+        TLVList { buf, len }
     }
 }
 
 /* Tag Types */
 #[derive(FromPrimitive, Debug, Copy, Clone, PartialEq)]
 enum TagType {
-    Anonymous   = 0,
-    Context     = 1,
+    Anonymous = 0,
+    Context = 1,
     CommonPrf16 = 2,
     CommonPrf32 = 3,
-    ImplPrf16   = 4,
-    ImplPrf32   = 5,
-    FullQual48  = 6,
-    FullQual64  = 7,
+    ImplPrf16 = 4,
+    ImplPrf32 = 5,
+    FullQual48 = 6,
+    FullQual64 = 7,
     Last,
 }
-const TAG_SHIFT_BITS:     u8 = 5;
-const TAG_MASK:           u8 = 0xe0;
+const TAG_SHIFT_BITS: u8 = 5;
+const TAG_MASK: u8 = 0xe0;
 
-static TAG_SIZE_MAP: [usize; TagType::Last as usize]  = [
-    // Anonymous
-    0,
-    // Context
-    1,
-    // CommonPrf16
-    2,
-    // CommonPrf32
-    4,
-    // ImplPrf16
-    2,
-    // ImplPrf32
-    4,
-    // FullQual48
-    6,
-    // FullQual64
-    8
+static TAG_SIZE_MAP: [usize; TagType::Last as usize] = [
+    0, // Anonymous
+    1, // Context
+    2, // CommonPrf16
+    4, // CommonPrf32
+    2, // ImplPrf16
+    4, // ImplPrf32
+    6, // FullQual48
+    8, // FullQual64
 ];
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Pointer<'a> {
-    buf: &'a[u8],
+    buf: &'a [u8],
     current: usize,
     left: usize,
 }
@@ -87,60 +79,35 @@ pub enum ElementType<'a> {
     Last,
 }
 
-const TYPE_MASK:           u8 = 0x1f;
+const TYPE_MASK: u8 = 0x1f;
 
 // The array indices here correspond to the numeric value of the Element Type as defined in the Matter Spec
 static VALUE_SIZE_MAP: [usize; 25] = [
-    // S8   0
-    1,
-    // S16  1
-    2,
-    // S32  2
-    4,
-    // S64  3
-    8,
-    // U8   4
-    1,
-    // U16  5
-    2,
-    // U32  6
-    4,
-    // U64  7
-    8,
-    // True 8
-    0,
-    // False 9
-    0,
-    // F32  10
-    4,
-    // F64  11
-    8,
-    // Utf8l 12
-    1,
-    // Utf16l  13
-    2,
-    // Utf32l 14
-    4,
-    // Utf64l 15
-    8,
-    // Str8l 16
-    1,
-    // Str16l 17
-    2,
-    // Str32l 18
-    4,
-    // Str64l 19
-    8,
-    // Null  20
-    0,
-    // Struct 21
-    0,
-    // Array  22
-    0,
-    // List  23
-    0,
-    // EndCnt  24
-    0,
+    1, // S8   0
+    2, // S16  1
+    4, // S32  2
+    8, // S64  3
+    1, // U8   4
+    2, // U16  5
+    4, // U32  6
+    8, // U64  7
+    0, // True 8
+    0, // False 9
+    4, // F32  10
+    8, // F64  11
+    1, // Utf8l 12
+    2, // Utf16l  13
+    4, // Utf32l 14
+    8, // Utf64l 15
+    1, // Str8l 16
+    2, // Str16l 17
+    4, // Str32l 18
+    8, // Str64l 19
+    0, // Null  20
+    0, // Struct 21
+    0, // Array  22
+    0, // List  23
+    0, // EndCnt  24
 ];
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -153,15 +120,19 @@ pub struct TLVElement<'a> {
 impl<'a> TLVElement<'a> {
     pub fn into_iter(&self) -> Option<TLVContainerIterator<'a>> {
         let ptr = match self.element_type {
-            ElementType::Struct(a) | ElementType::Array(a) | ElementType::List(a)=> a,
+            ElementType::Struct(a) | ElementType::Array(a) | ElementType::List(a) => a,
             _ => return None,
         };
-        let list_iter = TLVListIterator{
+        let list_iter = TLVListIterator {
             buf: ptr.buf,
             current: ptr.current,
             left: ptr.left,
         };
-        return Some(TLVContainerIterator{list_iter, prev_container: false, iterator_consumed: false});
+        return Some(TLVContainerIterator {
+            list_iter,
+            prev_container: false,
+            iterator_consumed: false,
+        });
     }
 
     pub fn get_u8(&self) -> Option<u8> {
@@ -184,14 +155,14 @@ impl<'a> TLVElement<'a> {
             _ => None,
         }
     }
-    
+
     pub fn get_slice(&self) -> Option<&[u8]> {
         match self.element_type {
             ElementType::Str8l(s) => Some(s),
             _ => None,
         }
     }
- 
+
     pub fn get_bool(&self) -> Option<bool> {
         match self.element_type {
             ElementType::False => Some(false),
@@ -225,7 +196,11 @@ impl<'a> TLVElement<'a> {
         let mut iter = self.into_iter()?;
         loop {
             match iter.next() {
-                Some(a) => if a.tag_type != TagType::Anonymous && a.tag == tag {return Some(a);},
+                Some(a) => {
+                    if a.tag_type != TagType::Anonymous && a.tag == tag {
+                        return Some(a);
+                    }
+                }
                 None => return None,
             }
         }
@@ -236,22 +211,22 @@ impl<'a> fmt::Display for TLVElement<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.tag_type {
             TagType::Anonymous => (),
-            _ => write!(f, "{}:", self.tag)?
+            _ => write!(f, "{}:", self.tag)?,
         }
         match self.element_type {
             ElementType::Struct(_) => write!(f, "{{"),
-            ElementType::Array(_) =>  write!(f, "["),
-            ElementType::List(_)  =>  write!(f, "["),
+            ElementType::Array(_) => write!(f, "["),
+            ElementType::List(_) => write!(f, "["),
             ElementType::EndCnt => write!(f, ">"),
-            ElementType::True =>   write!(f, "True"),
-            ElementType::False =>  write!(f, "False"),
-            ElementType::Str8l(a) =>  {
+            ElementType::True => write!(f, "True"),
+            ElementType::False => write!(f, "False"),
+            ElementType::Str8l(a) => {
                 if let Ok(s) = std::str::from_utf8(a) {
                     write!(f, "len[{}]\"{}\"", s.len(), s)
                 } else {
                     write!(f, "len[{}]{:x?}", a.len(), a)
                 }
-            },
+            }
             _ => write!(f, "{:?}", self.element_type),
         }
     }
@@ -280,11 +255,17 @@ impl<'a> TLVListIterator<'a> {
         let tag: u32 = match tag_type {
             TagType::Anonymous => 0 as u32,
             TagType::Context => self.buf[self.current] as u32,
-            TagType::CommonPrf16 | TagType::ImplPrf16 => LittleEndian::read_u16(&self.buf[self.current..]) as u32,
-            TagType::CommonPrf32 | TagType::ImplPrf32  => LittleEndian::read_u32(&self.buf[self.current..]),
-            TagType::FullQual48  => LittleEndian::read_u48(&self.buf[self.current..]) as u32,
-            TagType::FullQual64  => LittleEndian::read_u64(&self.buf[self.current..]) as u32,
-            _ => { return None; },
+            TagType::CommonPrf16 | TagType::ImplPrf16 => {
+                LittleEndian::read_u16(&self.buf[self.current..]) as u32
+            }
+            TagType::CommonPrf32 | TagType::ImplPrf32 => {
+                LittleEndian::read_u32(&self.buf[self.current..])
+            }
+            TagType::FullQual48 => LittleEndian::read_u48(&self.buf[self.current..]) as u32,
+            TagType::FullQual64 => LittleEndian::read_u64(&self.buf[self.current..]) as u32,
+            _ => {
+                return None;
+            }
         };
         self.advance(tag_size);
         return Some(tag);
@@ -316,25 +297,38 @@ impl<'a> TLVListIterator<'a> {
                     return None;
                 }
                 Str8l(&self.buf[(self.current + 1)..(self.current + 1 + string_size)])
-            },
+            }
             20 => Null,
-            21 => Struct(Pointer{buf: &self.buf[..], current: self.current, left: self.left}),
-            22 => Array(Pointer{buf: &self.buf[..], current: self.current, left: self.left}),
-            23 => List(Pointer{buf: &self.buf[..], current: self.current, left: self.left}),
+            21 => Struct(Pointer {
+                buf: &self.buf[..],
+                current: self.current,
+                left: self.left,
+            }),
+            22 => Array(Pointer {
+                buf: &self.buf[..],
+                current: self.current,
+                left: self.left,
+            }),
+            23 => List(Pointer {
+                buf: &self.buf[..],
+                current: self.current,
+                left: self.left,
+            }),
             24 => EndCnt,
-            _ => {error!("Found invalid element: {}", element_type); return None;},
+            _ => {
+                error!("Found invalid element: {}", element_type);
+                return None;
+            }
         };
 
         self.advance(size);
         return Some(element);
     }
-
 }
 
 impl<'a> TLVListIterator<'a> {
-
     /* Code for going to the next Element */
-    pub fn next(& mut self) -> Option<TLVElement<'a>> {
+    pub fn next(&mut self) -> Option<TLVElement<'a>> {
         if self.left < 1 {
             return None;
         }
@@ -351,13 +345,21 @@ impl<'a> TLVListIterator<'a> {
         /* Consume Value */
         let element_type = self.read_this_value(element_type)?;
 
-        Some(TLVElement{tag_type, element_type, tag})
+        Some(TLVElement {
+            tag_type,
+            element_type,
+            tag,
+        })
     }
 }
 
 impl<'a> TLVList<'a> {
     pub fn into_iter(&self) -> TLVListIterator<'a> {
-        TLVListIterator{current : 0, left: self.len, buf: self.buf}
+        TLVListIterator {
+            current: 0,
+            left: self.len,
+            buf: self.buf,
+        }
     }
 }
 
@@ -377,27 +379,34 @@ pub struct TLVContainerIterator<'a> {
 }
 
 impl<'a> TLVContainerIterator<'a> {
-    fn skip_to_end_of_container(& mut self) -> Option<TLVElement<'a>>{
+    fn skip_to_end_of_container(&mut self) -> Option<TLVElement<'a>> {
         let mut nest_level = 0;
         while let Some(element) = self.list_iter.next() {
             // We know we are already in a container, we have to keep looking for end-of-container
-//            println!("Skip: element: {:x?} nest_level: {}", element, nest_level);
+            //            println!("Skip: element: {:x?} nest_level: {}", element, nest_level);
             match element.element_type {
                 ElementType::EndCnt => {
                     if nest_level == 0 {
                         // Return the element following this element
-//                        println!("Returning");
+                        //                        println!("Returning");
                         // The final next() may be the end of the top-level container itself, if so, we must return None
                         let last_elem = self.list_iter.next()?;
                         match last_elem.element_type {
-                            ElementType::EndCnt => {self.iterator_consumed = true; return None},
+                            ElementType::EndCnt => {
+                                self.iterator_consumed = true;
+                                return None;
+                            }
                             _ => return Some(last_elem),
                         }
                     } else {
                         nest_level -= 1;
                     }
-                },
-                _ => if is_container(element.element_type) { nest_level += 1; },
+                }
+                _ => {
+                    if is_container(element.element_type) {
+                        nest_level += 1;
+                    }
+                }
             }
         }
         None
@@ -405,21 +414,25 @@ impl<'a> TLVContainerIterator<'a> {
 }
 
 impl<'a> TLVContainerIterator<'a> {
-
     /* Code for going to the next Element */
-    pub fn next(& mut self) -> Option<TLVElement<'a>> {
+    pub fn next(&mut self) -> Option<TLVElement<'a>> {
         // This iterator may be consumed, but the underlying might not. This protects it from such occurrences
-        if self.iterator_consumed { return None; }
+        if self.iterator_consumed {
+            return None;
+        }
         let element: TLVElement = if self.prev_container == true {
-//            println!("Calling skip to end of container");
+            //            println!("Calling skip to end of container");
             self.skip_to_end_of_container()?
         } else {
             self.list_iter.next()?
         };
-//        println!("Found element: {:x?}", element);
+        //        println!("Found element: {:x?}", element);
         /* If we found end of container, that means our own container is over */
         match element.element_type {
-            ElementType::EndCnt => {self.iterator_consumed = true; return None},
+            ElementType::EndCnt => {
+                self.iterator_consumed = true;
+                return None;
+            }
             _ => (),
         }
         if is_container(element.element_type) {
@@ -432,7 +445,10 @@ impl<'a> TLVContainerIterator<'a> {
 }
 
 pub fn get_root_node_struct<'a>(b: &'a [u8]) -> Option<TLVElement<'a>> {
-    return TLVList::new(&b, b.len()).into_iter().next()?.confirm_struct();
+    return TLVList::new(&b, b.len())
+        .into_iter()
+        .next()?
+        .confirm_struct();
 }
 
 pub fn get_root_node_list<'a>(b: &'a [u8]) -> Option<TLVElement<'a>> {
@@ -446,7 +462,7 @@ pub fn print_tlv_list(b: &[u8]) {
     let mut iter = tlvlist.into_iter();
     loop {
         match iter.next() {
-            Some(a) =>  info!("{}", a),
+            Some(a) => info!("{}", a),
             None => break,
         }
     }
@@ -460,7 +476,7 @@ mod tests {
     #[test]
     fn test_short_length_tag() {
         // The 0x36 is an array with a tag, but we leave out the tag field
-        let b = [ 0x15, 0x36];
+        let b = [0x15, 0x36];
         let tlvlist = TLVList::new(&b, b.len());
         let mut tlv_iter = tlvlist.into_iter();
         // Skip the 0x15
@@ -471,7 +487,7 @@ mod tests {
     #[test]
     fn test_short_length_value_immediate() {
         // The 0x24 is a a tagged integer, here we leave out the integer value
-        let b = [ 0x15, 0x24, 0x0];
+        let b = [0x15, 0x24, 0x0];
         let tlvlist = TLVList::new(&b, b.len());
         let mut tlv_iter = tlvlist.into_iter();
         // Skip the 0x15
@@ -482,7 +498,7 @@ mod tests {
     #[test]
     fn test_short_length_value_string() {
         // This is a tagged string, with tag 0 and length 0xb, but we only have 4 bytes in the string
-        let b = [ 0x15, 0x30, 0x00, 0x0b, 0x73, 0x6d, 0x61, 0x72];
+        let b = [0x15, 0x30, 0x00, 0x0b, 0x73, 0x6d, 0x61, 0x72];
         let tlvlist = TLVList::new(&b, b.len());
         let mut tlv_iter = tlvlist.into_iter();
         // Skip the 0x15
@@ -493,54 +509,65 @@ mod tests {
     #[test]
     fn test_valid_tag() {
         // The 0x36 is an array with a tag, here tag is 0
-        let b = [ 0x15, 0x36, 0x0];
+        let b = [0x15, 0x36, 0x0];
         let tlvlist = TLVList::new(&b, b.len());
         let mut tlv_iter = tlvlist.into_iter();
         // Skip the 0x15
         tlv_iter.next();
-        assert_eq!(tlv_iter.next(),
-                   Some(TLVElement{
-                       tag_type: TagType::Context,
-                       element_type: ElementType::Array(Pointer {
-                           buf: &[21, 54, 0],
-                           current: 3,
-                           left: 0 }),
-                       tag: 0 }
-                   ));
+        assert_eq!(
+            tlv_iter.next(),
+            Some(TLVElement {
+                tag_type: TagType::Context,
+                element_type: ElementType::Array(Pointer {
+                    buf: &[21, 54, 0],
+                    current: 3,
+                    left: 0
+                }),
+                tag: 0
+            })
+        );
     }
 
     #[test]
     fn test_valid_value_immediate() {
         // The 0x24 is a a tagged integer, here the integer is 2
-        let b = [ 0x15, 0x24, 0x1, 0x2];
+        let b = [0x15, 0x24, 0x1, 0x2];
         let tlvlist = TLVList::new(&b, b.len());
         let mut tlv_iter = tlvlist.into_iter();
         // Skip the 0x15
         tlv_iter.next();
-        assert_eq!(tlv_iter.next(), Some(TLVElement{
-            tag_type: TagType::Context,
-            element_type: ElementType::U8(2),
-            tag: 1 }));
+        assert_eq!(
+            tlv_iter.next(),
+            Some(TLVElement {
+                tag_type: TagType::Context,
+                element_type: ElementType::U8(2),
+                tag: 1
+            })
+        );
     }
 
     #[test]
     fn test_valid_value_string() {
         // This is a tagged string, with tag 0 and length 4, and we have 4 bytes in the string
-        let b = [ 0x15, 0x30, 0x5, 0x04, 0x73, 0x6d, 0x61, 0x72];
+        let b = [0x15, 0x30, 0x5, 0x04, 0x73, 0x6d, 0x61, 0x72];
         let tlvlist = TLVList::new(&b, b.len());
         let mut tlv_iter = tlvlist.into_iter();
         // Skip the 0x15
         tlv_iter.next();
-        assert_eq!(tlv_iter.next(), Some(TLVElement {
-            tag_type: TagType::Context,
-            element_type: ElementType::Str8l(&[0x73, 0x6d, 0x61, 0x72]),
-            tag: 5 }));
+        assert_eq!(
+            tlv_iter.next(),
+            Some(TLVElement {
+                tag_type: TagType::Context,
+                element_type: ElementType::Str8l(&[0x73, 0x6d, 0x61, 0x72]),
+                tag: 5
+            })
+        );
     }
 
     #[test]
     fn test_no_iterator_for_int() {
         // The 0x24 is a a tagged integer, here the integer is 2
-        let b = [ 0x15, 0x24, 0x1, 0x2];
+        let b = [0x15, 0x24, 0x1, 0x2];
         let tlvlist = TLVList::new(&b, b.len());
         let mut tlv_iter = tlvlist.into_iter();
         // Skip the 0x15
@@ -551,63 +578,185 @@ mod tests {
     #[test]
     fn test_struct_iteration_with_mix_values() {
         // This is a struct with 3 valid values
-        let b = [ 0x15, 0x24, 0x0, 0x2, 0x26, 0x2, 0x4e, 0x10, 0x02, 0x00, 0x30, 0x3, 0x04, 0x73, 0x6d, 0x61, 0x72];
+        let b = [
+            0x15, 0x24, 0x0, 0x2, 0x26, 0x2, 0x4e, 0x10, 0x02, 0x00, 0x30, 0x3, 0x04, 0x73, 0x6d,
+            0x61, 0x72,
+        ];
         let mut root_iter = get_root_node_struct(&b).unwrap().into_iter().unwrap();
-        assert_eq!(root_iter.next(), Some(TLVElement { tag_type: TagType::Context, element_type: ElementType::U8(2), tag: 0 }));
-        assert_eq!(root_iter.next(), Some(TLVElement { tag_type: TagType::Context, element_type: ElementType::U32(135246), tag: 2 }));
-        assert_eq!(root_iter.next(), Some(TLVElement { tag_type: TagType::Context, element_type: ElementType::Str8l(&[0x73, 0x6d, 0x61, 0x72]), tag: 3 }));
+        assert_eq!(
+            root_iter.next(),
+            Some(TLVElement {
+                tag_type: TagType::Context,
+                element_type: ElementType::U8(2),
+                tag: 0
+            })
+        );
+        assert_eq!(
+            root_iter.next(),
+            Some(TLVElement {
+                tag_type: TagType::Context,
+                element_type: ElementType::U32(135246),
+                tag: 2
+            })
+        );
+        assert_eq!(
+            root_iter.next(),
+            Some(TLVElement {
+                tag_type: TagType::Context,
+                element_type: ElementType::Str8l(&[0x73, 0x6d, 0x61, 0x72]),
+                tag: 3
+            })
+        );
     }
 
     #[test]
     fn test_struct_find_element_mix_values() {
         // This is a struct with 3 valid values
-        let b = [ 0x15, 0x24, 0x0, 0x2, 0x26, 0x2, 0x4e, 0x10, 0x02, 0x00, 0x30, 0x3, 0x04, 0x73, 0x6d, 0x61, 0x72];
+        let b = [
+            0x15, 0x24, 0x0, 0x2, 0x26, 0x2, 0x4e, 0x10, 0x02, 0x00, 0x30, 0x3, 0x04, 0x73, 0x6d,
+            0x61, 0x72,
+        ];
         let root = get_root_node_struct(&b).unwrap();
-            
-        assert_eq!(root.find_element(0), Some(TLVElement { tag_type: TagType::Context, element_type: ElementType::U8(2), tag: 0 }));
-        assert_eq!(root.find_element(2), Some(TLVElement { tag_type: TagType::Context, element_type: ElementType::U32(135246), tag: 2 }));
-        assert_eq!(root.find_element(3), Some(TLVElement { tag_type: TagType::Context, element_type: ElementType::Str8l(&[0x73, 0x6d, 0x61, 0x72]), tag: 3 }));
+
+        assert_eq!(
+            root.find_element(0),
+            Some(TLVElement {
+                tag_type: TagType::Context,
+                element_type: ElementType::U8(2),
+                tag: 0
+            })
+        );
+        assert_eq!(
+            root.find_element(2),
+            Some(TLVElement {
+                tag_type: TagType::Context,
+                element_type: ElementType::U32(135246),
+                tag: 2
+            })
+        );
+        assert_eq!(
+            root.find_element(3),
+            Some(TLVElement {
+                tag_type: TagType::Context,
+                element_type: ElementType::Str8l(&[0x73, 0x6d, 0x61, 0x72]),
+                tag: 3
+            })
+        );
     }
 
     #[test]
     fn test_list_iteration_with_mix_values() {
         // This is a list with 3 valid values
-        let b = [ 0x17, 0x24, 0x0, 0x2, 0x26, 0x2, 0x4e, 0x10, 0x02, 0x00, 0x30, 0x3, 0x04, 0x73, 0x6d, 0x61, 0x72];
+        let b = [
+            0x17, 0x24, 0x0, 0x2, 0x26, 0x2, 0x4e, 0x10, 0x02, 0x00, 0x30, 0x3, 0x04, 0x73, 0x6d,
+            0x61, 0x72,
+        ];
         let mut root_iter = get_root_node_list(&b).unwrap().into_iter().unwrap();
-        assert_eq!(root_iter.next(), Some(TLVElement { tag_type: TagType::Context, element_type: ElementType::U8(2), tag: 0 }));
-        assert_eq!(root_iter.next(), Some(TLVElement { tag_type: TagType::Context, element_type: ElementType::U32(135246), tag: 2 }));
-        assert_eq!(root_iter.next(), Some(TLVElement { tag_type: TagType::Context, element_type: ElementType::Str8l(&[0x73, 0x6d, 0x61, 0x72]), tag: 3 }));
+        assert_eq!(
+            root_iter.next(),
+            Some(TLVElement {
+                tag_type: TagType::Context,
+                element_type: ElementType::U8(2),
+                tag: 0
+            })
+        );
+        assert_eq!(
+            root_iter.next(),
+            Some(TLVElement {
+                tag_type: TagType::Context,
+                element_type: ElementType::U32(135246),
+                tag: 2
+            })
+        );
+        assert_eq!(
+            root_iter.next(),
+            Some(TLVElement {
+                tag_type: TagType::Context,
+                element_type: ElementType::Str8l(&[0x73, 0x6d, 0x61, 0x72]),
+                tag: 3
+            })
+        );
     }
 
     #[test]
     fn test_complex_structure_invoke_cmd() {
         // This is what we typically get in an invoke command
-        let b = [ 0x15,  0x36,   0x0,  0x15,  0x37,  0x0,  0x24,    0x0,  0x2, 0x24,    0x2,  0x6,  0x24,   0x3,  0x1, 0x18, 0x35,  0x1,  0x18, 0x18, 0x18, 0x18];
+        let b = [
+            0x15, 0x36, 0x0, 0x15, 0x37, 0x0, 0x24, 0x0, 0x2, 0x24, 0x2, 0x6, 0x24, 0x3, 0x1, 0x18,
+            0x35, 0x1, 0x18, 0x18, 0x18, 0x18,
+        ];
 
         let root = get_root_node_struct(&b).unwrap();
 
-        let mut cmd_list_iter = root.find_element(0).unwrap().confirm_array().unwrap().into_iter().unwrap();
+        let mut cmd_list_iter = root
+            .find_element(0)
+            .unwrap()
+            .confirm_array()
+            .unwrap()
+            .into_iter()
+            .unwrap();
         println!("Command list iterator: {:?}", cmd_list_iter);
 
         // This is an array of CommandDataIB, but we'll only use the first element
         let cmd_data_ib = cmd_list_iter.next().unwrap();
 
         let cmd_path = cmd_data_ib.find_element(0).unwrap().confirm_list().unwrap();
-        assert_eq!(cmd_path.find_element(0),Some(TLVElement { tag_type: TagType::Context, element_type: ElementType::U8(2), tag:0}));
-        assert_eq!(cmd_path.find_element(2),Some(TLVElement { tag_type: TagType::Context, element_type: ElementType::U8(6), tag:2}));
-        assert_eq!(cmd_path.find_element(3),Some(TLVElement { tag_type: TagType::Context, element_type: ElementType::U8(1), tag:3}));
-        assert_eq!(cmd_path.find_element(1),None);
+        assert_eq!(
+            cmd_path.find_element(0),
+            Some(TLVElement {
+                tag_type: TagType::Context,
+                element_type: ElementType::U8(2),
+                tag: 0
+            })
+        );
+        assert_eq!(
+            cmd_path.find_element(2),
+            Some(TLVElement {
+                tag_type: TagType::Context,
+                element_type: ElementType::U8(6),
+                tag: 2
+            })
+        );
+        assert_eq!(
+            cmd_path.find_element(3),
+            Some(TLVElement {
+                tag_type: TagType::Context,
+                element_type: ElementType::U8(1),
+                tag: 3
+            })
+        );
+        assert_eq!(cmd_path.find_element(1), None);
 
         // This is the variable of the invoke command
-        assert_eq!(cmd_data_ib.find_element(1).unwrap().into_iter().unwrap().next(), None);
+        assert_eq!(
+            cmd_data_ib
+                .find_element(1)
+                .unwrap()
+                .into_iter()
+                .unwrap()
+                .next(),
+            None
+        );
     }
-    
+
     #[test]
     fn test_read_past_end_of_container() {
-        let b = [ 0x15, 0x35, 0x0, 0x24, 0x1, 0x2, 0x18, 0x24, 0x0, 0x2, 0x18];
+        let b = [0x15, 0x35, 0x0, 0x24, 0x1, 0x2, 0x18, 0x24, 0x0, 0x2, 0x18];
 
-        let mut sub_root_iter = get_root_node_struct(&b).unwrap().find_element(0).unwrap().into_iter().unwrap();
-        assert_eq!(sub_root_iter.next(), Some(TLVElement { tag_type: TagType::Context, element_type: ElementType::U8(2), tag: 1 }));
+        let mut sub_root_iter = get_root_node_struct(&b)
+            .unwrap()
+            .find_element(0)
+            .unwrap()
+            .into_iter()
+            .unwrap();
+        assert_eq!(
+            sub_root_iter.next(),
+            Some(TLVElement {
+                tag_type: TagType::Context,
+                element_type: ElementType::U8(2),
+                tag: 1
+            })
+        );
         assert_eq!(sub_root_iter.next(), None);
         // Call next, even after the first next returns None
         assert_eq!(sub_root_iter.next(), None);
@@ -617,24 +766,31 @@ mod tests {
     #[test]
     fn test_basic_list_iterator() {
         // This is the input we have
-        let b = [ 0x15,  0x36,   0x0,  0x15,  0x37,  0x0,  0x24,    0x0,  0x2, 0x24,    0x2,  0x6,  0x24,   0x3,  0x1, 0x18, 0x35,  0x1,  0x18, 0x18, 0x18, 0x18];
+        let b = [
+            0x15, 0x36, 0x0, 0x15, 0x37, 0x0, 0x24, 0x0, 0x2, 0x24, 0x2, 0x6, 0x24, 0x3, 0x1, 0x18,
+            0x35, 0x1, 0x18, 0x18, 0x18, 0x18,
+        ];
 
-        let dummy_pointer = Pointer{buf: &b, current: 1, left: 21};
+        let dummy_pointer = Pointer {
+            buf: &b,
+            current: 1,
+            left: 21,
+        };
         // These are the decoded elements that we expect from this input
         let verify_matrix: [(TagType, ElementType); 13] = [
             (TagType::Anonymous, ElementType::Struct(dummy_pointer)),
-            (TagType::Context,ElementType::Array(dummy_pointer)),
-            (TagType::Anonymous,ElementType::Struct(dummy_pointer)),
-            (TagType::Context,ElementType::List(dummy_pointer)),
-            (TagType::Context,ElementType::U8(2)),
-            (TagType::Context,ElementType::U8(6)),
-            (TagType::Context,ElementType::U8(1)),
-            (TagType::Anonymous,ElementType::EndCnt),
-            (TagType::Context,ElementType::Struct(dummy_pointer)),
-            (TagType::Anonymous,ElementType::EndCnt),
-            (TagType::Anonymous,ElementType::EndCnt),
-            (TagType::Anonymous,ElementType::EndCnt),
-            (TagType::Anonymous,ElementType::EndCnt),
+            (TagType::Context, ElementType::Array(dummy_pointer)),
+            (TagType::Anonymous, ElementType::Struct(dummy_pointer)),
+            (TagType::Context, ElementType::List(dummy_pointer)),
+            (TagType::Context, ElementType::U8(2)),
+            (TagType::Context, ElementType::U8(6)),
+            (TagType::Context, ElementType::U8(1)),
+            (TagType::Anonymous, ElementType::EndCnt),
+            (TagType::Context, ElementType::Struct(dummy_pointer)),
+            (TagType::Anonymous, ElementType::EndCnt),
+            (TagType::Anonymous, ElementType::EndCnt),
+            (TagType::Anonymous, ElementType::EndCnt),
+            (TagType::Anonymous, ElementType::EndCnt),
         ];
 
         let mut list_iter = TLVList::new(&b, b.len()).into_iter();
@@ -645,7 +801,10 @@ mod tests {
                 None => break,
                 Some(a) => {
                     assert_eq!(a.tag_type, verify_matrix[index].0);
-                    assert_eq!(std::mem::discriminant(&a.element_type), std::mem::discriminant(&verify_matrix[index].1));
+                    assert_eq!(
+                        std::mem::discriminant(&a.element_type),
+                        std::mem::discriminant(&verify_matrix[index].1)
+                    );
                 }
             }
             index += 1;

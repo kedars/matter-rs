@@ -1,9 +1,9 @@
 use crate::error::*;
-use crate::transport::proto_hdr;
 use crate::transport::exchange;
 use crate::transport::exchange::ExchangeRole;
-use crate::transport::plain_hdr;
 use crate::transport::mrp;
+use crate::transport::plain_hdr;
+use crate::transport::proto_hdr;
 use crate::transport::session;
 use crate::utils::writebuf::*;
 
@@ -16,13 +16,15 @@ pub struct TxCtx<'a> {
 }
 
 impl<'a> TxCtx<'a> {
-    pub fn new(buf: &'a mut[u8]) -> Result<TxCtx<'a>, Error> {
-        let mut txctx = TxCtx{
-              plain_hdr: plain_hdr::PlainHdr::default(),
-              proto_hdr: proto_hdr::ProtoHdr::default(),
-              write_buf: WriteBuf::new(buf, buf.len()),
+    pub fn new(buf: &'a mut [u8]) -> Result<TxCtx<'a>, Error> {
+        let mut txctx = TxCtx {
+            plain_hdr: plain_hdr::PlainHdr::default(),
+            proto_hdr: proto_hdr::ProtoHdr::default(),
+            write_buf: WriteBuf::new(buf, buf.len()),
         };
-        txctx.write_buf.reserve(plain_hdr::max_plain_hdr_len() + proto_hdr::max_proto_hdr_len())?;
+        txctx
+            .write_buf
+            .reserve(plain_hdr::max_plain_hdr_len() + proto_hdr::max_proto_hdr_len())?;
         Ok(txctx)
     }
 
@@ -47,18 +49,27 @@ impl<'a> TxCtx<'a> {
     }
 
     // Send the payload, exch_id is None for new exchange
-    pub fn prepare_send(&mut self, session: &mut session::Session, exch_id: u16, role: exchange::ExchangeRole) -> Result<(), Error> {
+    pub fn prepare_send(
+        &mut self,
+        session: &mut session::Session,
+        exch_id: u16,
+        role: exchange::ExchangeRole,
+    ) -> Result<(), Error> {
         info!("payload: {:x?}", self.write_buf.as_slice());
-        
-        // Set up the parameters        
+
+        // Set up the parameters
         self.proto_hdr.exch_id = exch_id;
-        if role == ExchangeRole::Initiator { self.proto_hdr.set_initiator() }
+        if role == ExchangeRole::Initiator {
+            self.proto_hdr.set_initiator()
+        }
         self.plain_hdr.sess_id = session.get_peer_sess_id();
         self.plain_hdr.ctr = session.get_msg_ctr();
         self.plain_hdr.sess_type = plain_hdr::SessionType::Encrypted;
 
         // Get the exchange
-        let mut exchange = session.get_exchange(exch_id, role, role == ExchangeRole::Initiator).ok_or(Error::Invalid)?;
+        let mut exchange = session
+            .get_exchange(exch_id, role, role == ExchangeRole::Initiator)
+            .ok_or(Error::Invalid)?;
 
         // Handle message reliability
         mrp::before_msg_send(&mut exchange, &self.plain_hdr, &mut self.proto_hdr)?;
@@ -89,4 +100,3 @@ impl<'a> TxCtx<'a> {
         Ok(())
     }
 }
-

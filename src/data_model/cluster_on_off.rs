@@ -1,14 +1,14 @@
-use crate::error::*;
 use super::objects::*;
+use crate::error::*;
 use log::info;
 
 const CLUSTER_ONOFF_ID: u32 = 0x0006;
 
-const ATTR_ON_OFF_ID: u32   = 0x0;
+const ATTR_ON_OFF_ID: u32 = 0x0;
 
-const CMD_OFF_ID: u16       = 0x00;
-const CMD_ON_ID: u16        = 0x01;
-const CMD_TOGGLE_ID: u16    = 0x02;
+const CMD_OFF_ID: u16 = 0x00;
+const CMD_ON_ID: u16 = 0x01;
+const CMD_TOGGLE_ID: u16 = 0x02;
 
 fn attr_on_off_new() -> Result<Box<Attribute>, Error> {
     // Id: 0, Value: false

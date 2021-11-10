@@ -1,20 +1,23 @@
 use std::fmt;
 
 use crate::error::*;
+use crate::transport::plain_hdr;
 use crate::utils::parsebuf::ParseBuf;
 use crate::utils::writebuf::WriteBuf;
-use crate::transport::plain_hdr;
 
 use aes::Aes128;
-use ccm::{Ccm, consts::{U16, U12}};
-use ccm::aead::{AeadInPlace, NewAead, generic_array::GenericArray};
+use ccm::aead::{generic_array::GenericArray, AeadInPlace, NewAead};
+use ccm::{
+    consts::{U12, U16},
+    Ccm,
+};
 use log::info;
 
-const EXCHANGE_FLAG_VENDOR_MASK:       u8 = 0x10;
-const EXCHANGE_FLAG_SECEX_MASK:        u8 = 0x08;
-const EXCHANGE_FLAG_RELIABLE_MASK:     u8 = 0x04;
-const EXCHANGE_FLAG_ACK_MASK:          u8 = 0x02;
-const EXCHANGE_FLAG_INITIATOR_MASK:    u8 = 0x01;
+const EXCHANGE_FLAG_VENDOR_MASK: u8 = 0x10;
+const EXCHANGE_FLAG_SECEX_MASK: u8 = 0x08;
+const EXCHANGE_FLAG_RELIABLE_MASK: u8 = 0x04;
+const EXCHANGE_FLAG_ACK_MASK: u8 = 0x02;
+const EXCHANGE_FLAG_INITIATOR_MASK: u8 = 0x01;
 
 #[derive(Default)]
 pub struct ProtoHdr {
@@ -30,12 +33,12 @@ impl ProtoHdr {
     pub fn is_vendor(&self) -> bool {
         (self.exch_flags & EXCHANGE_FLAG_VENDOR_MASK) != 0
     }
- 
+
     pub fn set_vendor(&mut self, proto_vendor_id: u16) {
         self.exch_flags |= EXCHANGE_FLAG_RELIABLE_MASK;
         self.proto_vendor_id = Some(proto_vendor_id);
     }
-    
+
     pub fn is_security_ext(&self) -> bool {
         (self.exch_flags & EXCHANGE_FLAG_SECEX_MASK) != 0
     }
@@ -46,7 +49,7 @@ impl ProtoHdr {
     pub fn set_reliable(&mut self) {
         self.exch_flags |= EXCHANGE_FLAG_RELIABLE_MASK;
     }
-    
+
     pub fn is_ack(&self) -> bool {
         (self.exch_flags & EXCHANGE_FLAG_ACK_MASK) != 0
     }
@@ -55,25 +58,30 @@ impl ProtoHdr {
         self.exch_flags |= EXCHANGE_FLAG_ACK_MASK;
         self.ack_msg_ctr = Some(ack_msg_ctr);
     }
-    
+
     pub fn is_initiator(&self) -> bool {
         (self.exch_flags & EXCHANGE_FLAG_INITIATOR_MASK) != 0
     }
-    
+
     pub fn set_initiator(&mut self) {
         self.exch_flags |= EXCHANGE_FLAG_INITIATOR_MASK;
     }
 
-    pub fn decrypt_and_decode(&mut self, plain_hdr: &plain_hdr::PlainHdr, parsebuf: &mut ParseBuf, dec_key: Option<&[u8]>) -> Result<(), Error> {
+    pub fn decrypt_and_decode(
+        &mut self,
+        plain_hdr: &plain_hdr::PlainHdr,
+        parsebuf: &mut ParseBuf,
+        dec_key: Option<&[u8]>,
+    ) -> Result<(), Error> {
         if let Some(d) = dec_key {
             // We decrypt only if the decryption key is valid
             decrypt_in_place(plain_hdr.ctr, parsebuf, d)?;
         }
 
-        self.exch_flags   = parsebuf.le_u8()?;
+        self.exch_flags = parsebuf.le_u8()?;
         self.proto_opcode = parsebuf.le_u8()?;
-        self.exch_id      = parsebuf.le_u16()?;
-        self.proto_id     = parsebuf.le_u16()?;
+        self.exch_id = parsebuf.le_u16()?;
+        self.proto_id = parsebuf.le_u16()?;
 
         info!("[decode] {} ", self);
         if self.is_vendor() {
@@ -120,7 +128,11 @@ impl fmt::Display for ProtoHdr {
         if self.is_initiator() {
             flag_str.push_str("I|");
         }
-        write!(f, "ExId: {}, Proto: {}, Opcode: {}, Flags: {}", self.exch_id, self.proto_id, self.proto_opcode, flag_str)
+        write!(
+            f,
+            "ExId: {}, Proto: {}, Opcode: {}, Flags: {}",
+            self.exch_id, self.proto_id, self.proto_opcode, flag_str
+        )
     }
 }
 
@@ -129,7 +141,7 @@ const AAD_LEN: usize = 8;
 const TAG_LEN: usize = 16;
 const IV_LEN: usize = 12;
 
-fn get_iv(recvd_ctr: u32, iv: &mut [u8]) -> Result<(), Error>{
+fn get_iv(recvd_ctr: u32, iv: &mut [u8]) -> Result<(), Error> {
     // The IV is the source address (64-bit) followed by the message counter (32-bit)
     let mut write_buf = WriteBuf::new(iv, IV_LEN);
     // For some reason, this is 0 in the 'bypass' mode
@@ -138,10 +150,12 @@ fn get_iv(recvd_ctr: u32, iv: &mut [u8]) -> Result<(), Error>{
     Ok(())
 }
 
-pub fn encrypt_in_place(send_ctr: u32,
-                    plain_hdr: &[u8],
-                    writebuf: &mut WriteBuf,
-                    key: &[u8]) -> Result<(), Error> {
+pub fn encrypt_in_place(
+    send_ctr: u32,
+    plain_hdr: &[u8],
+    writebuf: &mut WriteBuf,
+    key: &[u8],
+) -> Result<(), Error> {
     // IV
     let mut iv: [u8; IV_LEN] = [0; IV_LEN];
     get_iv(send_ctr, &mut iv)?;
@@ -160,9 +174,7 @@ pub fn encrypt_in_place(send_ctr: u32,
     Ok(())
 }
 
-fn decrypt_in_place(recvd_ctr: u32,
-                    parsebuf: &mut ParseBuf,
-                    key: &[u8]) -> Result<(), Error> {
+fn decrypt_in_place(recvd_ctr: u32, parsebuf: &mut ParseBuf, key: &[u8]) -> Result<(), Error> {
     // AAD:
     //    the unencrypted header of this packet
     let mut aad: [u8; AAD_LEN] = [0; AAD_LEN];
@@ -180,7 +192,7 @@ fn decrypt_in_place(recvd_ctr: u32,
     let mut tag: [u8; TAG_LEN] = [0; TAG_LEN];
     tag.copy_from_slice(parsebuf.tail(TAG_LEN)?);
     let tag = GenericArray::from_slice(&tag);
-    
+
     // IV:
     //   the specific way for creating IV is in get_iv
     let mut iv: [u8; IV_LEN] = [0; IV_LEN];
@@ -225,24 +237,31 @@ mod tests {
     pub fn test_decrypt_success() {
         // These values are captured from an execution run of the chip-tool binary
         let recvd_ctr = 41;
-        let mut input_buf: [u8; 52] = [0x0, 0x11, 0x0, 0x0, 0x29, 0x0, 0x0, 0x0, 0xb7, 0xb0,
-                                        0xa0, 0xb2, 0xfb, 0xa9, 0x3b, 0x66, 0x66, 0xb4, 0xec,
-                                        0xba, 0x4b, 0xa5, 0x3c, 0xfa, 0x0d, 0xe0, 0x04, 0xbb,
-                                        0xa6, 0xa6, 0xfa, 0x04, 0x2c, 0xd0, 0xd4, 0x73, 0xd8,
-                                        0x41, 0x6a, 0xaa, 0x08, 0x5f, 0xe8, 0xf7, 0x67, 0x8b, 
-                                        0xfe, 0xaa, 0x43, 0xb1, 0x59, 0xe2];
+        let mut input_buf: [u8; 52] = [
+            0x0, 0x11, 0x0, 0x0, 0x29, 0x0, 0x0, 0x0, 0xb7, 0xb0, 0xa0, 0xb2, 0xfb, 0xa9, 0x3b,
+            0x66, 0x66, 0xb4, 0xec, 0xba, 0x4b, 0xa5, 0x3c, 0xfa, 0x0d, 0xe0, 0x04, 0xbb, 0xa6,
+            0xa6, 0xfa, 0x04, 0x2c, 0xd0, 0xd4, 0x73, 0xd8, 0x41, 0x6a, 0xaa, 0x08, 0x5f, 0xe8,
+            0xf7, 0x67, 0x8b, 0xfe, 0xaa, 0x43, 0xb1, 0x59, 0xe2,
+        ];
         let input_buf_len = input_buf.len();
         let mut parsebuf = ParseBuf::new(&mut input_buf, input_buf_len);
-        let key = [0x44, 0xd4, 0x3c, 0x91, 0xd2, 0x27, 0xf3, 0xba, 0x08, 0x24, 0xc5, 0xd8, 0x7c, 0xb8, 0x1b, 0x33];
+        let key = [
+            0x44, 0xd4, 0x3c, 0x91, 0xd2, 0x27, 0xf3, 0xba, 0x08, 0x24, 0xc5, 0xd8, 0x7c, 0xb8,
+            0x1b, 0x33,
+        ];
 
         // decrypt_in_place() requires that the plain_text buffer of 8 bytes must be already parsed as AAD, we'll just fake it here
         parsebuf.le_u32().unwrap();
         parsebuf.le_u32().unwrap();
 
         decrypt_in_place(recvd_ctr, &mut parsebuf, &key).unwrap();
-        assert_eq!(parsebuf.as_slice(), [5, 8, 0x58, 0x28, 0x01, 0x00, 0x15, 0x36, 0x00, 0x15,
-                                            0x37, 0x00, 0x24, 0x00, 0x01, 0x24, 0x02, 0x06, 0x24,
-                                            0x03, 0x01, 0x18, 0x35, 0x01, 0x18, 0x18, 0x18, 0x18]);
+        assert_eq!(
+            parsebuf.as_slice(),
+            [
+                5, 8, 0x58, 0x28, 0x01, 0x00, 0x15, 0x36, 0x00, 0x15, 0x37, 0x00, 0x24, 0x00, 0x01,
+                0x24, 0x02, 0x06, 0x24, 0x03, 0x01, 0x18, 0x35, 0x01, 0x18, 0x18, 0x18, 0x18
+            ]
+        );
     }
 
     #[test]
@@ -256,20 +275,26 @@ mod tests {
 
         let plain_hdr: [u8; 8] = [0x0, 0x11, 0x0, 0x0, 0x29, 0x0, 0x0, 0x0];
 
-        let plain_text: [u8; 28] = [5, 8, 0x58, 0x28, 0x01, 0x00, 0x15, 0x36, 0x00, 0x15,
-                                    0x37, 0x00, 0x24, 0x00, 0x01, 0x24, 0x02, 0x06, 0x24,
-                                    0x03, 0x01, 0x18, 0x35, 0x01, 0x18, 0x18, 0x18, 0x18];
+        let plain_text: [u8; 28] = [
+            5, 8, 0x58, 0x28, 0x01, 0x00, 0x15, 0x36, 0x00, 0x15, 0x37, 0x00, 0x24, 0x00, 0x01,
+            0x24, 0x02, 0x06, 0x24, 0x03, 0x01, 0x18, 0x35, 0x01, 0x18, 0x18, 0x18, 0x18,
+        ];
         writebuf.append(&plain_text).unwrap();
 
-        let key = [0x44, 0xd4, 0x3c, 0x91, 0xd2, 0x27, 0xf3, 0xba, 0x08, 0x24, 0xc5, 0xd8, 0x7c, 0xb8, 0x1b, 0x33];
+        let key = [
+            0x44, 0xd4, 0x3c, 0x91, 0xd2, 0x27, 0xf3, 0xba, 0x08, 0x24, 0xc5, 0xd8, 0x7c, 0xb8,
+            0x1b, 0x33,
+        ];
 
         encrypt_in_place(send_ctr, &plain_hdr, &mut writebuf, &key).unwrap();
-        assert_eq!(writebuf.as_slice(), [0xb7, 0xb0,
-                                            0xa0, 0xb2, 0xfb, 0xa9, 0x3b, 0x66, 0x66, 0xb4, 0xec,
-                                            0xba, 0x4b, 0xa5, 0x3c, 0xfa, 0x0d, 0xe0, 0x04, 0xbb,
-                                            0xa6, 0xa6, 0xfa, 0x04, 0x2c, 0xd0, 0xd4, 0x73, 0xd8,
-                                            0x41, 0x6a, 0xaa, 0x08, 0x5f, 0xe8, 0xf7, 0x67, 0x8b,
-                                            0xfe, 0xaa, 0x43, 0xb1, 0x59, 0xe2]);
+        assert_eq!(
+            writebuf.as_slice(),
+            [
+                0xb7, 0xb0, 0xa0, 0xb2, 0xfb, 0xa9, 0x3b, 0x66, 0x66, 0xb4, 0xec, 0xba, 0x4b, 0xa5,
+                0x3c, 0xfa, 0x0d, 0xe0, 0x04, 0xbb, 0xa6, 0xa6, 0xfa, 0x04, 0x2c, 0xd0, 0xd4, 0x73,
+                0xd8, 0x41, 0x6a, 0xaa, 0x08, 0x5f, 0xe8, 0xf7, 0x67, 0x8b, 0xfe, 0xaa, 0x43, 0xb1,
+                0x59, 0xe2
+            ]
+        );
     }
-
 }

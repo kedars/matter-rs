@@ -1,9 +1,6 @@
+use crate::{error::*, transport::exchange::*};
 use heapless::Vec;
 use log::info;
-use crate::{
-    error::*,
-    transport::exchange::*
-};
 
 const MATTER_AES128_KEY_SIZE: usize = 16;
 
@@ -39,15 +36,19 @@ pub struct Session {
     sess_id: u16,
     peer_sess_id: u16,
     msg_ctr: u32,
-    exchanges: Vec::<Exchange, 4>,
+    exchanges: Vec<Exchange, 4>,
     mode: SessionMode,
     state: SessionState,
 }
 
 impl Session {
-    pub fn get_exchange(&mut self, id: u16, role: ExchangeRole, create_new: bool) -> Option<&mut Exchange> {
-        let index = self.exchanges.iter()
-            .position(|x| x.is_match(id, role));
+    pub fn get_exchange(
+        &mut self,
+        id: u16,
+        role: ExchangeRole,
+        create_new: bool,
+    ) -> Option<&mut Exchange> {
+        let index = self.exchanges.iter().position(|x| x.is_match(id, role));
         if let Some(i) = index {
             Some(&mut self.exchanges[i])
         } else {
@@ -58,9 +59,8 @@ impl Session {
                 match self.exchanges.push(e) {
                     Ok(_) => {
                         // Return the exchange that was just added
-                        return self.exchanges.iter_mut()
-                            .find(|x| x.is_match(id, role));
-                    },
+                        return self.exchanges.iter_mut().find(|x| x.is_match(id, role));
+                    }
                     Err(_) => return None,
                 }
             } else {
@@ -70,14 +70,16 @@ impl Session {
         }
     }
 
-    pub fn new(sess_id: u16,
+    pub fn new(
+        sess_id: u16,
         peer_sess_id: u16,
         dec_key: [u8; MATTER_AES128_KEY_SIZE],
         enc_key: [u8; MATTER_AES128_KEY_SIZE],
         peer_addr: std::net::IpAddr,
-        mode: SessionMode) -> Session {
+        mode: SessionMode,
+    ) -> Session {
         Session {
-            peer_addr  : Some(peer_addr),
+            peer_addr: Some(peer_addr),
             dec_key,
             enc_key,
             sess_id,
@@ -119,22 +121,25 @@ impl Session {
 
 #[derive(Debug)]
 pub struct SessionMgr {
-    pub sessions: Vec::<Session, 16>,
+    pub sessions: Vec<Session, 16>,
 }
 
 impl SessionMgr {
     pub fn new() -> SessionMgr {
-        SessionMgr{
-            sessions: Vec::new()
+        SessionMgr {
+            sessions: Vec::new(),
         }
     }
- 
-    pub fn add(&mut self, sess_id: u16,
-               peer_sess_id: u16,
-               dec_key: [u8; MATTER_AES128_KEY_SIZE],
-               enc_key: [u8; MATTER_AES128_KEY_SIZE],
-               peer_addr: std::net::IpAddr,
-               mode: SessionMode) -> Result<(), Error> {
+
+    pub fn add(
+        &mut self,
+        sess_id: u16,
+        peer_sess_id: u16,
+        dec_key: [u8; MATTER_AES128_KEY_SIZE],
+        enc_key: [u8; MATTER_AES128_KEY_SIZE],
+        peer_addr: std::net::IpAddr,
+        mode: SessionMode,
+    ) -> Result<(), Error> {
         let session = Session::new(sess_id, peer_sess_id, dec_key, enc_key, peer_addr, mode);
         match self.sessions.push(session) {
             Ok(_) => return Ok(()),
@@ -143,18 +148,29 @@ impl SessionMgr {
     }
 
     fn _get(&self, sess_id: u16, peer_addr: std::net::IpAddr) -> Option<usize> {
-        self.sessions.iter()
-                     .position(|x| {
-                                x.sess_id == sess_id &&
-                                x.peer_addr == Some(peer_addr)
-                      })
+        self.sessions
+            .iter()
+            .position(|x| x.sess_id == sess_id && x.peer_addr == Some(peer_addr))
     }
 
-    pub fn get(&mut self, sess_id: u16, peer_addr: std::net::IpAddr, is_encrypted: bool) -> Option<&mut Session> {
+    pub fn get(
+        &mut self,
+        sess_id: u16,
+        peer_addr: std::net::IpAddr,
+        is_encrypted: bool,
+    ) -> Option<&mut Session> {
         let mut index = self._get(sess_id, peer_addr);
-        if index == None && sess_id == 0 && ! is_encrypted {
+        if index == None && sess_id == 0 && !is_encrypted {
             // We must create a new session for this case
-            self.add(0, 0, [0; MATTER_AES128_KEY_SIZE], [0; MATTER_AES128_KEY_SIZE], peer_addr, SessionMode::PlainText).ok()?;
+            self.add(
+                0,
+                0,
+                [0; MATTER_AES128_KEY_SIZE],
+                [0; MATTER_AES128_KEY_SIZE],
+                peer_addr,
+                SessionMode::PlainText,
+            )
+            .ok()?;
             index = self._get(sess_id, peer_addr);
         }
         index.map(move |x| &mut self.sessions[x])
