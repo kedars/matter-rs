@@ -1,6 +1,7 @@
 use crate::error::*;
 use crate::proto_demux;
 use crate::proto_demux::ResponseRequired;
+use crate::tlv::*;
 use crate::transport::tx_ctx::TxCtx;
 use log::{error, info};
 use num;
@@ -45,6 +46,23 @@ impl SecureChannel {
         info!("In MRP StandAlone ACK Handler");
         Ok(ResponseRequired::No)
     }
+
+    fn pbkdfparamreq_handler(&mut self, _opcode: OpCode, buf: &[u8], _tx_ctx: &mut TxCtx) -> Result<ResponseRequired, Error> {
+        info!("In PBKDF Param Request Handler");
+        let root = get_root_node_struct(buf).ok_or(Error::InvalidData)?;
+ 
+        let initiator_random_node = root.find_element(1).ok_or(Error::Invalid)?;
+        let initiator_random = initiator_random_node.get_slice().ok_or(Error::InvalidData)?;
+        let initiator_sessid = root.find_element(2).ok_or(Error::Invalid)?
+                                   .get_u16().ok_or(Error::Invalid)?;
+        let passcode_id = root.find_element(3).ok_or(Error::Invalid)?
+                                   .get_u16().ok_or(Error::Invalid)?;
+        let has_params = root.find_element(4).ok_or(Error::Invalid)?
+                                   .get_bool().ok_or(Error::Invalid)?;
+
+        info!("random: {:x?} sessid: {} passid: {} hasparams:{}", initiator_random, initiator_sessid, passcode_id, has_params);
+        Ok(ResponseRequired::No)
+    }
 }
 
 impl proto_demux::HandleProto for SecureChannel {
@@ -54,6 +72,7 @@ impl proto_demux::HandleProto for SecureChannel {
         tx_ctx.set_proto_id(PROTO_ID_SECURE_CHANNEL as u16);
         match proto_opcode {
             OpCode::MRPStandAloneAck => return self.mrpstandaloneack_handler(proto_opcode, buf, tx_ctx),
+            OpCode::PBKDFParamRequest => return self.pbkdfparamreq_handler(proto_opcode, buf, tx_ctx),
             _ => {
                 error!("OpCode Not Handled: {:?}", proto_opcode);
                 return Err(Error::InvalidOpcode);
