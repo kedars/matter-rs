@@ -1,5 +1,6 @@
 use crate::error::*;
 use crate::proto_demux;
+use crate::proto_demux::ProtoCtx;
 use crate::proto_demux::ResponseRequired;
 use crate::tlv::*;
 use crate::transport::tx_ctx::TxCtx;
@@ -47,8 +48,7 @@ impl SecureChannel {
 
     fn mrpstandaloneack_handler(
         &mut self,
-        _opcode: OpCode,
-        _buf: &[u8],
+        _proto_ctx: &mut ProtoCtx,
         _tx_ctx: &mut TxCtx,
     ) -> Result<ResponseRequired, Error> {
         info!("In MRP StandAlone ACK Handler");
@@ -57,12 +57,11 @@ impl SecureChannel {
 
     fn pbkdfparamreq_handler(
         &mut self,
-        _opcode: OpCode,
-        buf: &[u8],
+        proto_ctx: &mut ProtoCtx,
         _tx_ctx: &mut TxCtx,
     ) -> Result<ResponseRequired, Error> {
         info!("In PBKDF Param Request Handler");
-        let root = get_root_node_struct(buf).ok_or(Error::InvalidData)?;
+        let root = get_root_node_struct(proto_ctx.buf).ok_or(Error::InvalidData)?;
 
         let initiator_random_node = root.find_element(1).ok_or(Error::Invalid)?;
         let initiator_random = initiator_random_node
@@ -95,16 +94,15 @@ impl SecureChannel {
 impl proto_demux::HandleProto for SecureChannel {
     fn handle_proto_id(
         &mut self,
-        proto_opcode: u8,
-        buf: &[u8],
+        proto_ctx: &mut ProtoCtx,
         tx_ctx: &mut TxCtx,
     ) -> Result<ResponseRequired, Error> {
         let proto_opcode: OpCode =
-            num::FromPrimitive::from_u8(proto_opcode).ok_or(Error::Invalid)?;
+            num::FromPrimitive::from_u8(proto_ctx.proto_opcode).ok_or(Error::Invalid)?;
         tx_ctx.set_proto_id(PROTO_ID_SECURE_CHANNEL as u16);
         match proto_opcode {
-            OpCode::MRPStandAloneAck => self.mrpstandaloneack_handler(proto_opcode, buf, tx_ctx),
-            OpCode::PBKDFParamRequest => self.pbkdfparamreq_handler(proto_opcode, buf, tx_ctx),
+            OpCode::MRPStandAloneAck => self.mrpstandaloneack_handler(proto_ctx, tx_ctx),
+            OpCode::PBKDFParamRequest => self.pbkdfparamreq_handler(proto_ctx, tx_ctx),
             _ => {
                 error!("OpCode Not Handled: {:?}", proto_opcode);
                 Err(Error::InvalidOpcode)

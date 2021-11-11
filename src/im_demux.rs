@@ -1,5 +1,6 @@
 use crate::error::*;
 use crate::proto_demux;
+use crate::proto_demux::ProtoCtx;
 use crate::proto_demux::ResponseRequired;
 use crate::tlv::*;
 use crate::transport::tx_ctx::TxCtx;
@@ -67,13 +68,12 @@ impl InteractionModel {
     // For now, we just return without doing anything to this exchange. This needs change
     fn invoke_req_handler(
         &mut self,
-        _opcode: OpCode,
-        buf: &[u8],
+        proto_ctx: &mut ProtoCtx,
         tx_ctx: &mut TxCtx,
     ) -> Result<ResponseRequired, Error> {
         tx_ctx.set_proto_opcode(OpCode::InvokeResponse as u8);
 
-        let root = get_root_node_struct(buf).ok_or(Error::InvalidData)?;
+        let root = get_root_node_struct(proto_ctx.buf).ok_or(Error::InvalidData)?;
         // Spec says tag should be 2, but CHIP Tool sends the tag as 0
         let mut cmd_list_iter = root
             .find_element(0)
@@ -103,15 +103,15 @@ impl InteractionModel {
 impl proto_demux::HandleProto for InteractionModel {
     fn handle_proto_id(
         &mut self,
-        proto_opcode: u8,
-        buf: &[u8],
+        proto_ctx: &mut ProtoCtx,
         tx_ctx: &mut TxCtx,
     ) -> Result<ResponseRequired, Error> {
         let proto_opcode: OpCode =
-            num::FromPrimitive::from_u8(proto_opcode).ok_or(Error::Invalid)?;
+            num::FromPrimitive::from_u8(proto_ctx.proto_opcode).ok_or(Error::Invalid)?;
         tx_ctx.set_proto_id(PROTO_ID_INTERACTION_MODEL as u16);
+
         match proto_opcode {
-            OpCode::InvokeRequest => self.invoke_req_handler(proto_opcode, buf, tx_ctx),
+            OpCode::InvokeRequest => self.invoke_req_handler(proto_ctx, tx_ctx),
             _ => {
                 error!("Opcode Not Handled: {:?}", proto_opcode);
                 Err(Error::InvalidOpcode)
@@ -181,9 +181,10 @@ mod tests {
             variable: 0,
         }));
         let mut interaction_model = InteractionModel::new(data_model.clone());
-        let mut buf: [u8; 20] = [0; 20];
-        let mut tx_ctx = TxCtx::new(&mut buf)?;
-        let _result = interaction_model.handle_proto_id(0x08, &b, &mut tx_ctx);
+        let mut proto_ctx = ProtoCtx::new(0x01, 0x08, &b);
+        let mut out_buf: [u8; 20] = [0; 20];
+        let mut tx_ctx = TxCtx::new(&mut out_buf)?;
+        let _result = interaction_model.handle_proto_id(&mut proto_ctx, &mut tx_ctx);
 
         let data = data_model.node.lock().unwrap();
         assert_eq!(data.endpoint, 0);

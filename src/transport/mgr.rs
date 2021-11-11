@@ -3,6 +3,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use crate::error::*;
 use crate::proto_demux;
+use crate::proto_demux::ProtoCtx;
 use crate::transport::exchange;
 use crate::transport::mrp;
 use crate::transport::plain_hdr;
@@ -147,14 +148,15 @@ impl Mgr {
                 }
             };
 
-            match self.proto_demux.handle(
+            let mut proto_ctx = ProtoCtx::new(
                 rx_ctx.proto_hdr.proto_id.into(),
                 rx_ctx.proto_hdr.proto_opcode,
                 parse_buf.as_slice(),
-                &mut tx_ctx,
-            ) {
+            );
+            match self.proto_demux.handle(&mut proto_ctx, &mut tx_ctx) {
                 Ok(r) => {
                     if let proto_demux::ResponseRequired::No = r {
+                        // We need to send the Ack if reliability is enabled, in this case
                         continue;
                     }
                 }
