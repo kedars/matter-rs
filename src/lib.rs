@@ -4,6 +4,7 @@ pub mod error;
 pub mod im_demux;
 pub mod proto_demux;
 pub mod sc_demux;
+pub mod secure_channel;
 pub mod tlv;
 pub mod transport;
 pub mod utils;

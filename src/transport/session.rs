@@ -10,6 +10,12 @@ pub enum SessionMode {
     PlainText,
 }
 
+impl Default for SessionMode {
+    fn default() -> Self {
+        SessionMode::PlainText
+    }
+}
+
 #[derive(Debug)]
 pub enum SessionState {
     // When we say raw, we mean the session id and keys are not populated
@@ -17,7 +23,13 @@ pub enum SessionState {
     Initialised,
 }
 
-#[derive(Debug)]
+impl Default for SessionState {
+    fn default() -> Self {
+        SessionState::Raw
+    }
+}
+
+#[derive(Debug, Default)]
 pub struct Session {
     // If this field is None, the rest of the members are ignored
     peer_addr: Option<std::net::IpAddr>,

@@ -152,6 +152,7 @@ impl Mgr {
                 rx_ctx.proto_hdr.proto_id.into(),
                 rx_ctx.proto_hdr.proto_opcode,
                 parse_buf.as_slice(),
+                session,
             );
             match self.proto_demux.handle(&mut proto_ctx, &mut tx_ctx) {
                 Ok(r) => {

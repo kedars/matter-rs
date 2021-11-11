@@ -128,6 +128,7 @@ impl proto_demux::HandleProto for InteractionModel {
 mod tests {
     use crate::im_demux::*;
     use crate::proto_demux::HandleProto;
+    use crate::transport::session::Session;
     use std::sync::Arc;
     use std::sync::Mutex;
 
@@ -181,7 +182,8 @@ mod tests {
             variable: 0,
         }));
         let mut interaction_model = InteractionModel::new(data_model.clone());
-        let mut proto_ctx = ProtoCtx::new(0x01, 0x08, &b);
+        let mut sess: Session = Default::default();
+        let mut proto_ctx = ProtoCtx::new(0x01, 0x08, &b, &mut sess);
         let mut out_buf: [u8; 20] = [0; 20];
         let mut tx_ctx = TxCtx::new(&mut out_buf)?;
         let _result = interaction_model.handle_proto_id(&mut proto_ctx, &mut tx_ctx);

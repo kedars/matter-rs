@@ -1,4 +1,5 @@
 use crate::error::*;
+use crate::transport::session::Session;
 use crate::transport::tx_ctx::TxCtx;
 
 const MAX_PROTOCOLS: usize = 4;
@@ -15,14 +16,16 @@ pub struct ProtoCtx<'a> {
     pub proto_id: usize,
     pub proto_opcode: u8,
     pub buf: &'a [u8],
+    pub session: &'a mut Session,
 }
 
 impl<'a> ProtoCtx<'a> {
-    pub fn new(proto_id: usize, proto_opcode: u8, buf: &'a [u8]) -> Self {
+    pub fn new(proto_id: usize, proto_opcode: u8, buf: &'a [u8], session: &'a mut Session) -> Self {
         ProtoCtx {
             proto_id,
             proto_opcode,
             buf,
+            session,
         }
     }
 }

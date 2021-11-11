@@ -2,7 +2,7 @@ use crate::error::*;
 use crate::proto_demux;
 use crate::proto_demux::ProtoCtx;
 use crate::proto_demux::ResponseRequired;
-use crate::tlv::*;
+use crate::secure_channel::pake::PAKE;
 use crate::transport::tx_ctx::TxCtx;
 use log::{error, info};
 use num;
@@ -32,7 +32,7 @@ enum OpCode {
 }
 
 pub struct SecureChannel {
-    _dummy: u32,
+    pake: PAKE,
 }
 
 impl Default for SecureChannel {
@@ -43,7 +43,7 @@ impl Default for SecureChannel {
 
 impl SecureChannel {
     pub fn new() -> SecureChannel {
-        SecureChannel { _dummy: 10 }
+        SecureChannel { pake: PAKE::new() }
     }
 
     fn mrpstandaloneack_handler(
@@ -61,32 +61,7 @@ impl SecureChannel {
         _tx_ctx: &mut TxCtx,
     ) -> Result<ResponseRequired, Error> {
         info!("In PBKDF Param Request Handler");
-        let root = get_root_node_struct(proto_ctx.buf).ok_or(Error::InvalidData)?;
-
-        let initiator_random_node = root.find_element(1).ok_or(Error::Invalid)?;
-        let initiator_random = initiator_random_node
-            .get_slice()
-            .ok_or(Error::InvalidData)?;
-        let initiator_sessid = root
-            .find_element(2)
-            .ok_or(Error::Invalid)?
-            .get_u16()
-            .ok_or(Error::Invalid)?;
-        let passcode_id = root
-            .find_element(3)
-            .ok_or(Error::Invalid)?
-            .get_u16()
-            .ok_or(Error::Invalid)?;
-        let has_params = root
-            .find_element(4)
-            .ok_or(Error::Invalid)?
-            .get_bool()
-            .ok_or(Error::Invalid)?;
-
-        info!(
-            "random: {:x?} sessid: {} passid: {} hasparams:{}",
-            initiator_random, initiator_sessid, passcode_id, has_params
-        );
+        self.pake.handle_pbkdfparamrequest(proto_ctx.buf)?;
         Ok(ResponseRequired::No)
     }
 }

@@ -156,7 +156,7 @@ impl<'a> TLVElement<'a> {
         }
     }
 
-    pub fn get_slice(&self) -> Option<&[u8]> {
+    pub fn get_slice(&self) -> Option<&'a [u8]> {
         match self.element_type {
             ElementType::Str8l(s) => Some(s),
             _ => None,
