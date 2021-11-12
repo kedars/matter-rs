@@ -59,9 +59,9 @@ impl Mgr {
             0xac, 0xc1, 0x8f, 0x06, 0xc7, 0xbc, 0x9b, 0xe8, 0x24, 0x6a, 0x67, 0x8c, 0xb1, 0xf8,
             0xba, 0x3d,
         ];
+
         mgr.sess_mgr
-            .add(
-                0,
+            .add_cheat(
                 0,
                 i2r_key,
                 r2i_key,

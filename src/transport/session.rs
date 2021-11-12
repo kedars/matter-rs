@@ -133,6 +133,7 @@ impl Session {
 
 #[derive(Debug)]
 pub struct SessionMgr {
+    next_sess_id: u16,
     pub sessions: Vec<Session, 16>,
 }
 
@@ -140,23 +141,69 @@ impl SessionMgr {
     pub fn new() -> SessionMgr {
         SessionMgr {
             sessions: Vec::new(),
+            next_sess_id: 1,
         }
     }
 
-    pub fn add(
+    fn get_next_sess_id(&mut self) -> u16 {
+        let mut next_sess_id: u16;
+        loop {
+            next_sess_id = self.next_sess_id;
+
+            // Increment next sess id
+            self.next_sess_id = self.next_sess_id.overflowing_add(1).0;
+            if self.next_sess_id == 0 {
+                self.next_sess_id = 1;
+            }
+
+            // Ensure the currently selected id doesn't match any existing session
+            if self.sessions.iter().position(|x| x.sess_id == next_sess_id) == None {
+                break;
+            }
+        }
+        next_sess_id
+    }
+
+    // This is a cheat add that is present only to support bypass mode, it creates a session with local sess id as 0
+    pub fn add_cheat(
         &mut self,
-        sess_id: u16,
         peer_sess_id: u16,
         dec_key: [u8; MATTER_AES128_KEY_SIZE],
         enc_key: [u8; MATTER_AES128_KEY_SIZE],
         peer_addr: std::net::IpAddr,
         mode: SessionMode,
     ) -> Result<(), Error> {
-        let session = Session::new(sess_id, peer_sess_id, dec_key, enc_key, peer_addr, mode);
+        let session = Session::new(0, peer_sess_id, dec_key, enc_key, peer_addr, mode);
         match self.sessions.push(session) {
             Ok(_) => Ok(()),
             Err(_) => Err(Error::NoSpace),
         }
+    }
+
+    pub fn add(
+        &mut self,
+        peer_sess_id: u16,
+        dec_key: [u8; MATTER_AES128_KEY_SIZE],
+        enc_key: [u8; MATTER_AES128_KEY_SIZE],
+        peer_addr: std::net::IpAddr,
+        mode: SessionMode,
+    ) -> Result<&mut Session, Error> {
+        let local_sess_id = self.get_next_sess_id();
+        let session = Session::new(
+            local_sess_id,
+            peer_sess_id,
+            dec_key,
+            enc_key,
+            peer_addr,
+            mode,
+        );
+
+        match self.sessions.push(session) {
+            Err(_) => return Err(Error::NoSpace),
+            _ => (),
+        };
+        let index = self._get(local_sess_id, peer_addr).ok_or(Error::NoSpace)?;
+        Ok(&mut self.sessions[index])
     }
 
     fn _get(&self, sess_id: u16, peer_addr: std::net::IpAddr) -> Option<usize> {
@@ -171,20 +218,72 @@ impl SessionMgr {
         peer_addr: std::net::IpAddr,
         is_encrypted: bool,
     ) -> Option<&mut Session> {
-        let mut index = self._get(sess_id, peer_addr);
-        if index == None && sess_id == 0 && !is_encrypted {
-            // We must create a new session for this case
-            self.add(
-                0,
-                0,
-                [0; MATTER_AES128_KEY_SIZE],
-                [0; MATTER_AES128_KEY_SIZE],
-                peer_addr,
-                SessionMode::PlainText,
-            )
-            .ok()?;
-            index = self._get(sess_id, peer_addr);
+        if let Some(index) = self._get(sess_id, peer_addr) {
+            Some(&mut self.sessions[index])
+        } else {
+            if sess_id == 0 && !is_encrypted {
+                // We must create a new session for this case
+                self.add(
+                    0,
+                    [0; MATTER_AES128_KEY_SIZE],
+                    [0; MATTER_AES128_KEY_SIZE],
+                    peer_addr,
+                    SessionMode::PlainText,
+                )
+                .ok()
+            } else {
+                None
+            }
         }
-        index.map(move |x| &mut self.sessions[x])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SessionMgr;
+    use std::net::Ipv4Addr;
+
+    #[test]
+    fn test_next_sess_id_doesnt_reuse() {
+        let dec_key: [u8; 16] = [0; 16];
+        let mut sm = SessionMgr::new();
+        sm.add(
+            2,
+            dec_key,
+            dec_key,
+            std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            super::SessionMode::PlainText,
+        )
+        .unwrap();
+        assert_eq!(sm.get_next_sess_id(), 2);
+        assert_eq!(sm.get_next_sess_id(), 3);
+        sm.add(
+            2,
+            dec_key,
+            dec_key,
+            std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            super::SessionMode::PlainText,
+        )
+        .unwrap();
+        assert_eq!(sm.get_next_sess_id(), 5);
+    }
+
+    #[test]
+    fn test_next_sess_id_overflows() {
+        let dec_key: [u8; 16] = [0; 16];
+        let mut sm = SessionMgr::new();
+        sm.add(
+            2,
+            dec_key,
+            dec_key,
+            std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            super::SessionMode::PlainText,
+        )
+        .unwrap();
+        assert_eq!(sm.get_next_sess_id(), 2);
+        sm.next_sess_id = 65534;
+        assert_eq!(sm.get_next_sess_id(), 65534);
+        assert_eq!(sm.get_next_sess_id(), 65535);
+        assert_eq!(sm.get_next_sess_id(), 2);
     }
 }
