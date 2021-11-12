@@ -1,7 +1,7 @@
+use super::tlv_common::*;
+
 use byteorder::{ByteOrder, LittleEndian};
 use log::{error, info};
-use num;
-use num_derive::FromPrimitive;
 use std::fmt;
 
 pub struct TLVList<'a> {
@@ -14,33 +14,6 @@ impl<'a> TLVList<'a> {
         TLVList { buf, len }
     }
 }
-
-/* Tag Types */
-#[derive(FromPrimitive, Debug, Copy, Clone, PartialEq)]
-enum TagType {
-    Anonymous = 0,
-    Context = 1,
-    CommonPrf16 = 2,
-    CommonPrf32 = 3,
-    ImplPrf16 = 4,
-    ImplPrf32 = 5,
-    FullQual48 = 6,
-    FullQual64 = 7,
-    Last,
-}
-const TAG_SHIFT_BITS: u8 = 5;
-const TAG_MASK: u8 = 0xe0;
-
-static TAG_SIZE_MAP: [usize; TagType::Last as usize] = [
-    0, // Anonymous
-    1, // Context
-    2, // CommonPrf16
-    4, // CommonPrf32
-    2, // ImplPrf16
-    4, // ImplPrf32
-    6, // FullQual48
-    8, // FullQual64
-];
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Pointer<'a> {
@@ -78,8 +51,6 @@ pub enum ElementType<'a> {
     EndCnt,
     Last,
 }
-
-const TYPE_MASK: u8 = 0x1f;
 
 // The array indices here correspond to the numeric value of the Element Type as defined in the Matter Spec
 static VALUE_SIZE_MAP: [usize; 25] = [
@@ -277,6 +248,9 @@ impl<'a> TLVListIterator<'a> {
             return None;
         }
         use ElementType::*;
+        // TODO: We could optimise this by moving the actual value read into the
+        // get_u8() etc methods on the TLVElement itself.
+        //
         let element: ElementType = match element_type {
             0 => S8(self.buf[self.current] as i8),
             1 => S16(LittleEndian::read_i16(&self.buf[self.current..])),

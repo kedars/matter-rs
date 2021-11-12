@@ -6,5 +6,7 @@ pub mod proto_demux;
 pub mod sc_demux;
 pub mod secure_channel;
 pub mod tlv;
+pub mod tlv_common;
+pub mod tlv_writer;
 pub mod transport;
 pub mod utils;

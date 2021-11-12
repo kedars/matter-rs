@@ -98,6 +98,12 @@ impl<'a> WriteBuf<'a> {
             LittleEndian::write_u64(&mut x.buf[x.end..], data);
         })
     }
+
+    pub fn le_uint(&mut self, nbytes: usize, data: u64) -> Result<(), Error> {
+        self.append_with(nbytes, |x| {
+            LittleEndian::write_uint(&mut x.buf[x.end..], data, nbytes);
+        })
+    }
 }
 
 #[cfg(test)]
@@ -106,19 +112,21 @@ mod tests {
 
     #[test]
     fn test_append_le_with_success() {
-        let mut test_slice: [u8; 20] = [0; 20];
-        let mut buf = WriteBuf::new(&mut test_slice, 20);
+        let mut test_slice: [u8; 22] = [0; 22];
+        let test_slice_len = test_slice.len();
+        let mut buf = WriteBuf::new(&mut test_slice, test_slice_len);
         buf.reserve(5).unwrap();
 
         buf.le_u8(1).unwrap();
         buf.le_u16(65).unwrap();
         buf.le_u32(0xcafebabe).unwrap();
         buf.le_u64(0xcafebabecafebabe).unwrap();
+        buf.le_uint(2, 64).unwrap();
         assert_eq!(
             test_slice,
             [
                 0, 0, 0, 0, 0, 1, 65, 0, 0xbe, 0xba, 0xfe, 0xca, 0xbe, 0xba, 0xfe, 0xca, 0xbe,
-                0xba, 0xfe, 0xca
+                0xba, 0xfe, 0xca, 64, 0
             ]
         );
     }
