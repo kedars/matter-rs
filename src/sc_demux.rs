@@ -58,11 +58,12 @@ impl SecureChannel {
     fn pbkdfparamreq_handler(
         &mut self,
         proto_ctx: &mut ProtoCtx,
-        _tx_ctx: &mut TxCtx,
+        tx_ctx: &mut TxCtx,
     ) -> Result<ResponseRequired, Error> {
         info!("In PBKDF Param Request Handler");
-        self.pake.handle_pbkdfparamrequest(proto_ctx.buf)?;
-        Ok(ResponseRequired::No)
+        tx_ctx.set_proto_opcode(OpCode::PBKDFParamResponse as u8);
+        self.pake.handle_pbkdfparamrequest(proto_ctx, tx_ctx)?;
+        Ok(ResponseRequired::Yes)
     }
 }
 
