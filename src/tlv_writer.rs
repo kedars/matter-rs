@@ -34,12 +34,12 @@ enum WriteElementType {
     Last,
 }
 
-pub struct TLVWriter<'a> {
-    buf: &'a mut WriteBuf<'a>,
+pub struct TLVWriter<'a, 'b> {
+    buf: &'b mut WriteBuf<'a>,
 }
 
-impl<'a> TLVWriter<'a> {
-    pub fn new(buf: &'a mut WriteBuf<'a>) -> Self {
+impl<'a, 'b> TLVWriter<'a, 'b> {
+    pub fn new(buf: &'b mut WriteBuf<'a>) -> Self {
         TLVWriter { buf }
     }
 
@@ -76,6 +76,39 @@ impl<'a> TLVWriter<'a> {
         self.buf.le_u8(data.len() as u8)?;
         self.buf.copy_from_slice(data)
     }
+
+    fn put_no_val(
+        &mut self,
+        tag_type: TagType,
+        tag_val: u64,
+        element: WriteElementType,
+    ) -> Result<(), Error> {
+        self.put_control_tag(tag_type, tag_val, element)
+    }
+
+    pub fn put_start_struct(&mut self, tag_type: TagType, tag_val: u64) -> Result<(), Error> {
+        self.put_no_val(tag_type, tag_val, WriteElementType::Struct)
+    }
+
+    pub fn put_start_array(&mut self, tag_type: TagType, tag_val: u64) -> Result<(), Error> {
+        self.put_no_val(tag_type, tag_val, WriteElementType::Array)
+    }
+
+    pub fn put_start_list(&mut self, tag_type: TagType, tag_val: u64) -> Result<(), Error> {
+        self.put_no_val(tag_type, tag_val, WriteElementType::List)
+    }
+
+    pub fn put_end_container(&mut self) -> Result<(), Error> {
+        self.put_no_val(TagType::Anonymous, 0, WriteElementType::EndCnt)
+    }
+
+    pub fn put_bool(&mut self, tag_type: TagType, tag_val: u64, val: bool) -> Result<(), Error> {
+        if val {
+            self.put_no_val(tag_type, tag_val, WriteElementType::True)
+        } else {
+            self.put_no_val(tag_type, tag_val, WriteElementType::False)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -91,13 +124,18 @@ mod tests {
         let mut writebuf = WriteBuf::new(&mut buf, buf_len);
         let mut tlvwriter = TLVWriter::new(&mut writebuf);
 
+        tlvwriter.put_start_struct(TagType::Anonymous, 12).unwrap();
         tlvwriter.put_u8(TagType::Anonymous, 0, 12).unwrap();
         tlvwriter.put_u8(TagType::Context, 1, 13).unwrap();
         tlvwriter.put_u16(TagType::Anonymous, 0, 12).unwrap();
         tlvwriter.put_u16(TagType::Context, 2, 13).unwrap();
+        tlvwriter.put_start_array(TagType::Context, 3).unwrap();
+        tlvwriter.put_bool(TagType::Anonymous, 0, true).unwrap();
+        tlvwriter.put_end_container().unwrap();
+        tlvwriter.put_end_container().unwrap();
         assert_eq!(
             buf,
-            [4, 12, 36, 1, 13, 5, 12, 0, 37, 2, 13, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+            [21, 4, 12, 36, 1, 13, 5, 12, 0, 37, 2, 13, 0, 54, 3, 8, 24, 24, 0, 0]
         );
     }
 
