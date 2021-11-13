@@ -56,7 +56,7 @@ impl PlainHdr {
         resp_buf.le_u8(if self.sess_type == SessionType::Encrypted {
             0x11
         } else {
-            0
+            0x10
         })?;
         resp_buf.le_u16(self.sess_id)?;
         resp_buf.le_u32(self.ctr)?;

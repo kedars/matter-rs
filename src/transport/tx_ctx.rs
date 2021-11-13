@@ -64,7 +64,9 @@ impl<'a> TxCtx<'a> {
         }
         self.plain_hdr.sess_id = session.get_peer_sess_id();
         self.plain_hdr.ctr = session.get_msg_ctr();
-        self.plain_hdr.sess_type = plain_hdr::SessionType::Encrypted;
+        if session.is_encrypted() {
+            self.plain_hdr.sess_type = plain_hdr::SessionType::Encrypted;
+        }
 
         // Get the exchange
         let mut exchange = session
