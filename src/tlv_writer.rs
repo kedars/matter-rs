@@ -43,6 +43,9 @@ impl<'a> TLVWriter<'a> {
         TLVWriter { buf }
     }
 
+    // TODO: The current method of using writebuf's put methods force us to do
+    // at max 3 checks while writing a single TLV (once for control, once for tag,
+    // once for value), so do a single check and write the whole thing.
     #[inline(always)]
     fn put_control_tag(
         &mut self,

@@ -393,7 +393,7 @@ impl<'a> TLVListIterator<'a> {
     fn read_this_value(&mut self, element_type: u8) -> Option<ElementType<'a>> {
         let mut size = VALUE_SIZE_MAP[element_type as usize];
         if size > self.left {
-            error!("Invalid valud found: {}", element_type);
+            error!("Invalid value found: {}", element_type);
             return None;
         }
 
