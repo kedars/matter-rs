@@ -32,8 +32,8 @@ pub enum ElementType<'a> {
     U16(u16),
     U32(u32),
     U64(u64),
-    True,
     False,
+    True,
     F32(f32),
     F64(f64),
     Utf8l,
@@ -116,10 +116,10 @@ static VALUE_EXTRACTOR: [ExtractValue; 25] = [
             )
         }
     },
-    // True 8
-    { |_t| (0, ElementType::True) },
-    // False 9
+    // False 8
     { |_t| (0, ElementType::False) },
+    // True 9
+    { |_t| (0, ElementType::True) },
     // F32  10
     { |_t| (0, ElementType::Last) },
     // F64  11
@@ -210,8 +210,8 @@ static VALUE_SIZE_MAP: [usize; 25] = [
     2, // U16  5
     4, // U32  6
     8, // U64  7
-    0, // True 8
-    0, // False 9
+    0, // False 8
+    0, // True 9
     4, // F32  10
     8, // F64  11
     1, // Utf8l 12

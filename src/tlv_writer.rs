@@ -14,8 +14,8 @@ enum WriteElementType {
     U16 = 5,
     U32 = 6,
     U64 = 7,
-    True = 8,
-    False = 9,
+    False = 8,
+    True = 9,
     F32 = 10,
     F64 = 11,
     Utf8l = 12,
@@ -135,7 +135,7 @@ mod tests {
         tlvwriter.put_end_container().unwrap();
         assert_eq!(
             buf,
-            [21, 4, 12, 36, 1, 13, 5, 12, 0, 37, 2, 13, 0, 54, 3, 8, 24, 24, 0, 0]
+            [21, 4, 12, 36, 1, 13, 5, 12, 0, 37, 2, 13, 0, 54, 3, 9, 24, 24, 0, 0]
         );
     }
 
