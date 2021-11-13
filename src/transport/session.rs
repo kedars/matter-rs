@@ -4,7 +4,7 @@ use log::info;
 
 const MATTER_AES128_KEY_SIZE: usize = 16;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum SessionMode {
     Encrypted,
     PlainText,
@@ -18,7 +18,6 @@ impl Default for SessionMode {
 
 #[derive(Debug)]
 pub enum SessionState {
-    // When we say raw, we mean the session id and keys are not populated
     Raw,
     Initialised,
 }
@@ -33,6 +32,8 @@ impl Default for SessionState {
 pub struct Session {
     // If this field is None, the rest of the members are ignored
     peer_addr: Option<std::net::IpAddr>,
+    // I find the session initiator/responder role getting confused with exchange initiator/responder
+    // So, we might keep this as enc_key and dec_key for now
     dec_key: [u8; MATTER_AES128_KEY_SIZE],
     enc_key: [u8; MATTER_AES128_KEY_SIZE],
     /*
@@ -45,7 +46,7 @@ pub struct Session {
      * - peer Node ID - instead of the IP Address, which can change, the Node ID should be used
      * - This is all for 'unicast' sessions
      */
-    sess_id: u16,
+    local_sess_id: u16,
     peer_sess_id: u16,
     msg_ctr: u32,
     exchanges: Vec<Exchange, 4>,
@@ -94,7 +95,7 @@ impl Session {
             peer_addr: Some(peer_addr),
             dec_key,
             enc_key,
-            sess_id,
+            local_sess_id: sess_id,
             peer_sess_id,
             msg_ctr: 1,
             exchanges: Vec::new(),
@@ -103,13 +104,30 @@ impl Session {
         }
     }
 
-    pub fn get_sess_id(&self) -> u16 {
-        self.sess_id
+    pub fn get_local_sess_id(&self) -> u16 {
+        self.local_sess_id
     }
 
     pub fn get_peer_sess_id(&self) -> u16 {
         self.peer_sess_id
     }
+
+    pub fn set_local_sess_id(&mut self, id: u16) {
+        self.local_sess_id = id;
+    }
+
+    pub fn set_peer_sess_id(&mut self, id: u16) {
+        self.peer_sess_id = id;
+    }
+
+    pub fn is_encrypted(&self) -> bool {
+        if self.mode == SessionMode::Encrypted {
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn get_msg_ctr(&mut self) -> u32 {
         let ctr = self.msg_ctr;
         self.msg_ctr += 1;
@@ -157,7 +175,12 @@ impl SessionMgr {
             }
 
             // Ensure the currently selected id doesn't match any existing session
-            if self.sessions.iter().position(|x| x.sess_id == next_sess_id) == None {
+            if self
+                .sessions
+                .iter()
+                .position(|x| x.local_sess_id == next_sess_id)
+                == None
+            {
                 break;
             }
         }
@@ -209,7 +232,7 @@ impl SessionMgr {
     fn _get(&self, sess_id: u16, peer_addr: std::net::IpAddr) -> Option<usize> {
         self.sessions
             .iter()
-            .position(|x| x.sess_id == sess_id && x.peer_addr == Some(peer_addr))
+            .position(|x| x.local_sess_id == sess_id && x.peer_addr == Some(peer_addr))
     }
 
     pub fn get(
