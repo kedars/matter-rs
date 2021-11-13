@@ -52,6 +52,154 @@ pub enum ElementType<'a> {
     Last,
 }
 
+// This is a function that takes a TLVListIterator and returns the element type
+// Some elements (like strings), also consume additional size, than that mentioned
+// if this is the case, the additional size is returned
+type ExtractValue = for<'a> fn(&TLVListIterator<'a>) -> (usize, ElementType<'a>);
+
+static VALUE_EXTRACTOR: [ExtractValue; 25] = [
+    // S8   0
+    { |t| (0, ElementType::S8(t.buf[t.current] as i8)) },
+    // S16  1
+    {
+        |t| {
+            (
+                0,
+                ElementType::S16(LittleEndian::read_i16(&t.buf[t.current..])),
+            )
+        }
+    },
+    // S32  2
+    {
+        |t| {
+            (
+                0,
+                ElementType::S32(LittleEndian::read_i32(&t.buf[t.current..])),
+            )
+        }
+    },
+    // S64  3
+    {
+        |t| {
+            (
+                0,
+                ElementType::S64(LittleEndian::read_i64(&t.buf[t.current..])),
+            )
+        }
+    },
+    // U8   4
+    { |t| (0, ElementType::U8(t.buf[t.current])) },
+    // U16  5
+    {
+        |t| {
+            (
+                0,
+                ElementType::U16(LittleEndian::read_u16(&t.buf[t.current..])),
+            )
+        }
+    },
+    // U32  6
+    {
+        |t| {
+            (
+                0,
+                ElementType::U32(LittleEndian::read_u32(&t.buf[t.current..])),
+            )
+        }
+    },
+    // U64  7
+    {
+        |t| {
+            (
+                0,
+                ElementType::U64(LittleEndian::read_u64(&t.buf[t.current..])),
+            )
+        }
+    },
+    // True 8
+    { |_t| (0, ElementType::True) },
+    // False 9
+    { |_t| (0, ElementType::False) },
+    // F32  10
+    { |_t| (0, ElementType::Last) },
+    // F64  11
+    { |_t| (0, ElementType::Last) },
+    // Utf8l 12
+    { |_t| (0, ElementType::Last) },
+    // Utf16l  13
+    { |_t| (0, ElementType::Last) },
+    // Utf32l 14
+    { |_t| (0, ElementType::Last) },
+    // Utf64l 15
+    { |_t| (0, ElementType::Last) },
+    // Str8l 16
+    {
+        |t| {
+            // The current byte is the string size
+            let size: usize = t.buf[t.current] as usize;
+            // We'll consume the current byte (len) + the entire string
+            if size + 1 > t.left {
+                // Return Error
+                return (size, ElementType::Last);
+            }
+            (
+                // return the additional size only
+                size,
+                ElementType::Str8l(&t.buf[(t.current + 1)..(t.current + 1 + size)]),
+            )
+        }
+    },
+    // Str16l 17
+    { |_t| (0, ElementType::Last) },
+    // Str32l 18
+    { |_t| (0, ElementType::Last) },
+    // Str64l 19
+    { |_t| (0, ElementType::Last) },
+    // Null  20
+    { |_t| (0, ElementType::Null) },
+    // Struct 21
+    {
+        |t| {
+            (
+                0,
+                ElementType::Struct(Pointer {
+                    buf: t.buf,
+                    current: t.current,
+                    left: t.left,
+                }),
+            )
+        }
+    },
+    // Array  22
+    {
+        |t| {
+            (
+                0,
+                ElementType::Array(Pointer {
+                    buf: t.buf,
+                    current: t.current,
+                    left: t.left,
+                }),
+            )
+        }
+    },
+    // List  23
+    {
+        |t| {
+            (
+                0,
+                ElementType::List(Pointer {
+                    buf: t.buf,
+                    current: t.current,
+                    left: t.left,
+                }),
+            )
+        }
+    },
+    // EndCnt  24
+    { |_t| (0, ElementType::EndCnt) },
+];
+
 // The array indices here correspond to the numeric value of the Element Type as defined in the Matter Spec
 static VALUE_SIZE_MAP: [usize; 25] = [
     1, // S8   0
@@ -245,58 +393,18 @@ impl<'a> TLVListIterator<'a> {
     fn read_this_value(&mut self, element_type: u8) -> Option<ElementType<'a>> {
         let mut size = VALUE_SIZE_MAP[element_type as usize];
         if size > self.left {
+            error!("Invalid valud found: {}", element_type);
             return None;
         }
-        use ElementType::*;
-        // TODO: We could optimise this by moving the actual value read into the
-        // get_u8() etc methods on the TLVElement itself.
-        //
-        let element: ElementType = match element_type {
-            0 => S8(self.buf[self.current] as i8),
-            1 => S16(LittleEndian::read_i16(&self.buf[self.current..])),
-            2 => S32(LittleEndian::read_i32(&self.buf[self.current..])),
-            3 => S64(LittleEndian::read_i64(&self.buf[self.current..])),
-            4 => U8(self.buf[self.current]),
-            5 => U16(LittleEndian::read_u16(&self.buf[self.current..])),
-            6 => U32(LittleEndian::read_u32(&self.buf[self.current..])),
-            7 => U64(LittleEndian::read_u64(&self.buf[self.current..])),
-            8 => True,
-            9 => False,
-            16 => {
-                // The current byte is the string size
-                let string_size: usize = self.buf[self.current] as usize;
-                // Add this size to the size, since we'll consume that too
-                size += string_size;
-                if size > self.left {
-                    return None;
-                }
-                Str8l(&self.buf[(self.current + 1)..(self.current + 1 + string_size)])
-            }
-            20 => Null,
-            21 => Struct(Pointer {
-                buf: self.buf,
-                current: self.current,
-                left: self.left,
-            }),
-            22 => Array(Pointer {
-                buf: self.buf,
-                current: self.current,
-                left: self.left,
-            }),
-            23 => List(Pointer {
-                buf: self.buf,
-                current: self.current,
-                left: self.left,
-            }),
-            24 => EndCnt,
-            _ => {
-                error!("Found invalid element: {}", element_type);
-                return None;
-            }
-        };
 
-        self.advance(size);
-        Some(element)
+        let (extra_size, element) = (VALUE_EXTRACTOR[element_type as usize])(self);
+        if element != ElementType::Last {
+            size += extra_size;
+            self.advance(size);
+            Some(element)
+        } else {
+            None
+        }
     }
 }
 
