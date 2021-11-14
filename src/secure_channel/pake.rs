@@ -40,8 +40,6 @@ impl PAKE {
             initiator_random, initiator_sessid, passcode_id, has_params
         );
 
-        // proto_ctx.session.set_peer_sess_id(initiator_sessid);
-
         if passcode_id != 0 {
             error!("Can't yet handle passcode_id != 0");
             return Err(Error::Invalid);
@@ -50,7 +48,7 @@ impl PAKE {
         let mut our_random: [u8; 32] = [0; 32];
         rand::thread_rng().fill_bytes(&mut our_random);
 
-        let mut spake2p = Spake2P::new(Spake2Mode::Verifier);
+        let mut spake2p = Spake2P::new();
         spake2p.add_to_context(proto_ctx.buf);
 
         // Generate response
@@ -67,7 +65,6 @@ impl PAKE {
         }
         tlvwriter.put_end_container()?;
 
-        println!("Generated response: {:x?}", tx_ctx.as_slice());
         spake2p.add_to_context(tx_ctx.as_slice());
         Ok(())
     }
