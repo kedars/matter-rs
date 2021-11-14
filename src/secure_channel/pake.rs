@@ -8,10 +8,24 @@ use crate::tlv_writer::TLVWriter;
 use crate::transport::tx_ctx::TxCtx;
 use log::{error, info};
 use rand::prelude::*;
-pub struct PAKE {}
+
+// As per the spec the iteration count should be between 1000 and 100000
+const ITERATION_COUNT: u32 = 2000;
+
+#[derive(Default)]
+pub struct PAKE {
+    // As per the spec the salt should be between 16 to 32 bytes
+    salt: [u8; 16],
+}
+
 impl PAKE {
     pub fn new() -> Self {
-        PAKE {}
+        // TODO: Can any PBKDF2 calculation be pre-computed here
+        let mut pake = PAKE {
+            ..Default::default()
+        };
+        rand::thread_rng().fill_bytes(&mut pake.salt);
+        pake
     }
 
     pub fn handle_pbkdfparamrequest(
@@ -26,15 +40,10 @@ impl PAKE {
             initiator_random, initiator_sessid, passcode_id, has_params
         );
 
-        proto_ctx.session.set_peer_sess_id(initiator_sessid);
+        // proto_ctx.session.set_peer_sess_id(initiator_sessid);
 
         if passcode_id != 0 {
             error!("Can't yet handle passcode_id != 0");
-            return Err(Error::Invalid);
-        }
-
-        if !has_params {
-            error!("Can't yet handle has_params = false");
             return Err(Error::Invalid);
         }
 
@@ -50,6 +59,12 @@ impl PAKE {
         tlvwriter.put_str8(TagType::Context, 1, initiator_random)?;
         tlvwriter.put_str8(TagType::Context, 2, &our_random)?;
         tlvwriter.put_u16(TagType::Context, 3, proto_ctx.session.get_local_sess_id())?;
+        if !has_params {
+            tlvwriter.put_start_struct(TagType::Context, 4)?;
+            tlvwriter.put_u32(TagType::Context, 1, ITERATION_COUNT)?;
+            tlvwriter.put_str8(TagType::Context, 2, &self.salt)?;
+            tlvwriter.put_end_container()?;
+        }
         tlvwriter.put_end_container()?;
 
         println!("Generated response: {:x?}", tx_ctx.as_slice());

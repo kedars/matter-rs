@@ -71,6 +71,11 @@ impl<'a, 'b> TLVWriter<'a, 'b> {
         self.buf.le_u16(data)
     }
 
+    pub fn put_u32(&mut self, tag_type: TagType, tag_val: u64, data: u32) -> Result<(), Error> {
+        self.put_control_tag(tag_type, tag_val, WriteElementType::U32)?;
+        self.buf.le_u32(data)
+    }
+
     pub fn put_str8(&mut self, tag_type: TagType, tag_val: u64, data: &[u8]) -> Result<(), Error> {
         self.put_control_tag(tag_type, tag_val, WriteElementType::Str8l)?;
         self.buf.le_u8(data.len() as u8)?;
