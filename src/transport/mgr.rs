@@ -60,15 +60,9 @@ impl Mgr {
             0xba, 0x3d,
         ];
 
-        mgr.sess_mgr
-            .add_cheat(
-                0,
-                i2r_key,
-                r2i_key,
-                test_addr.ip(),
-                session::SessionMode::Encrypted,
-            )
-            .unwrap();
+        let session = mgr.sess_mgr.add(test_addr.ip()).unwrap();
+        session.activate(&i2r_key, &r2i_key, 0).unwrap();
+        session.cheat_set_zero_local_sess_id();
 
         Ok(mgr)
     }
