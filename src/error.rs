@@ -3,6 +3,7 @@ use std::{fmt, sync::PoisonError};
 #[derive(Debug)]
 pub enum Error {
     Crypto(ccm::aead::Error),
+    OpenSSL(openssl::error::ErrorStack),
     NoEndpoint,
     NoHandler,
     NoSpace,
@@ -10,6 +11,7 @@ pub enum Error {
     Invalid,
     InvalidAAD,
     InvalidData,
+    InvalidKeyLength,
     InvalidOpcode,
     RwLock,
     TruncatedPacket,
@@ -33,6 +35,13 @@ impl<T> From<PoisonError<T>> for Error {
         Self::RwLock
     }
 }
+
+impl From<openssl::error::ErrorStack> for Error {
+    fn from(e: openssl::error::ErrorStack) -> Self {
+        Self::OpenSSL(e)
+    }
+}
+
 impl<'a> fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self)
