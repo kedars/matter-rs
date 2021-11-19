@@ -12,5 +12,12 @@
 * Session:
   - Session 0 must always be with no-encryption. This is currently violated in the code because we use bypass mode
   - Allow unencrypted messages _only_ for PASE, CASE messages
+  - Some reaper thread must go through the stale sessions/exchanges and clear them off
 * ACK:
   - If a command expects no response, we need to send the acknowledgement back to the sender
+* It might be more efficient to avoid using .find_element() on TLVs. Earlier it was created this way because the spec mentions that the order may change, but it appears that this is unlikely, looking at the C++ implementation. If so, we could be faster, by just specifying looking for tag followed by value.
+* PASE:
+  - Pick some sensible and strong values for PBKDF2{iterCnt and Salt-length} based on SoC capability
+  - Verifier should only store w0 and L, w1 shouldn't even be stored 
+  - Allow some way to open the PASE window
+  - Allow some way to pass in the 'passcode' and 'salt'
