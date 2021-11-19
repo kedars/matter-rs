@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use crate::{error::*, transport::exchange::*};
 use heapless::Vec;
 use log::info;
@@ -57,6 +59,21 @@ pub struct Session {
 }
 
 impl Session {
+    pub fn new(reserved_local_sess_id: u16, peer_addr: std::net::IpAddr) -> Session {
+        Session {
+            peer_addr: Some(peer_addr),
+            dec_key: [0; MATTER_AES128_KEY_SIZE],
+            enc_key: [0; MATTER_AES128_KEY_SIZE],
+            unassigned_local_sess_id: reserved_local_sess_id,
+            peer_sess_id: 0,
+            local_sess_id: 0,
+            msg_ctr: 1,
+            exchanges: Vec::new(),
+            mode: SessionMode::PlainText,
+            state: SessionState::Raw,
+        }
+    }
+
     pub fn get_exchange(
         &mut self,
         id: u16,
@@ -85,19 +102,32 @@ impl Session {
         }
     }
 
-    pub fn new(reserved_local_sess_id: u16, peer_addr: std::net::IpAddr) -> Session {
-        Session {
-            peer_addr: Some(peer_addr),
-            dec_key: [0; MATTER_AES128_KEY_SIZE],
-            enc_key: [0; MATTER_AES128_KEY_SIZE],
-            unassigned_local_sess_id: reserved_local_sess_id,
-            peer_sess_id: 0,
-            local_sess_id: 0,
-            msg_ctr: 1,
-            exchanges: Vec::new(),
-            mode: SessionMode::PlainText,
-            state: SessionState::Raw,
-        }
+    pub fn set_exchange_data(
+        &mut self,
+        exch_id: u16,
+        role: ExchangeRole,
+        data: Box<dyn Any>,
+    ) -> Result<(), Error> {
+        self.get_exchange(exch_id, role, false)
+            .ok_or(Error::NotFound)?
+            .set_exchange_data(data);
+        Ok(())
+    }
+
+    pub fn get_and_clear_exchange_data(
+        &mut self,
+        exch_id: u16,
+        role: ExchangeRole,
+    ) -> Option<Box<dyn Any>> {
+        self.get_exchange(exch_id, role, false)
+            .and_then(|e| e.get_and_clear_exchange_data())
+    }
+
+    pub fn clear_exchange_data(&mut self, exch_id: u16, role: ExchangeRole) -> Result<(), Error> {
+        self.get_exchange(exch_id, role, false)
+            .ok_or(Error::NotFound)?
+            .clear_exchange_data();
+        Ok(())
     }
 
     pub fn get_local_sess_id(&self) -> u16 {

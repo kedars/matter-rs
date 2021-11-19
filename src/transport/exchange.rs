@@ -1,3 +1,5 @@
+use std::any::Any;
+
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum ExchangeRole {
     Initiator = 0,
@@ -10,6 +12,10 @@ pub struct Exchange {
     role: ExchangeRole,
     // The spec only allows a single pending ACK per exchange
     pending_ack: Option<u32>,
+    // Currently I see this primarily used in PASE and CASE. If that is the limited use
+    // of this, we might move this into a separate data structure, so as not to burden
+    // all 'exchanges'.
+    data: Option<Box<dyn Any>>,
 }
 
 impl Exchange {
@@ -18,6 +24,7 @@ impl Exchange {
             id,
             role,
             pending_ack: None,
+            data: None,
         }
     }
 
@@ -35,6 +42,18 @@ impl Exchange {
 
     pub fn clear_ack_pending(&mut self) {
         self.pending_ack = None;
+    }
+
+    pub fn set_exchange_data(&mut self, data: Box<dyn Any>) {
+        self.data = Some(data);
+    }
+
+    pub fn clear_exchange_data(&mut self) {
+        self.data = None;
+    }
+
+    pub fn get_and_clear_exchange_data(&mut self) -> Option<Box<dyn Any>> {
+        self.data.take()
     }
 }
 
