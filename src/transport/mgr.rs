@@ -145,6 +145,7 @@ impl Mgr {
             let mut proto_ctx = ProtoCtx::new(
                 rx_ctx.proto_hdr.proto_id.into(),
                 rx_ctx.proto_hdr.proto_opcode,
+                rx_ctx.proto_hdr.exch_id,
                 parse_buf.as_slice(),
                 session,
             );

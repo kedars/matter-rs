@@ -15,15 +15,23 @@ pub struct ProtoDemux {
 pub struct ProtoCtx<'a> {
     pub proto_id: usize,
     pub proto_opcode: u8,
+    pub exch_id: u16,
     pub buf: &'a [u8],
     pub session: &'a mut Session,
 }
 
 impl<'a> ProtoCtx<'a> {
-    pub fn new(proto_id: usize, proto_opcode: u8, buf: &'a [u8], session: &'a mut Session) -> Self {
+    pub fn new(
+        proto_id: usize,
+        proto_opcode: u8,
+        exch_id: u16,
+        buf: &'a [u8],
+        session: &'a mut Session,
+    ) -> Self {
         ProtoCtx {
             proto_id,
             proto_opcode,
+            exch_id,
             buf,
             session,
         }

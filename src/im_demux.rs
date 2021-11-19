@@ -183,7 +183,7 @@ mod tests {
         }));
         let mut interaction_model = InteractionModel::new(data_model.clone());
         let mut sess: Session = Default::default();
-        let mut proto_ctx = ProtoCtx::new(0x01, 0x08, &b, &mut sess);
+        let mut proto_ctx = ProtoCtx::new(0x01, 0x08, 2342, &b, &mut sess);
         let mut out_buf: [u8; 20] = [0; 20];
         let mut tx_ctx = TxCtx::new(&mut out_buf)?;
         let _result = interaction_model.handle_proto_id(&mut proto_ctx, &mut tx_ctx);
