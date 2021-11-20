@@ -1,4 +1,7 @@
-use super::spake2p::Spake2P;
+use super::{
+    common::{create_sc_status_report, SCStatusCodes},
+    spake2p::Spake2P,
+};
 use crate::error::Error;
 use crate::proto_demux::ProtoCtx;
 use crate::tlv::*;
@@ -6,8 +9,10 @@ use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
 use crate::transport::exchange::ExchangeRole;
 use crate::transport::tx_ctx::TxCtx;
+use hkdf::Hkdf;
 use log::{error, info};
 use rand::prelude::*;
+use sha2::Sha256;
 
 // This file basically deals with the handlers for the PASE secure channel protocol
 // TLV extraction and encoding is done in this file.
@@ -19,6 +24,8 @@ const ITERATION_COUNT: u32 = 2000;
 
 // TODO: Password should be passed inside
 const SPAKE2_PASSWORD: u32 = 123456;
+
+const SPAKE2_SESSION_KEYS_INFO: [u8; 11] = *b"SessionKeys";
 
 #[derive(Default)]
 pub struct PAKE {
@@ -39,6 +46,38 @@ impl PAKE {
     }
 
     #[allow(non_snake_case)]
+    pub fn handle_pasepake3(
+        &mut self,
+        proto_ctx: &mut ProtoCtx,
+        tx_ctx: &mut TxCtx,
+    ) -> Result<(), Error> {
+        let mut spake2_boxed = proto_ctx
+            .session
+            .get_and_clear_exchange_data(proto_ctx.exch_id, ExchangeRole::Responder)
+            .ok_or(Error::InvalidState)?;
+        let spake2 = spake2_boxed
+            .downcast_mut::<Spake2P>()
+            .ok_or(Error::InvalidState)?;
+
+        let cA = extract_pasepake_1_or_3_params(proto_ctx.buf)?;
+        let (status_code, Ke) = spake2.handle_cA(cA);
+
+        if status_code == SCStatusCodes::SessionEstablishmentSuccess {
+            let Ke = Ke.ok_or(Error::Invalid)?;
+            let h = Hkdf::<Sha256>::new(None, Ke);
+            let mut session_keys: [u8; 48] = [0; 48];
+            h.expand(&SPAKE2_SESSION_KEYS_INFO, &mut session_keys)
+                .map_err(|_x| Error::NoSpace)?;
+            println!("The session keys are: {:x?}", session_keys);
+            // Activate the new session
+        }
+
+        create_sc_status_report(tx_ctx, status_code)?;
+        // Exchange data is already cleared
+        Ok(())
+    }
+
+    #[allow(non_snake_case)]
     pub fn handle_pasepake1(
         &mut self,
         proto_ctx: &mut ProtoCtx,
@@ -52,7 +91,7 @@ impl PAKE {
             .downcast_mut::<Spake2P>()
             .ok_or(Error::InvalidState)?;
 
-        let pA = extract_pasepake1_params(proto_ctx.buf)?;
+        let pA = extract_pasepake_1_or_3_params(proto_ctx.buf)?;
         let mut pB: [u8; 65] = [0; 65];
         let mut cB: [u8; 32] = [0; 32];
         spake2.start_verifier(self.passwd, ITERATION_COUNT, &self.salt)?;
@@ -121,7 +160,7 @@ impl PAKE {
 }
 
 #[allow(non_snake_case)]
-fn extract_pasepake1_params(buf: &[u8]) -> Result<&[u8], Error> {
+fn extract_pasepake_1_or_3_params(buf: &[u8]) -> Result<&[u8], Error> {
     let root = get_root_node_struct(buf).ok_or(Error::InvalidData)?;
     let pA = root
         .find_element(1)

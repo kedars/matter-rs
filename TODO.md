@@ -21,3 +21,4 @@
   - Verifier should only store w0 and L, w1 shouldn't even be stored 
   - Allow some way to open the PASE window
   - Allow some way to pass in the 'passcode' and 'salt'
+  - In case of error in any of the legs, return StatusReport

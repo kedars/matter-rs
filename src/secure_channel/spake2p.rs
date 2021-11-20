@@ -3,13 +3,14 @@ use byteorder::{ByteOrder, LittleEndian};
 use hkdf::Hkdf;
 use hmac::{Hmac, Mac, NewMac};
 use sha2::{Digest, Sha256};
+use subtle::ConstantTimeEq;
 
 use crate::error::Error;
 
 #[cfg(feature = "crypto_openssl")]
 use super::crypto_openssl::CryptoOpenSSL;
 
-use super::crypto::CryptoSpake2;
+use super::{common::SCStatusCodes, crypto::CryptoSpake2};
 
 // This file handle Spake2+ specific instructions. In itself, this file is
 // independent from the BigNum and EC operations that are typically required
@@ -21,8 +22,12 @@ use super::crypto::CryptoSpake2;
 
 #[derive(PartialEq, Copy, Clone, Debug)]
 pub enum Spake2VerifierState {
+    // Initialised - w0, L are set
     Init,
-    ContextSet,
+    // Pending Confirmation - Keys are derived but pending confirmation
+    PendingConfirmation,
+    // Confirmed
+    Confirmed,
 }
 
 #[derive(PartialEq, Debug)]
@@ -113,8 +118,21 @@ impl Spake2P {
         }
         // We are finished with using the crypto_spake2 now
         self.crypto_spake2 = None;
-
+        self.mode = Spake2Mode::Verifier(Spake2VerifierState::PendingConfirmation);
         Ok(())
+    }
+
+    #[allow(non_snake_case)]
+    pub fn handle_cA(&mut self, cA: &[u8]) -> (SCStatusCodes, Option<&[u8]>) {
+        if self.mode != Spake2Mode::Verifier(Spake2VerifierState::PendingConfirmation) {
+            return (SCStatusCodes::SessionNotFound, None);
+        }
+        self.mode = Spake2Mode::Verifier(Spake2VerifierState::Confirmed);
+        if cA.ct_eq(&self.cA).unwrap_u8() == 1 {
+            (SCStatusCodes::SessionEstablishmentSuccess, Some(&self.Ke))
+        } else {
+            (SCStatusCodes::InvalidParameter, None)
+        }
     }
 
     #[inline(always)]

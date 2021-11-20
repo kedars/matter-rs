@@ -12,6 +12,7 @@ use crate::transport::session;
 use crate::transport::tx_ctx;
 use crate::transport::udp;
 use crate::utils::parsebuf::ParseBuf;
+use colored::*;
 
 // Currently matches with the one in connectedhomeip repo
 const MAX_RX_BUF_SIZE: usize = 1583;
@@ -86,7 +87,8 @@ impl Mgr {
             let mut rx_ctx = RxCtx::new(len, src);
             let mut parse_buf = ParseBuf::new(&mut in_buf, len);
             info!(
-                "Received payload: {:x?} from src: {}",
+                "{}: {:x?} from src: {}",
+                "Received payload".blue(),
                 parse_buf.as_slice(),
                 src
             );
