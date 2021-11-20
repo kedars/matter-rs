@@ -99,7 +99,11 @@ impl PAKE {
         tlvwriter.put_start_struct(TagType::Anonymous, 0)?;
         tlvwriter.put_str8(TagType::Context, 1, initiator_random)?;
         tlvwriter.put_str8(TagType::Context, 2, &our_random)?;
-        tlvwriter.put_u16(TagType::Context, 3, proto_ctx.session.get_local_sess_id())?;
+        tlvwriter.put_u16(
+            TagType::Context,
+            3,
+            proto_ctx.session.get_reserved_local_sess_id(),
+        )?;
         if !has_params {
             tlvwriter.put_start_struct(TagType::Context, 4)?;
             tlvwriter.put_u32(TagType::Context, 1, ITERATION_COUNT)?;

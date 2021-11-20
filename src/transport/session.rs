@@ -134,6 +134,10 @@ impl Session {
         self.local_sess_id
     }
 
+    pub fn get_reserved_local_sess_id(&self) -> u16 {
+        self.unassigned_local_sess_id
+    }
+
     pub fn get_peer_sess_id(&self) -> u16 {
         self.peer_sess_id
     }
