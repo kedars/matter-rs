@@ -44,6 +44,7 @@ pub struct Spake2P {
     Ke: [u8; 16],
     cA: [u8; 32],
     crypto_spake2: Option<Box<dyn CryptoSpake2>>,
+    app_data: u32,
 }
 
 const SPAKE2P_KEY_CONFIRM_INFO: [u8; 16] = *b"ConfirmationKeys";
@@ -64,7 +65,16 @@ impl Spake2P {
             crypto_spake2: None,
             Ke: [0; 16],
             cA: [0; 32],
+            app_data: 0,
         }
+    }
+
+    pub fn set_app_data(&mut self, data: u32) {
+        self.app_data = data;
+    }
+
+    pub fn get_app_data(&mut self) -> u32 {
+        self.app_data
     }
 
     pub fn set_context(&mut self, buf1: &[u8], buf2: &[u8]) {
