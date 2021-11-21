@@ -130,12 +130,11 @@ impl Mgr {
                 Some(e) => e,
                 None => continue,
             };
+            info!("Exchange is {:?}", exchange);
 
             // Message Reliability Protocol
             mrp::on_msg_recv(exchange, &rx_ctx.plain_hdr, &rx_ctx.proto_hdr);
 
-            info!("Exchange is {:?}", exchange);
-            // Proto Dispatch
             let mut tx_ctx = match tx_ctx::TxCtx::new(&mut out_buf) {
                 Ok(t) => t,
                 Err(e) => {
@@ -144,6 +143,7 @@ impl Mgr {
                 }
             };
 
+            // Proto Dispatch
             let mut proto_ctx = ProtoCtx::new(
                 rx_ctx.proto_hdr.proto_id.into(),
                 rx_ctx.proto_hdr.proto_opcode,
@@ -160,6 +160,8 @@ impl Mgr {
                 }
                 Err(_) => continue,
             }
+            // Check if a new session was created as part of the protocol handling
+            let new_session = proto_ctx.new_session.take();
 
             // tx_ctx now contains the response payload, prepare the send packet
             match tx_ctx.prepare_send(
@@ -177,6 +179,11 @@ impl Mgr {
                     error!("Error sending data: {:?}", e);
                     continue;
                 }
+            }
+
+            if let Some(c) = new_session {
+                // If a new session was created, add it
+                self.sess_mgr.add_session(c)?;
             }
         }
     }
