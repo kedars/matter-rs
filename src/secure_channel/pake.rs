@@ -2,13 +2,13 @@ use super::{
     common::{create_sc_status_report, SCStatusCodes},
     spake2p::Spake2P,
 };
-use crate::error::Error;
 use crate::proto_demux::ProtoCtx;
 use crate::tlv::*;
 use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
 use crate::transport::exchange::ExchangeRole;
 use crate::transport::tx_ctx::TxCtx;
+use crate::{error::Error, transport::session::CloneData};
 use hkdf::Hkdf;
 use log::{error, info};
 use rand::prelude::*;
@@ -63,13 +63,23 @@ impl PAKE {
         let (status_code, Ke) = spake2.handle_cA(cA);
 
         if status_code == SCStatusCodes::SessionEstablishmentSuccess {
+            // Get the keys
             let Ke = Ke.ok_or(Error::Invalid)?;
             let h = Hkdf::<Sha256>::new(None, Ke);
             let mut session_keys: [u8; 48] = [0; 48];
             h.expand(&SPAKE2_SESSION_KEYS_INFO, &mut session_keys)
                 .map_err(|_x| Error::NoSpace)?;
             println!("The session keys are: {:x?}", session_keys);
-            // Activate the new session
+
+            // Create a session
+            let peer_sess_id = spake2.get_app_data() as u16;
+            let mut clone_data = CloneData::new(peer_sess_id);
+            clone_data.dec_key.copy_from_slice(&session_keys[0..16]);
+            clone_data.enc_key.copy_from_slice(&session_keys[16..32]);
+            clone_data
+                .att_challenge
+                .copy_from_slice(&session_keys[32..48]);
+            proto_ctx.new_session = Some(proto_ctx.session.clone(&clone_data));
         }
 
         create_sc_status_report(tx_ctx, status_code)?;
@@ -132,6 +142,7 @@ impl PAKE {
         rand::thread_rng().fill_bytes(&mut our_random);
 
         let mut spake2p = Box::new(Spake2P::new());
+        spake2p.set_app_data(initiator_sessid as u32);
 
         // Generate response
         let mut tlvwriter = TLVWriter::new(tx_ctx.get_write_buf());
@@ -141,7 +152,7 @@ impl PAKE {
         tlvwriter.put_u16(
             TagType::Context,
             3,
-            proto_ctx.session.get_reserved_local_sess_id(),
+            proto_ctx.session.get_child_local_sess_id(),
         )?;
         if !has_params {
             tlvwriter.put_start_struct(TagType::Context, 4)?;

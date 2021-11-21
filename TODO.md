@@ -22,3 +22,4 @@
   - Allow some way to open the PASE window
   - Allow some way to pass in the 'passcode' and 'salt'
   - In case of error in any of the legs, return StatusReport
+  - Provide a way to delete the exchange
