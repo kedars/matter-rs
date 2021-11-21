@@ -103,11 +103,11 @@ impl Session {
 
     // A new encrypted session always clones from a previous 'new' session
     pub fn clone(&mut self, clone_from: &CloneData) -> Session {
-        let mut session = Session {
+        let session = Session {
             peer_addr: self.peer_addr,
-            dec_key: [0; MATTER_AES128_KEY_SIZE],
-            enc_key: [0; MATTER_AES128_KEY_SIZE],
-            att_challenge: [0; MATTER_AES128_KEY_SIZE],
+            dec_key: clone_from.dec_key,
+            enc_key: clone_from.enc_key,
+            att_challenge: clone_from.att_challenge,
             local_sess_id: self.child_local_sess_id,
             peer_sess_id: clone_from.peer_sess_id,
             child_local_sess_id: 0,
@@ -116,11 +116,6 @@ impl Session {
             mode: SessionMode::Encrypted,
             state: SessionState::Initialised,
         };
-        session.dec_key.copy_from_slice(&clone_from.dec_key);
-        session.enc_key.copy_from_slice(&clone_from.enc_key);
-        session
-            .att_challenge
-            .copy_from_slice(&clone_from.att_challenge);
 
         self.child_local_sess_id = 0;
 
