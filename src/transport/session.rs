@@ -38,6 +38,7 @@ pub struct Session {
     // So, we might keep this as enc_key and dec_key for now
     dec_key: [u8; MATTER_AES128_KEY_SIZE],
     enc_key: [u8; MATTER_AES128_KEY_SIZE],
+    att_challenge: [u8; MATTER_AES128_KEY_SIZE],
     /*
      *
      * - Session Role (whether we are session-Initiator or Session-Responder (use the correct key accordingly(
@@ -50,21 +51,47 @@ pub struct Session {
      */
     local_sess_id: u16,
     peer_sess_id: u16,
-    // The local sess id is generated, but activated, only when the session creation is fully complete
-    unassigned_local_sess_id: u16,
+    // The local sess id is only set on session 0 of a peer-addr, when PASE/CASE is in-progress.
+    // We could have held the local session ID in the PASE/CASE specific data, untill an encrypted
+    // session is established. But doing that implies that the new session ID allocator couldn't
+    // see this child session ID. Keeping it here, makes it easier to manage.
+    child_local_sess_id: u16,
     msg_ctr: u32,
     exchanges: Vec<Exchange, 4>,
     mode: SessionMode,
     state: SessionState,
 }
 
+#[derive(Debug)]
+pub struct CloneData {
+    pub dec_key: [u8; MATTER_AES128_KEY_SIZE],
+    pub enc_key: [u8; MATTER_AES128_KEY_SIZE],
+    pub att_challenge: [u8; MATTER_AES128_KEY_SIZE],
+    peer_sess_id: u16,
+}
+impl CloneData {
+    pub fn new(peer_sess_id: u16) -> CloneData {
+        CloneData {
+            dec_key: [0; MATTER_AES128_KEY_SIZE],
+            enc_key: [0; MATTER_AES128_KEY_SIZE],
+            att_challenge: [0; MATTER_AES128_KEY_SIZE],
+            peer_sess_id,
+        }
+    }
+}
+
 impl Session {
-    pub fn new(reserved_local_sess_id: u16, peer_addr: std::net::IpAddr) -> Session {
+    // All new sessions begin life as PlainText, with a child local session ID,
+    // then they eventually get converted into an encrypted session with the new_encrypted_session() which
+    // clones from this plaintext session, but acquires the local/peer session IDs and the
+    // encryption keys.
+    pub fn new(child_local_sess_id: u16, peer_addr: std::net::IpAddr) -> Session {
         Session {
             peer_addr: Some(peer_addr),
             dec_key: [0; MATTER_AES128_KEY_SIZE],
             enc_key: [0; MATTER_AES128_KEY_SIZE],
-            unassigned_local_sess_id: reserved_local_sess_id,
+            att_challenge: [0; MATTER_AES128_KEY_SIZE],
+            child_local_sess_id,
             peer_sess_id: 0,
             local_sess_id: 0,
             msg_ctr: 1,
@@ -72,6 +99,32 @@ impl Session {
             mode: SessionMode::PlainText,
             state: SessionState::Raw,
         }
+    }
+
+    // A new encrypted session always clones from a previous 'new' session
+    pub fn clone(&mut self, clone_from: &CloneData) -> Session {
+        let mut session = Session {
+            peer_addr: self.peer_addr,
+            dec_key: [0; MATTER_AES128_KEY_SIZE],
+            enc_key: [0; MATTER_AES128_KEY_SIZE],
+            att_challenge: [0; MATTER_AES128_KEY_SIZE],
+            local_sess_id: self.child_local_sess_id,
+            peer_sess_id: clone_from.peer_sess_id,
+            child_local_sess_id: 0,
+            msg_ctr: 1,
+            exchanges: Vec::new(),
+            mode: SessionMode::Encrypted,
+            state: SessionState::Initialised,
+        };
+        session.dec_key.copy_from_slice(&clone_from.dec_key);
+        session.enc_key.copy_from_slice(&clone_from.enc_key);
+        session
+            .att_challenge
+            .copy_from_slice(&clone_from.att_challenge);
+
+        self.child_local_sess_id = 0;
+
+        session
     }
 
     pub fn get_exchange(
@@ -134,8 +187,8 @@ impl Session {
         self.local_sess_id
     }
 
-    pub fn get_reserved_local_sess_id(&self) -> u16 {
-        self.unassigned_local_sess_id
+    pub fn get_child_local_sess_id(&self) -> u16 {
+        self.child_local_sess_id
     }
 
     pub fn get_peer_sess_id(&self) -> u16 {
@@ -143,7 +196,7 @@ impl Session {
     }
 
     pub fn set_local_sess_id(&mut self) {
-        self.local_sess_id = self.unassigned_local_sess_id;
+        self.local_sess_id = self.child_local_sess_id;
     }
 
     // This is required for the bypass case
@@ -225,7 +278,7 @@ impl SessionMgr {
 
             // Ensure the currently selected id doesn't match any existing session
             if self.sessions.iter().position(|x| {
-                x.local_sess_id == next_sess_id || x.unassigned_local_sess_id == next_sess_id
+                x.local_sess_id == next_sess_id || x.child_local_sess_id == next_sess_id
             }) == None
             {
                 break;
@@ -235,8 +288,8 @@ impl SessionMgr {
     }
 
     pub fn add(&mut self, peer_addr: std::net::IpAddr) -> Result<&mut Session, Error> {
-        let reserved_sess_id = self.get_next_sess_id();
-        let session = Session::new(reserved_sess_id, peer_addr);
+        let child_sess_id = self.get_next_sess_id();
+        let session = Session::new(child_sess_id, peer_addr);
 
         match self.sessions.push(session) {
             Err(_) => return Err(Error::NoSpace),
@@ -244,6 +297,14 @@ impl SessionMgr {
         };
         let index = self._get(0, peer_addr, false).ok_or(Error::NoSpace)?;
         Ok(&mut self.sessions[index])
+    }
+
+    pub fn add_session(&mut self, session: Session) -> Result<(), Error> {
+        match self.sessions.push(session) {
+            Err(_) => return Err(Error::NoSpace),
+            _ => (),
+        };
+        Ok(())
     }
 
     fn _get(&self, sess_id: u16, peer_addr: std::net::IpAddr, is_encrypted: bool) -> Option<usize> {
@@ -265,13 +326,11 @@ impl SessionMgr {
     ) -> Option<&mut Session> {
         println!("Current sessions: {:?}", self.sessions);
         if let Some(index) = self._get(sess_id, peer_addr, is_encrypted) {
-            println!("Found session");
             Some(&mut self.sessions[index])
         } else {
-            println!("Not Found session");
             if sess_id == 0 && !is_encrypted {
                 // We must create a new session for this case
-                println!("Creating new session");
+                info!("Creating new session");
                 self.add(peer_addr).ok()
             } else {
                 None

@@ -18,6 +18,7 @@ pub struct ProtoCtx<'a> {
     pub exch_id: u16,
     pub buf: &'a [u8],
     pub session: &'a mut Session,
+    pub new_session: Option<Session>,
 }
 
 impl<'a> ProtoCtx<'a> {
@@ -34,6 +35,7 @@ impl<'a> ProtoCtx<'a> {
             exch_id,
             buf,
             session,
+            new_session: None,
         }
     }
 }
