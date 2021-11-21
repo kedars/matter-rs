@@ -18,18 +18,6 @@ impl Default for SessionMode {
     }
 }
 
-#[derive(Debug)]
-pub enum SessionState {
-    Raw,
-    Initialised,
-}
-
-impl Default for SessionState {
-    fn default() -> Self {
-        SessionState::Raw
-    }
-}
-
 #[derive(Debug, Default)]
 pub struct Session {
     // If this field is None, the rest of the members are ignored
@@ -59,7 +47,6 @@ pub struct Session {
     msg_ctr: u32,
     exchanges: Vec<Exchange, 4>,
     mode: SessionMode,
-    state: SessionState,
 }
 
 #[derive(Debug)]
@@ -97,7 +84,6 @@ impl Session {
             msg_ctr: 1,
             exchanges: Vec::new(),
             mode: SessionMode::PlainText,
-            state: SessionState::Raw,
         }
     }
 
@@ -114,7 +100,6 @@ impl Session {
             msg_ctr: 1,
             exchanges: Vec::new(),
             mode: SessionMode::Encrypted,
-            state: SessionState::Initialised,
         };
 
         self.child_local_sess_id = 0;
