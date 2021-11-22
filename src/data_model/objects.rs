@@ -216,18 +216,25 @@ impl Node {
     }
 
     pub fn get_endpoint(&mut self, endpoint_id: u32) -> Result<&mut Box<Endpoint>, Error> {
-        let endpoint = self.endpoints[endpoint_id as usize]
-            .as_mut()
-            .ok_or(Error::EndpointNotFound)?;
-        Ok(endpoint)
+        if (endpoint_id as usize) < ENDPTS_PER_ACC {
+            let endpoint = self.endpoints[endpoint_id as usize]
+                .as_mut()
+                .ok_or(Error::EndpointNotFound)?;
+            Ok(endpoint)
+        } else {
+            Err(Error::EndpointNotFound)
+        }
     }
 
     pub fn add_cluster(&mut self, endpoint_id: u32, cluster: Box<Cluster>) -> Result<(), Error> {
         let endpoint_id = endpoint_id as usize;
-
-        self.endpoints[endpoint_id]
-            .as_mut()
-            .ok_or(Error::NoEndpoint)?
-            .add_cluster(cluster)
+        if endpoint_id < ENDPTS_PER_ACC {
+            self.endpoints[endpoint_id]
+                .as_mut()
+                .ok_or(Error::NoEndpoint)?
+                .add_cluster(cluster)
+        } else {
+            Err(Error::Invalid)
+        }
     }
 }
