@@ -1,3 +1,4 @@
+use core::fmt;
 use std::any::Any;
 
 use crate::{error::*, transport::exchange::*};
@@ -231,6 +232,21 @@ impl Session {
     }
 }
 
+impl fmt::Display for Session {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "peer: {:?}, local: {}, remote: {}, msg_ctr: {}, mode: {:?}, exchanges: {:?}",
+            self.peer_addr,
+            self.local_sess_id,
+            self.peer_sess_id,
+            self.msg_ctr,
+            self.mode,
+            self.exchanges
+        )
+    }
+}
+
 #[derive(Debug)]
 pub struct SessionMgr {
     next_sess_id: u16,
@@ -304,7 +320,6 @@ impl SessionMgr {
         peer_addr: std::net::IpAddr,
         is_encrypted: bool,
     ) -> Option<&mut Session> {
-        println!("Current sessions: {:?}", self.sessions);
         if let Some(index) = self._get(sess_id, peer_addr, is_encrypted) {
             Some(&mut self.sessions[index])
         } else {
@@ -316,6 +331,17 @@ impl SessionMgr {
                 None
             }
         }
+    }
+}
+
+impl fmt::Display for SessionMgr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "{{[")?;
+        for s in &self.sessions {
+            writeln!(f, "{{ {}, }},", s)?;
+        }
+        write!(f, "], next_sess_id: {}", self.next_sess_id)?;
+        write!(f, "}}")
     }
 }
 

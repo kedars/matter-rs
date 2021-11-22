@@ -2,6 +2,10 @@ use std::{fmt, sync::PoisonError};
 
 #[derive(Debug)]
 pub enum Error {
+    AttributeNotFound,
+    ClusterNotFound,
+    CommandNotFound,
+    EndpointNotFound,
     Crypto(ccm::aead::Error),
     OpenSSL(openssl::error::ErrorStack),
     NoEndpoint,

@@ -109,21 +109,16 @@ impl Spake2P {
 
     #[allow(non_snake_case)]
     pub fn handle_pA(&mut self, pA: &[u8], pB: &mut [u8], cB: &mut [u8]) -> Result<(), Error> {
-        println!("In handle_pA, state is {:?}", self.mode);
         if self.mode != Spake2Mode::Verifier(Spake2VerifierState::Init) {
             return Err(Error::InvalidState);
         }
 
         if let Some(crypto_spake2) = &mut self.crypto_spake2 {
             crypto_spake2.get_pB(pB)?;
-            println!("pB is {:x?}", pB);
             if let Some(context) = self.context.take() {
                 let TT = crypto_spake2.get_TT_as_verifier(context.finalize().as_slice(), pA, pB)?;
 
                 Spake2P::get_Ke_and_cAcB(TT, pA, pB, &mut self.Ke, &mut self.cA, cB)?;
-                println!("cB is {:x?}", cB);
-                println!("cA is {:x?}", self.cA);
-                println!("Ke is {:x?}", self.Ke);
             }
         }
         // We are finished with using the crypto_spake2 now

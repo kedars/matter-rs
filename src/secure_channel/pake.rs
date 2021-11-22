@@ -10,7 +10,7 @@ use crate::transport::exchange::ExchangeRole;
 use crate::transport::tx_ctx::TxCtx;
 use crate::{error::Error, transport::session::CloneData};
 use hkdf::Hkdf;
-use log::{error, info};
+use log::error;
 use rand::prelude::*;
 use sha2::Sha256;
 
@@ -69,7 +69,6 @@ impl PAKE {
             let mut session_keys: [u8; 48] = [0; 48];
             h.expand(&SPAKE2_SESSION_KEYS_INFO, &mut session_keys)
                 .map_err(|_x| Error::NoSpace)?;
-            println!("The session keys are: {:x?}", session_keys);
 
             // Create a session
             let peer_sess_id = spake2.get_app_data() as u16;
@@ -128,11 +127,6 @@ impl PAKE {
     ) -> Result<(), Error> {
         let (initiator_random, initiator_sessid, passcode_id, has_params) =
             extract_pbkdfreq_params(proto_ctx.buf)?;
-        info!(
-            "random: {:x?} sessid: {} passid: {} hasparams:{}",
-            initiator_random, initiator_sessid, passcode_id, has_params
-        );
-
         if passcode_id != 0 {
             error!("Can't yet handle passcode_id != 0");
             return Err(Error::Invalid);

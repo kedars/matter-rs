@@ -11,7 +11,7 @@ use ccm::{
     consts::{U12, U16},
     Ccm,
 };
-use log::info;
+use log::{info, trace};
 
 const EXCHANGE_FLAG_VENDOR_MASK: u8 = 0x10;
 const EXCHANGE_FLAG_SECEX_MASK: u8 = 0x08;
@@ -90,7 +90,7 @@ impl ProtoHdr {
         if self.is_ack() {
             self.ack_msg_ctr = Some(parsebuf.le_u32()?);
         }
-        info!("[rx payload]: {:x?}", parsebuf.as_slice());
+        trace!("[rx payload]: {:x?}", parsebuf.as_slice());
         Ok(())
     }
 

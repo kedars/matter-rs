@@ -1,4 +1,4 @@
-use log::{error, info};
+use log::{debug, error, info, trace};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use crate::error::*;
@@ -86,13 +86,11 @@ impl Mgr {
             let (len, src) = self.transport.recv_from(&mut in_buf)?;
             let mut rx_ctx = RxCtx::new(len, src);
             let mut parse_buf = ParseBuf::new(&mut in_buf, len);
-            info!(
-                "{}: {:x?} from src: {}",
-                "Received payload".blue(),
-                parse_buf.as_slice(),
-                src
-            );
 
+            info!("{} from src: {}", "Received".blue(), src);
+            trace!("payload: {:x?}", parse_buf.as_slice());
+
+            info!("Session Mgr: {}", self.sess_mgr);
             // Read unencrypted packet header
             match rx_ctx.plain_hdr.decode(&mut parse_buf) {
                 Ok(_) => (),
@@ -130,7 +128,7 @@ impl Mgr {
                 Some(e) => e,
                 None => continue,
             };
-            info!("Exchange is {:?}", exchange);
+            debug!("Exchange is {:?}", exchange);
 
             // Message Reliability Protocol
             mrp::on_msg_recv(exchange, &rx_ctx.plain_hdr, &rx_ctx.proto_hdr);

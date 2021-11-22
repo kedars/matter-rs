@@ -7,7 +7,7 @@ use crate::transport::proto_hdr;
 use crate::transport::session;
 use crate::utils::writebuf::*;
 
-use log::info;
+use log::trace;
 
 pub struct TxCtx<'a> {
     plain_hdr: plain_hdr::PlainHdr,
@@ -55,7 +55,7 @@ impl<'a> TxCtx<'a> {
         exch_id: u16,
         role: exchange::ExchangeRole,
     ) -> Result<(), Error> {
-        info!("payload: {:x?}", self.write_buf.as_slice());
+        trace!("payload: {:x?}", self.write_buf.as_slice());
 
         // Set up the parameters
         self.proto_hdr.exch_id = exch_id;
@@ -81,23 +81,21 @@ impl<'a> TxCtx<'a> {
         let mut write_buf = WriteBuf::new(&mut tmp_buf[..], proto_hdr::max_proto_hdr_len());
         self.proto_hdr.encode(&mut write_buf)?;
         self.write_buf.prepend(write_buf.as_slice())?;
-        info!("proto_hdr: {:x?}", tmp_buf);
 
         // Generate plain-text header
         let mut tmp_buf: [u8; plain_hdr::max_plain_hdr_len()] = [0; plain_hdr::max_plain_hdr_len()];
         let mut write_buf = WriteBuf::new(&mut tmp_buf[..], plain_hdr::max_plain_hdr_len());
         self.plain_hdr.encode(&mut write_buf)?;
         let plain_hdr = write_buf.as_slice();
-        info!("plain_hdr: {:x?}", plain_hdr);
 
-        info!("unencrypted packet: {:x?}", self.write_buf.as_slice());
+        trace!("unencrypted packet: {:x?}", self.write_buf.as_slice());
         let enc_key = session.get_enc_key();
         if let Some(e) = enc_key {
             proto_hdr::encrypt_in_place(self.plain_hdr.ctr, plain_hdr, &mut self.write_buf, e)?;
         }
 
         self.write_buf.prepend(plain_hdr)?;
-        info!("Full encrypted packet: {:x?}", self.write_buf.as_slice());
+        trace!("Full encrypted packet: {:x?}", self.write_buf.as_slice());
 
         Ok(())
     }

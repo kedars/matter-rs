@@ -94,7 +94,11 @@ impl InteractionModel {
             );
             let variable = cmd_data_ib.find_element(1).ok_or(Error::InvalidData)?;
             self.handler
-                .handle_invoke_cmd(&cmd_path_ib, variable, tx_ctx.get_write_buf())?;
+                .handle_invoke_cmd(&cmd_path_ib, variable, tx_ctx.get_write_buf())
+                .map_err(|e| {
+                    error!("Error in handling command: {:?}", e);
+                    e
+                })?;
         }
         Ok(ResponseRequired::Yes)
     }

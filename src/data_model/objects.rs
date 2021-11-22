@@ -107,9 +107,9 @@ impl Cluster {
             .commands
             .iter()
             .find(|x| x.as_ref().map_or(false, |c| c.id == cmd_id))
-            .ok_or(Error::Invalid)?
+            .ok_or(Error::CommandNotFound)?
             .as_ref()
-            .ok_or(Error::Invalid)?;
+            .ok_or(Error::CommandNotFound)?;
         (cmd.cb)(self, cmd_id)
     }
 }
@@ -163,7 +163,7 @@ impl Endpoint {
             .clusters
             .iter()
             .position(|x| x.as_ref().map_or(false, |c| c.id == cluster_id))
-            .ok_or(Error::Invalid)?;
+            .ok_or(Error::ClusterNotFound)?;
         Ok(self.clusters[index].as_mut().unwrap())
     }
 }
@@ -189,10 +189,10 @@ pub struct Node {
 
 impl std::fmt::Display for Node {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "node:\n")?;
+        writeln!(f, "node:")?;
         for (i, element) in self.endpoints.iter().enumerate() {
             if let Some(e) = element {
-                write!(f, "endpoint {}: {}\n", i, e)?;
+                writeln!(f, "endpoint {}: {}", i, e)?;
             }
         }
         write!(f, "")
@@ -218,7 +218,7 @@ impl Node {
     pub fn get_endpoint(&mut self, endpoint_id: u32) -> Result<&mut Box<Endpoint>, Error> {
         let endpoint = self.endpoints[endpoint_id as usize]
             .as_mut()
-            .ok_or(Error::Invalid)?;
+            .ok_or(Error::EndpointNotFound)?;
         Ok(endpoint)
     }
 
