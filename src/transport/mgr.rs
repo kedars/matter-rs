@@ -73,7 +73,7 @@ impl Mgr {
         &mut self,
         proto_id_handle: Box<dyn proto_demux::HandleProto>,
     ) -> Result<(), Error> {
-        return self.proto_demux.register(proto_id_handle);
+        self.proto_demux.register(proto_id_handle)
     }
 
     pub fn start(&mut self) -> Result<(), Error> {

@@ -186,11 +186,7 @@ impl Session {
     }
 
     pub fn is_encrypted(&self) -> bool {
-        if self.mode == SessionMode::Encrypted {
-            true
-        } else {
-            false
-        }
+        self.mode == SessionMode::Encrypted
     }
 
     pub fn get_msg_ctr(&mut self) -> u32 {
@@ -287,20 +283,13 @@ impl SessionMgr {
         let child_sess_id = self.get_next_sess_id();
         let session = Session::new(child_sess_id, peer_addr);
 
-        match self.sessions.push(session) {
-            Err(_) => return Err(Error::NoSpace),
-            _ => (),
-        };
+        self.sessions.push(session).map_err(|_s| Error::NoSpace)?;
         let index = self._get(0, peer_addr, false).ok_or(Error::NoSpace)?;
         Ok(&mut self.sessions[index])
     }
 
     pub fn add_session(&mut self, session: Session) -> Result<(), Error> {
-        match self.sessions.push(session) {
-            Err(_) => return Err(Error::NoSpace),
-            _ => (),
-        };
-        Ok(())
+        self.sessions.push(session).map_err(|_s| Error::NoSpace)
     }
 
     fn _get(&self, sess_id: u16, peer_addr: std::net::IpAddr, is_encrypted: bool) -> Option<usize> {
@@ -322,14 +311,12 @@ impl SessionMgr {
     ) -> Option<&mut Session> {
         if let Some(index) = self._get(sess_id, peer_addr, is_encrypted) {
             Some(&mut self.sessions[index])
+        } else if sess_id == 0 && !is_encrypted {
+            // We must create a new session for this case
+            info!("Creating new session");
+            self.add(peer_addr).ok()
         } else {
-            if sess_id == 0 && !is_encrypted {
-                // We must create a new session for this case
-                info!("Creating new session");
-                self.add(peer_addr).ok()
-            } else {
-                None
-            }
+            None
         }
     }
 }

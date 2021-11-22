@@ -37,7 +37,7 @@ impl Exchange {
     }
 
     pub fn is_ack_pending(&self) -> Option<u32> {
-        return self.pending_ack;
+        self.pending_ack
     }
 
     pub fn clear_ack_pending(&mut self) {

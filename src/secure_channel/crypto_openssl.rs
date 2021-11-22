@@ -109,8 +109,7 @@ impl CryptoSpake2 for CryptoOpenSSL {
         //    where P is the generator of the underlying elliptic curve
         self.set_w1_from_w1s(w1s)?;
         self.L = EcPoint::new(&self.group)?;
-        self.L
-            .mul_generator(&self.group, &self.w1, &mut self.bn_ctx)?;
+        self.L.mul_generator(&self.group, &self.w1, &self.bn_ctx)?;
         Ok(())
     }
 
@@ -263,12 +262,12 @@ impl CryptoOpenSSL {
         //    Z = h*Z (cofactor Mul)
 
         let mut tmp = BigNum::new()?;
-        tmp.mod_mul(&x, &w0, order, bn_ctx)?;
+        tmp.mod_mul(x, w0, order, bn_ctx)?;
         N.invert(group, bn_ctx)?;
         let Z = CryptoOpenSSL::do_add_mul(Y, x, N, &tmp, group, bn_ctx)?;
         // Cofactor for P256 is 1, so that is a No-Op
 
-        tmp.mod_mul(&w1, &w0, order, bn_ctx)?;
+        tmp.mod_mul(w1, w0, order, bn_ctx)?;
         let V = CryptoOpenSSL::do_add_mul(Y, w1, N, &tmp, group, bn_ctx)?;
         Ok((Z, V))
     }
@@ -298,7 +297,7 @@ impl CryptoOpenSSL {
         //    Z = h*Z (cofactor Mul)
 
         let mut tmp = BigNum::new()?;
-        tmp.mod_mul(&y, &w0, order, bn_ctx)?;
+        tmp.mod_mul(y, w0, order, bn_ctx)?;
         M.invert(group, bn_ctx)?;
         let Z = CryptoOpenSSL::do_add_mul(X, y, M, &tmp, group, bn_ctx)?;
         // Cofactor for P256 is 1, so that is a No-Op

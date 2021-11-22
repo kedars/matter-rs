@@ -47,10 +47,10 @@ pub fn create_sc_status_report(
         | SCStatusCodes::NoSharedTrustRoots
         | SCStatusCodes::SessionNotFound => GeneralCode::Failure,
     };
-    return create_status_report(
+    create_status_report(
         tx_ctx,
         general_code,
         PROTO_ID_SECURE_CHANNEL as u32,
         status_code as u16,
-    );
+    )
 }

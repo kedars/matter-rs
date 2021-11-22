@@ -532,7 +532,7 @@ pub fn get_root_node_struct(b: &[u8]) -> Option<TLVElement> {
 }
 
 pub fn get_root_node_list(b: &[u8]) -> Option<TLVElement> {
-    return TLVList::new(&b, b.len()).into_iter().next()?.confirm_list();
+    return TLVList::new(b, b.len()).into_iter().next()?.confirm_list();
 }
 
 pub fn print_tlv_list(b: &[u8]) {

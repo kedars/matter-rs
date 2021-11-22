@@ -172,11 +172,9 @@ impl std::fmt::Display for Endpoint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "clusters:[")?;
         let mut comma = "";
-        for element in self.clusters.iter() {
-            if let Some(e) = element {
-                write!(f, "{} {{ {} }}", comma, e)?;
-                comma = ", ";
-            }
+        for element in self.clusters.iter().flatten() {
+            write!(f, "{} {{ {} }}", comma, element)?;
+            comma = ", ";
         }
         write!(f, "]")
     }

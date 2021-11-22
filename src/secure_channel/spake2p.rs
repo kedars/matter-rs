@@ -57,6 +57,12 @@ fn crypto_spake2_new() -> Result<Box<dyn CryptoSpake2>, Error> {
     Ok(Box::new(CryptoOpenSSL::new()?))
 }
 
+impl Default for Spake2P {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Spake2P {
     pub fn new() -> Self {
         Spake2P {
