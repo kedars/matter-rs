@@ -6,7 +6,6 @@ use crate::proto_demux::ProtoCtx;
 use crate::tlv::*;
 use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
-use crate::transport::exchange::ExchangeRole;
 use crate::transport::tx_ctx::TxCtx;
 use crate::{error::Error, transport::session::CloneData};
 use hkdf::Hkdf;
@@ -53,7 +52,7 @@ impl PAKE {
     ) -> Result<(), Error> {
         let mut spake2_boxed = proto_ctx
             .session
-            .get_and_clear_exchange_data(proto_ctx.exch_id, ExchangeRole::Responder)
+            .get_and_clear_exchange_data(proto_ctx.exch_index)
             .ok_or(Error::InvalidState)?;
         let spake2 = spake2_boxed
             .downcast_mut::<Spake2P>()
@@ -94,7 +93,7 @@ impl PAKE {
     ) -> Result<(), Error> {
         let mut spake2_boxed = proto_ctx
             .session
-            .get_and_clear_exchange_data(proto_ctx.exch_id, ExchangeRole::Responder)
+            .get_and_clear_exchange_data(proto_ctx.exch_index)
             .ok_or(Error::InvalidState)?;
         let spake2 = spake2_boxed
             .downcast_mut::<Spake2P>()
@@ -112,11 +111,9 @@ impl PAKE {
         tlvwriter.put_str8(TagType::Context, 2, &cB)?;
         tlvwriter.put_end_container()?;
 
-        proto_ctx.session.set_exchange_data(
-            proto_ctx.exch_id,
-            ExchangeRole::Responder,
-            spake2_boxed,
-        )?;
+        proto_ctx
+            .session
+            .set_exchange_data(proto_ctx.exch_index, spake2_boxed)?;
         Ok(())
     }
 
@@ -159,7 +156,7 @@ impl PAKE {
         spake2p.set_context(proto_ctx.buf, tx_ctx.as_slice());
         proto_ctx
             .session
-            .set_exchange_data(proto_ctx.exch_id, ExchangeRole::Responder, spake2p)?;
+            .set_exchange_data(proto_ctx.exch_index, spake2p)?;
         Ok(())
     }
 }

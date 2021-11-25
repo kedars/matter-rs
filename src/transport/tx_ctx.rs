@@ -1,10 +1,9 @@
 use crate::error::*;
-use crate::transport::exchange;
 use crate::transport::exchange::ExchangeRole;
-use crate::transport::mrp;
+use crate::transport::mrp::ReliableMessage;
 use crate::transport::plain_hdr;
 use crate::transport::proto_hdr;
-use crate::transport::session;
+use crate::transport::session::SessionMgr;
 use crate::utils::writebuf::*;
 
 use log::trace;
@@ -51,15 +50,19 @@ impl<'a> TxCtx<'a> {
     // Send the payload, exch_id is None for new exchange
     pub fn prepare_send(
         &mut self,
-        session: &mut session::Session,
-        exch_id: u16,
-        role: exchange::ExchangeRole,
+        rel_mgr: &mut ReliableMessage,
+        sess_mgr: &mut SessionMgr,
+        sess_index: usize,
+        exch_index: usize,
     ) -> Result<(), Error> {
         trace!("payload: {:x?}", self.write_buf.as_slice());
 
+        let session = sess_mgr.get_session(sess_index).ok_or(Error::NoSession)?;
+        let exchange = session.get_exchange(exch_index).ok_or(Error::NoExchange)?;
+
         // Set up the parameters
-        self.proto_hdr.exch_id = exch_id;
-        if role == ExchangeRole::Initiator {
+        self.proto_hdr.exch_id = exchange.get_id();
+        if exchange.get_role() == ExchangeRole::Initiator {
             self.proto_hdr.set_initiator()
         }
         self.plain_hdr.sess_id = session.get_peer_sess_id();
@@ -68,13 +71,14 @@ impl<'a> TxCtx<'a> {
             self.plain_hdr.sess_type = plain_hdr::SessionType::Encrypted;
         }
 
-        // Get the exchange
-        let mut exchange = session
-            .get_exchange(exch_id, role, role == ExchangeRole::Initiator)
-            .ok_or(Error::Invalid)?;
-
         // Handle message reliability
-        mrp::before_msg_send(&mut exchange, &self.plain_hdr, &mut self.proto_hdr)?;
+        rel_mgr.before_msg_send(
+            sess_mgr,
+            sess_index,
+            exch_index,
+            &self.plain_hdr,
+            &mut self.proto_hdr,
+        )?;
 
         // Generate encrypted header
         let mut tmp_buf: [u8; proto_hdr::max_proto_hdr_len()] = [0; proto_hdr::max_proto_hdr_len()];
@@ -89,6 +93,7 @@ impl<'a> TxCtx<'a> {
         let plain_hdr = write_buf.as_slice();
 
         trace!("unencrypted packet: {:x?}", self.write_buf.as_slice());
+        let session = sess_mgr.get_session(sess_index).ok_or(Error::NoSession)?;
         let enc_key = session.get_enc_key();
         if let Some(e) = enc_key {
             proto_hdr::encrypt_in_place(self.plain_hdr.ctr, plain_hdr, &mut self.write_buf, e)?;

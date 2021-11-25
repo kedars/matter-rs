@@ -54,6 +54,10 @@ impl ProtoHdr {
         (self.exch_flags & EXCHANGE_FLAG_ACK_MASK) != 0
     }
 
+    pub fn get_ack_msg_ctr(&self) -> Option<u32> {
+        self.ack_msg_ctr
+    }
+
     pub fn set_ack(&mut self, ack_msg_ctr: u32) {
         self.exch_flags |= EXCHANGE_FLAG_ACK_MASK;
         self.ack_msg_ctr = Some(ack_msg_ctr);

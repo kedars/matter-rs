@@ -40,6 +40,7 @@ pub struct Mgr {
     transport: udp::UdpListener,
     sess_mgr: session::SessionMgr,
     proto_demux: proto_demux::ProtoDemux,
+    rel_mgr: mrp::ReliableMessage,
 }
 
 impl Mgr {
@@ -48,6 +49,7 @@ impl Mgr {
             transport: udp::UdpListener::new()?,
             sess_mgr: session::SessionMgr::new(),
             proto_demux: proto_demux::ProtoDemux::new(),
+            rel_mgr: mrp::ReliableMessage::new(),
         };
 
         // Create a fake entry as hard-coded in the 'bypass mode' in chip-tool
@@ -61,7 +63,7 @@ impl Mgr {
             0xba, 0x3d,
         ];
 
-        let session = mgr.sess_mgr.add(test_addr.ip()).unwrap();
+        let (_, session) = mgr.sess_mgr.add(test_addr.ip()).unwrap();
         session.activate(&i2r_key, &r2i_key, 0).unwrap();
         session.cheat_set_zero_local_sess_id();
 
@@ -99,7 +101,7 @@ impl Mgr {
 
             // Get session
             //      Ok to use unwrap here since we know 'src' is certainly not None
-            let session = match self.sess_mgr.get(
+            let (session_index, mut session) = match self.sess_mgr.get(
                 rx_ctx.plain_hdr.sess_id,
                 rx_ctx.src.unwrap().ip(),
                 rx_ctx.plain_hdr.is_encrypted(),
@@ -119,7 +121,7 @@ impl Mgr {
             };
 
             // Get the exchange
-            let exchange = match session.get_exchange(
+            let exchange_index = match session.get_exchange_id(
                 rx_ctx.proto_hdr.exch_id,
                 exchange::get_complementary_role(rx_ctx.proto_hdr.is_initiator()),
                 // We create a new exchange, only if the peer is the initiator
@@ -128,10 +130,18 @@ impl Mgr {
                 Some(e) => e,
                 None => continue,
             };
-            debug!("Exchange is {:?}", exchange);
+            debug!("Exchange is {:?}", session.get_exchange(exchange_index));
 
             // Message Reliability Protocol
-            mrp::on_msg_recv(exchange, &rx_ctx.plain_hdr, &rx_ctx.proto_hdr);
+            if let Err(_) = self.rel_mgr.on_msg_recv(
+                &mut self.sess_mgr,
+                session_index,
+                exchange_index,
+                &rx_ctx.plain_hdr,
+                &rx_ctx.proto_hdr,
+            ) {
+                continue;
+            }
 
             let mut tx_ctx = match tx_ctx::TxCtx::new(&mut out_buf) {
                 Ok(t) => t,
@@ -141,11 +151,17 @@ impl Mgr {
                 }
             };
 
+            if let Some(s) = self.sess_mgr.get_session(session_index) {
+                session = s;
+            } else {
+                continue;
+            }
+
             // Proto Dispatch
             let mut proto_ctx = ProtoCtx::new(
                 rx_ctx.proto_hdr.proto_id.into(),
                 rx_ctx.proto_hdr.proto_opcode,
-                rx_ctx.proto_hdr.exch_id,
+                exchange_index,
                 parse_buf.as_slice(),
                 session,
             );
@@ -163,9 +179,10 @@ impl Mgr {
 
             // tx_ctx now contains the response payload, prepare the send packet
             match tx_ctx.prepare_send(
-                session,
-                rx_ctx.proto_hdr.exch_id,
-                exchange::ExchangeRole::Responder,
+                &mut self.rel_mgr,
+                &mut self.sess_mgr,
+                session_index,
+                exchange_index,
             ) {
                 Ok(_) => (),
                 Err(_) => continue,

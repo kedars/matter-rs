@@ -12,6 +12,8 @@ pub struct Exchange {
     role: ExchangeRole,
     // The spec only allows a single pending ACK per exchange
     pending_ack: Option<u32>,
+    // Pending an acknowledgement receipt
+    pending_ack_recv: bool,
     // Currently I see this primarily used in PASE and CASE. If that is the limited use
     // of this, we might move this into a separate data structure, so as not to burden
     // all 'exchanges'.
@@ -24,8 +26,17 @@ impl Exchange {
             id,
             role,
             pending_ack: None,
+            pending_ack_recv: false,
             data: None,
         }
+    }
+
+    pub fn get_id(&self) -> u16 {
+        self.id
+    }
+
+    pub fn get_role(&self) -> ExchangeRole {
+        self.role
     }
 
     pub fn is_match(&self, id: u16, role: ExchangeRole) -> bool {
@@ -42,6 +53,18 @@ impl Exchange {
 
     pub fn clear_ack_pending(&mut self) {
         self.pending_ack = None;
+    }
+
+    pub fn ack_recv_pending(&mut self) {
+        self.pending_ack_recv = true;
+    }
+
+    pub fn is_ack_recv_pending(&self) -> bool {
+        self.pending_ack_recv
+    }
+
+    pub fn clear_ack_recv_pending(&mut self) {
+        self.pending_ack_recv = false;
     }
 
     pub fn set_exchange_data(&mut self, data: Box<dyn Any>) {

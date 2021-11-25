@@ -7,6 +7,8 @@ use log::info;
 
 const MATTER_AES128_KEY_SIZE: usize = 16;
 
+const EXCHANGES_PER_SESSION: usize = 4;
+
 #[derive(Debug, PartialEq)]
 pub enum SessionMode {
     Encrypted,
@@ -46,7 +48,7 @@ pub struct Session {
     // see this child session ID. Keeping it here, makes it easier to manage.
     child_local_sess_id: u16,
     msg_ctr: u32,
-    exchanges: Vec<Exchange, 4>,
+    exchanges: [Option<Exchange>; EXCHANGES_PER_SESSION],
     mode: SessionMode,
 }
 
@@ -83,7 +85,7 @@ impl Session {
             peer_sess_id: 0,
             local_sess_id: 0,
             msg_ctr: 1,
-            exchanges: Vec::new(),
+            exchanges: Default::default(),
             mode: SessionMode::PlainText,
         }
     }
@@ -99,7 +101,7 @@ impl Session {
             peer_sess_id: clone_from.peer_sess_id,
             child_local_sess_id: 0,
             msg_ctr: 1,
-            exchanges: Vec::new(),
+            exchanges: Default::default(),
             mode: SessionMode::Encrypted,
         };
 
@@ -108,60 +110,73 @@ impl Session {
         session
     }
 
-    pub fn get_exchange(
+    pub fn get_exchange(&mut self, index: usize) -> Option<&mut Exchange> {
+        if index < EXCHANGES_PER_SESSION {
+            self.exchanges[index].as_mut()
+        } else {
+            None
+        }
+    }
+
+    pub fn get_exchange_id(
         &mut self,
         id: u16,
         role: ExchangeRole,
         create_new: bool,
-    ) -> Option<&mut Exchange> {
-        let index = self.exchanges.iter().position(|x| x.is_match(id, role));
-        if let Some(i) = index {
-            Some(&mut self.exchanges[i])
-        } else {
-            // If an exchange doesn't exist, create a new one
-            if create_new {
-                info!("Creating new exchange");
-                let e = Exchange::new(id, role);
-                match self.exchanges.push(e) {
-                    Ok(_) => {
-                        // Return the exchange that was just added
-                        return self.exchanges.iter_mut().find(|x| x.is_match(id, role));
-                    }
-                    Err(_) => None,
-                }
+    ) -> Option<usize> {
+        if let Some(index) = self.exchanges.iter().position(|x| {
+            if let Some(x) = x {
+                x.is_match(id, role)
             } else {
-                // Got a message that has no Exchange object
+                false
+            }
+        }) {
+            Some(index)
+        } else if create_new {
+            // If an exchange doesn't exist, create a new one
+            info!("Creating new exchange");
+            let e = Exchange::new(id, role);
+            if let Some(index) = self.exchanges.iter().position(|x| x.is_none()) {
+                // Return the exchange that was just added
+                self.exchanges[index] = Some(e);
+                Some(index)
+            } else {
                 None
             }
+        } else {
+            // Got a message that has no matching Exchange object
+            None
         }
     }
 
     pub fn set_exchange_data(
         &mut self,
-        exch_id: u16,
-        role: ExchangeRole,
+        exch_index: usize,
         data: Box<dyn Any>,
     ) -> Result<(), Error> {
-        self.get_exchange(exch_id, role, false)
-            .ok_or(Error::NotFound)?
-            .set_exchange_data(data);
-        Ok(())
+        self.exchanges[exch_index]
+            .as_mut()
+            .and_then(|e| {
+                e.set_exchange_data(data);
+                Some(())
+            })
+            .ok_or(Error::NoExchange)
     }
 
-    pub fn get_and_clear_exchange_data(
-        &mut self,
-        exch_id: u16,
-        role: ExchangeRole,
-    ) -> Option<Box<dyn Any>> {
-        self.get_exchange(exch_id, role, false)
+    pub fn get_and_clear_exchange_data(&mut self, exch_index: usize) -> Option<Box<dyn Any>> {
+        self.exchanges[exch_index]
+            .as_mut()
             .and_then(|e| e.get_and_clear_exchange_data())
     }
 
-    pub fn clear_exchange_data(&mut self, exch_id: u16, role: ExchangeRole) -> Result<(), Error> {
-        self.get_exchange(exch_id, role, false)
-            .ok_or(Error::NotFound)?
-            .clear_exchange_data();
-        Ok(())
+    pub fn clear_exchange_data(&mut self, exch_index: usize) -> Result<(), Error> {
+        self.exchanges[exch_index]
+            .as_mut()
+            .and_then(|e| {
+                e.clear_exchange_data();
+                Some(())
+            })
+            .ok_or(Error::NoExchange)
     }
 
     pub fn get_local_sess_id(&self) -> u16 {
@@ -246,7 +261,7 @@ impl fmt::Display for Session {
 #[derive(Debug)]
 pub struct SessionMgr {
     next_sess_id: u16,
-    pub sessions: Vec<Session, 16>,
+    sessions: Vec<Session, 16>,
 }
 
 impl SessionMgr {
@@ -279,13 +294,13 @@ impl SessionMgr {
         next_sess_id
     }
 
-    pub fn add(&mut self, peer_addr: std::net::IpAddr) -> Result<&mut Session, Error> {
+    pub fn add(&mut self, peer_addr: std::net::IpAddr) -> Result<(usize, &mut Session), Error> {
         let child_sess_id = self.get_next_sess_id();
         let session = Session::new(child_sess_id, peer_addr);
 
         self.sessions.push(session).map_err(|_s| Error::NoSpace)?;
         let index = self._get(0, peer_addr, false).ok_or(Error::NoSpace)?;
-        Ok(&mut self.sessions[index])
+        Ok((index, &mut self.sessions[index]))
     }
 
     pub fn add_session(&mut self, session: Session) -> Result<(), Error> {
@@ -308,9 +323,9 @@ impl SessionMgr {
         sess_id: u16,
         peer_addr: std::net::IpAddr,
         is_encrypted: bool,
-    ) -> Option<&mut Session> {
+    ) -> Option<(usize, &mut Session)> {
         if let Some(index) = self._get(sess_id, peer_addr, is_encrypted) {
-            Some(&mut self.sessions[index])
+            Some((index, &mut self.sessions[index]))
         } else if sess_id == 0 && !is_encrypted {
             // We must create a new session for this case
             info!("Creating new session");
@@ -318,6 +333,14 @@ impl SessionMgr {
         } else {
             None
         }
+    }
+
+    pub fn get_session(&mut self, sess_index: usize) -> Option<&mut Session> {
+        Some(&mut self.sessions[sess_index])
+    }
+
+    pub fn get_exchange(&mut self, sess_index: usize, exch_index: usize) -> Option<&mut Exchange> {
+        self.sessions[sess_index].exchanges[exch_index].as_mut()
     }
 }
 
