@@ -1,9 +1,10 @@
 use crate::error::*;
+use crate::transport::exchange::Exchange;
 use crate::transport::exchange::ExchangeRole;
 use crate::transport::mrp::ReliableMessage;
 use crate::transport::plain_hdr;
 use crate::transport::proto_hdr;
-use crate::transport::session::SessionMgr;
+use crate::transport::session::Session;
 use crate::utils::writebuf::*;
 
 use log::trace;
@@ -51,14 +52,10 @@ impl<'a> TxCtx<'a> {
     pub fn prepare_send(
         &mut self,
         rel_mgr: &mut ReliableMessage,
-        sess_mgr: &mut SessionMgr,
-        sess_index: usize,
-        exch_index: usize,
+        session: &mut Session,
+        exchange: &mut Exchange,
     ) -> Result<(), Error> {
         trace!("payload: {:x?}", self.write_buf.as_slice());
-
-        let session = sess_mgr.get_session(sess_index).ok_or(Error::NoSession)?;
-        let exchange = session.get_exchange(exch_index).ok_or(Error::NoExchange)?;
 
         // Set up the parameters
         self.proto_hdr.exch_id = exchange.get_id();
@@ -73,9 +70,8 @@ impl<'a> TxCtx<'a> {
 
         // Handle message reliability
         rel_mgr.before_msg_send(
-            sess_mgr,
-            sess_index,
-            exch_index,
+            self.plain_hdr.sess_id,
+            self.proto_hdr.exch_id,
             &self.plain_hdr,
             &mut self.proto_hdr,
         )?;
@@ -93,7 +89,6 @@ impl<'a> TxCtx<'a> {
         let plain_hdr = write_buf.as_slice();
 
         trace!("unencrypted packet: {:x?}", self.write_buf.as_slice());
-        let session = sess_mgr.get_session(sess_index).ok_or(Error::NoSession)?;
         let enc_key = session.get_enc_key();
         if let Some(e) = enc_key {
             proto_hdr::encrypt_in_place(self.plain_hdr.ctr, plain_hdr, &mut self.write_buf, e)?;

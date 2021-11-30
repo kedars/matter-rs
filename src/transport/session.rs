@@ -1,13 +1,10 @@
 use core::fmt;
-use std::any::Any;
 
-use crate::{error::*, transport::exchange::*};
+use crate::error::*;
 use heapless::Vec;
 use log::info;
 
 const MATTER_AES128_KEY_SIZE: usize = 16;
-
-const EXCHANGES_PER_SESSION: usize = 4;
 
 #[derive(Debug, PartialEq)]
 pub enum SessionMode {
@@ -48,7 +45,6 @@ pub struct Session {
     // see this child session ID. Keeping it here, makes it easier to manage.
     child_local_sess_id: u16,
     msg_ctr: u32,
-    exchanges: [Option<Exchange>; EXCHANGES_PER_SESSION],
     mode: SessionMode,
 }
 
@@ -85,7 +81,6 @@ impl Session {
             peer_sess_id: 0,
             local_sess_id: 0,
             msg_ctr: 1,
-            exchanges: Default::default(),
             mode: SessionMode::PlainText,
         }
     }
@@ -101,82 +96,12 @@ impl Session {
             peer_sess_id: clone_from.peer_sess_id,
             child_local_sess_id: 0,
             msg_ctr: 1,
-            exchanges: Default::default(),
             mode: SessionMode::Encrypted,
         };
 
         self.child_local_sess_id = 0;
 
         session
-    }
-
-    pub fn get_exchange(&mut self, index: usize) -> Option<&mut Exchange> {
-        if index < EXCHANGES_PER_SESSION {
-            self.exchanges[index].as_mut()
-        } else {
-            None
-        }
-    }
-
-    pub fn get_exchange_id(
-        &mut self,
-        id: u16,
-        role: ExchangeRole,
-        create_new: bool,
-    ) -> Option<usize> {
-        if let Some(index) = self.exchanges.iter().position(|x| {
-            if let Some(x) = x {
-                x.is_match(id, role)
-            } else {
-                false
-            }
-        }) {
-            Some(index)
-        } else if create_new {
-            // If an exchange doesn't exist, create a new one
-            info!("Creating new exchange");
-            let e = Exchange::new(id, role);
-            if let Some(index) = self.exchanges.iter().position(|x| x.is_none()) {
-                // Return the exchange that was just added
-                self.exchanges[index] = Some(e);
-                Some(index)
-            } else {
-                None
-            }
-        } else {
-            // Got a message that has no matching Exchange object
-            None
-        }
-    }
-
-    pub fn set_exchange_data(
-        &mut self,
-        exch_index: usize,
-        data: Box<dyn Any>,
-    ) -> Result<(), Error> {
-        self.exchanges[exch_index]
-            .as_mut()
-            .and_then(|e| {
-                e.set_exchange_data(data);
-                Some(())
-            })
-            .ok_or(Error::NoExchange)
-    }
-
-    pub fn get_and_clear_exchange_data(&mut self, exch_index: usize) -> Option<Box<dyn Any>> {
-        self.exchanges[exch_index]
-            .as_mut()
-            .and_then(|e| e.get_and_clear_exchange_data())
-    }
-
-    pub fn clear_exchange_data(&mut self, exch_index: usize) -> Result<(), Error> {
-        self.exchanges[exch_index]
-            .as_mut()
-            .and_then(|e| {
-                e.clear_exchange_data();
-                Some(())
-            })
-            .ok_or(Error::NoExchange)
     }
 
     pub fn get_local_sess_id(&self) -> u16 {
@@ -247,13 +172,8 @@ impl fmt::Display for Session {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "peer: {:?}, local: {}, remote: {}, msg_ctr: {}, mode: {:?}, exchanges: {:?}",
-            self.peer_addr,
-            self.local_sess_id,
-            self.peer_sess_id,
-            self.msg_ctr,
-            self.mode,
-            self.exchanges
+            "peer: {:?}, local: {}, remote: {}, msg_ctr: {}, mode: {:?}",
+            self.peer_addr, self.local_sess_id, self.peer_sess_id, self.msg_ctr, self.mode,
         )
     }
 }
@@ -337,10 +257,6 @@ impl SessionMgr {
 
     pub fn get_session(&mut self, sess_index: usize) -> Option<&mut Session> {
         Some(&mut self.sessions[sess_index])
-    }
-
-    pub fn get_exchange(&mut self, sess_index: usize, exch_index: usize) -> Option<&mut Exchange> {
-        self.sessions[sess_index].exchanges[exch_index].as_mut()
     }
 }
 

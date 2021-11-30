@@ -1,4 +1,5 @@
 use crate::error::*;
+use crate::transport::exchange::Exchange;
 use crate::transport::session::Session;
 use crate::transport::tx_ctx::TxCtx;
 
@@ -15,9 +16,9 @@ pub struct ProtoDemux {
 pub struct ProtoCtx<'a> {
     pub proto_id: usize,
     pub proto_opcode: u8,
-    pub exch_index: usize,
     pub buf: &'a [u8],
     pub session: &'a mut Session,
+    pub exchange: &'a mut Exchange,
     pub new_session: Option<Session>,
 }
 
@@ -25,16 +26,16 @@ impl<'a> ProtoCtx<'a> {
     pub fn new(
         proto_id: usize,
         proto_opcode: u8,
-        exch_index: usize,
-        buf: &'a [u8],
         session: &'a mut Session,
+        exchange: &'a mut Exchange,
+        buf: &'a [u8],
     ) -> Self {
         ProtoCtx {
             proto_id,
             proto_opcode,
-            exch_index,
-            buf,
+            exchange,
             session,
+            buf,
             new_session: None,
         }
     }

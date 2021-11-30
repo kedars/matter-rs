@@ -51,8 +51,8 @@ impl PAKE {
         tx_ctx: &mut TxCtx,
     ) -> Result<(), Error> {
         let mut spake2_boxed = proto_ctx
-            .session
-            .get_and_clear_exchange_data(proto_ctx.exch_index)
+            .exchange
+            .get_and_clear_exchange_data()
             .ok_or(Error::InvalidState)?;
         let spake2 = spake2_boxed
             .downcast_mut::<Spake2P>()
@@ -92,8 +92,8 @@ impl PAKE {
         tx_ctx: &mut TxCtx,
     ) -> Result<(), Error> {
         let mut spake2_boxed = proto_ctx
-            .session
-            .get_and_clear_exchange_data(proto_ctx.exch_index)
+            .exchange
+            .get_and_clear_exchange_data()
             .ok_or(Error::InvalidState)?;
         let spake2 = spake2_boxed
             .downcast_mut::<Spake2P>()
@@ -111,9 +111,7 @@ impl PAKE {
         tlvwriter.put_str8(TagType::Context, 2, &cB)?;
         tlvwriter.put_end_container()?;
 
-        proto_ctx
-            .session
-            .set_exchange_data(proto_ctx.exch_index, spake2_boxed)?;
+        proto_ctx.exchange.set_exchange_data(spake2_boxed);
         Ok(())
     }
 
@@ -154,9 +152,7 @@ impl PAKE {
         tlvwriter.put_end_container()?;
 
         spake2p.set_context(proto_ctx.buf, tx_ctx.as_slice());
-        proto_ctx
-            .session
-            .set_exchange_data(proto_ctx.exch_index, spake2p)?;
+        proto_ctx.exchange.set_exchange_data(spake2p);
         Ok(())
     }
 }

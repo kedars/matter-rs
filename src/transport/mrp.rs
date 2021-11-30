@@ -3,37 +3,64 @@ use crate::transport::plain_hdr;
 use crate::transport::proto_hdr;
 use log::{error, info};
 
-use super::session::SessionMgr;
-
 #[derive(Debug)]
 pub struct RetransEntry {
     // The session index
-    sess_index: usize,
+    sess_id: u16,
     // The index of the exchange for which this is pending
-    exch_index: usize,
+    exch_id: u16,
     // The msg counter that we are waiting to be acknowledged
     msg_ctr: u32,
     // This will additionally have retransmission count and periods once we implement it
 }
 
 impl RetransEntry {
-    pub fn new(sess_index: usize, exch_index: usize, msg_ctr: u32) -> Self {
+    pub fn new(sess_id: u16, exch_id: u16, msg_ctr: u32) -> Self {
         Self {
-            sess_index,
-            exch_index,
+            sess_id,
+            exch_id,
             msg_ctr,
         }
     }
 
-    pub fn is_match(&self, sess_index: usize, exch_index: usize, msg_ctr: u32) -> bool {
-        self.sess_index == sess_index && self.exch_index == exch_index && self.msg_ctr == msg_ctr
+    pub fn is_match(&self, sess_id: u16, exch_id: u16, msg_ctr: u32) -> bool {
+        self.sess_id == sess_id && self.exch_id == exch_id && self.msg_ctr == msg_ctr
     }
 }
 
-const MAX_RETRANS_ENTRIES: usize = 3;
+#[derive(Debug)]
+pub struct AckEntry {
+    // The session index
+    sess_id: u16,
+    // The index of the exchange for which this is pending
+    exch_id: u16,
+    // The msg counter that we should acknowledge
+    msg_ctr: u32,
+}
+
+impl AckEntry {
+    pub fn new(sess_id: u16, exch_id: u16, msg_ctr: u32) -> Self {
+        Self {
+            sess_id,
+            exch_id,
+            msg_ctr,
+        }
+    }
+
+    pub fn is_match(&self, sess_id: u16, exch_id: u16) -> bool {
+        self.sess_id == sess_id && self.exch_id == exch_id
+    }
+
+    pub fn get_msg_ctr(&self) -> u32 {
+        self.msg_ctr
+    }
+}
+
+const MAX_MRP_ENTRIES: usize = 3;
 #[derive(Default, Debug)]
 pub struct ReliableMessage {
-    retrans_table: [Option<RetransEntry>; MAX_RETRANS_ENTRIES],
+    retrans_table: [Option<RetransEntry>; MAX_MRP_ENTRIES],
+    ack_table: [Option<AckEntry>; MAX_MRP_ENTRIES],
 }
 
 impl ReliableMessage {
@@ -45,30 +72,33 @@ impl ReliableMessage {
 
     pub fn before_msg_send(
         &mut self,
-        sess_mgr: &mut SessionMgr,
-        sess_index: usize,
-        exch_index: usize,
+        sess_id: u16,
+        exch_id: u16,
         plain_hdr: &plain_hdr::PlainHdr,
         proto_hdr: &mut proto_hdr::ProtoHdr,
     ) -> Result<(), Error> {
-        let e = sess_mgr
-            .get_exchange(sess_index, exch_index)
-            .ok_or(Error::NoExchange)?;
-
-        // Check if any pending acknowledgements are pending for this exchange,
+        // Check if any acknowledgements are pending for this exchange,
         // if so, piggy back in the encoded header here
-        if let Some(pending_ack) = e.is_ack_pending() {
-            proto_hdr.set_ack(pending_ack);
-            e.clear_ack_pending();
+        if let Some(index) = self.ack_table.iter().position(|x| {
+            if let Some(r) = x {
+                r.is_match(sess_id, exch_id)
+            } else {
+                false
+            }
+        }) {
+            if let Some(ack_entry) = &self.ack_table[index] {
+                // Ack Entry exists, set ACK bit and remove from table
+                proto_hdr.set_ack(ack_entry.get_msg_ctr());
+                self.ack_table[index] = None;
+            }
         }
 
         // For now, let's always set reliable, not sure when it is unreliable
         proto_hdr.set_reliable();
 
-        let new_entry = RetransEntry::new(sess_index, exch_index, plain_hdr.ctr);
+        let new_entry = RetransEntry::new(sess_id, exch_id, plain_hdr.ctr);
         if let Some(index) = self.retrans_table.iter().position(|x| x.is_none()) {
             self.retrans_table[index] = Some(new_entry);
-            e.ack_recv_pending();
             Ok(())
         } else {
             error!("Couldn't add to retrans table");
@@ -83,37 +113,38 @@ impl ReliableMessage {
      */
     pub fn on_msg_recv(
         &mut self,
-        sess_mgr: &mut SessionMgr,
-        sess_index: usize,
-        exch_index: usize,
+        sess_id: u16,
+        exch_id: u16,
         plain_hdr: &plain_hdr::PlainHdr,
         proto_hdr: &proto_hdr::ProtoHdr,
     ) -> Result<(), Error> {
-        let e = sess_mgr
-            .get_exchange(sess_index, exch_index)
-            .ok_or(Error::NoExchange)?;
-
         if proto_hdr.is_ack() {
             // Acknowledgement handling
             let ack_msg_ctr = proto_hdr.get_ack_msg_ctr().ok_or(Error::Invalid)?;
 
             if let Some(index) = self.retrans_table.iter().position(|x| {
                 if let Some(r) = x {
-                    r.is_match(sess_index, exch_index, ack_msg_ctr)
+                    r.is_match(sess_id, exch_id, ack_msg_ctr)
                 } else {
                     false
                 }
             }) {
                 // Remove from retransmission table
                 self.retrans_table[index] = None;
-                e.clear_ack_recv_pending();
             }
         }
 
         if proto_hdr.is_reliable() {
-            e.ack_pending(plain_hdr.ctr);
+            let new_entry = AckEntry::new(sess_id, exch_id, plain_hdr.ctr);
+            if let Some(index) = self.ack_table.iter().position(|x| x.is_none()) {
+                self.ack_table[index] = Some(new_entry);
+            } else {
+                error!("Couldn't add to retrans table");
+                return Err(Error::NoSpaceRetransTable);
+            }
         }
         info!("Retrans table now is: {:?}", self.retrans_table);
+        info!("Ack table now is: {:?}", self.ack_table);
         Ok(())
     }
 }
