@@ -1,10 +1,12 @@
-use log::info;
+use log::{error, info};
 use std::any::Any;
 use std::fmt;
 
 use crate::error::Error;
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+use heapless::LinearMap;
+
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum ExchangeRole {
     Initiator = 0,
     Responder = 1,
@@ -45,8 +47,8 @@ impl Exchange {
         self.role
     }
 
-    pub fn is_match(&self, id: u16, role: ExchangeRole) -> bool {
-        self.id == id && self.role == role
+    pub fn is_match(&self, id: u16, sess_id: u16, role: ExchangeRole) -> bool {
+        self.id == id && self.sess_id == sess_id && self.role == role
     }
 
     pub fn set_exchange_data(&mut self, data: Box<dyn Any>) {
@@ -92,7 +94,8 @@ const MAX_EXCHANGES: usize = 8;
 
 #[derive(Default)]
 pub struct ExchangeMgr {
-    exchanges: [Option<Exchange>; MAX_EXCHANGES],
+    // keys: sess-id exch-id
+    exchanges: LinearMap<(u16, u16), Exchange, MAX_EXCHANGES>,
 }
 
 impl ExchangeMgr {
@@ -108,35 +111,32 @@ impl ExchangeMgr {
         id: u16,
         role: ExchangeRole,
         create_new: bool,
-    ) -> Result<(usize, &mut Exchange), Error> {
-        if let Some(index) = self.exchanges.iter().position(|x| {
-            if let Some(x) = x {
-                x.is_match(id, role)
+    ) -> Result<&mut Exchange, Error> {
+        // I don't prefer that we scan the list twice here (once for contains_key and other)
+        if !self.exchanges.contains_key(&(sess_id, id)) {
+            if create_new {
+                // If an exchange doesn't exist, create a new one
+                info!("Creating new exchange");
+                let e = Exchange::new(id, sess_id, role);
+                if self.exchanges.insert((sess_id, id), e).is_err() {
+                    return Err(Error::NoSpace);
+                }
             } else {
-                false
+                return Err(Error::NoSpace);
             }
-        }) {
-            Ok((
-                index,
-                self.exchanges[index].as_mut().ok_or(Error::NoExchange)?,
-            ))
-        } else if create_new {
-            // If an exchange doesn't exist, create a new one
-            info!("Creating new exchange");
-            let e = Exchange::new(id, sess_id, role);
-            if let Some(index) = self.exchanges.iter().position(|x| x.is_none()) {
-                // Return the exchange that was just added
-                self.exchanges[index] = Some(e);
-                Ok((
-                    index,
-                    self.exchanges[index].as_mut().ok_or(Error::NoExchange)?,
-                ))
+        }
+
+        // At this point, we would either have inserted the record if 'create_new' was set
+        // or it existed already
+        if let Some(result) = self.exchanges.get_mut(&(sess_id, id)) {
+            if result.get_role() == role {
+                return Ok(result);
             } else {
-                Err(Error::NoExchange)
+                return Err(Error::NoExchange);
             }
         } else {
-            // Got a message that has no matching Exchange object
-            Err(Error::NoExchange)
+            error!("This should never happen");
+            return Err(Error::NoSpace);
         }
     }
 }
@@ -145,9 +145,7 @@ impl fmt::Display for ExchangeMgr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "{{[")?;
         for s in &self.exchanges {
-            if let Some(e) = s {
-                writeln!(f, "{{ {}, }},", e)?;
-            }
+            writeln!(f, "{{ {}, }},", s.1)?;
         }
         write!(f, "}}")
     }

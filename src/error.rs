@@ -13,6 +13,7 @@ pub enum Error {
     NoHandler,
     NoSession,
     NoSpace,
+    NoSpaceAckTable,
     NoSpaceRetransTable,
     NotFound,
     StdIoError,

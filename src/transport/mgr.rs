@@ -124,7 +124,7 @@ impl Mgr {
             };
 
             // Get the exchange
-            let (_, exchange) = match self.exch_mgr.get(
+            let exchange = match self.exch_mgr.get(
                 rx_ctx.plain_hdr.sess_id,
                 rx_ctx.proto_hdr.exch_id,
                 exchange::get_complementary_role(rx_ctx.proto_hdr.is_initiator()),
