@@ -1,3 +1,5 @@
+use std::net::SocketAddr;
+
 use crate::error::*;
 use crate::transport::exchange::Exchange;
 use crate::transport::session::Session;
@@ -13,29 +15,32 @@ pub struct ProtoDemux {
     proto_id_handlers: [Option<Box<dyn HandleProto>>; MAX_PROTOCOLS],
 }
 
-pub struct ProtoCtx<'a> {
+pub struct ProtoRx<'a> {
     pub proto_id: usize,
     pub proto_opcode: u8,
     pub buf: &'a [u8],
     pub session: &'a mut Session,
     pub exchange: &'a mut Exchange,
+    pub peer: SocketAddr,
     pub new_session: Option<Session>,
 }
 
-impl<'a> ProtoCtx<'a> {
+impl<'a> ProtoRx<'a> {
     pub fn new(
         proto_id: usize,
         proto_opcode: u8,
         session: &'a mut Session,
         exchange: &'a mut Exchange,
+        peer: SocketAddr,
         buf: &'a [u8],
     ) -> Self {
-        ProtoCtx {
+        ProtoRx {
             proto_id,
             proto_opcode,
             exchange,
             session,
             buf,
+            peer,
             new_session: None,
         }
     }
@@ -44,7 +49,7 @@ impl<'a> ProtoCtx<'a> {
 pub trait HandleProto {
     fn handle_proto_id(
         &mut self,
-        proto_ctx: &mut ProtoCtx,
+        proto_ctx: &mut ProtoRx,
         tx_ctx: &mut TxCtx,
     ) -> Result<ResponseRequired, Error>;
     fn get_proto_id(&self) -> usize;
@@ -71,7 +76,7 @@ impl ProtoDemux {
 
     pub fn handle(
         &mut self,
-        proto_ctx: &mut ProtoCtx,
+        proto_ctx: &mut ProtoRx,
         tx_ctx: &mut TxCtx,
     ) -> Result<ResponseRequired, Error> {
         if proto_ctx.proto_id >= MAX_PROTOCOLS {

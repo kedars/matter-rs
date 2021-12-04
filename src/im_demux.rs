@@ -1,6 +1,6 @@
 use crate::error::*;
 use crate::proto_demux;
-use crate::proto_demux::ProtoCtx;
+use crate::proto_demux::ProtoRx;
 use crate::proto_demux::ResponseRequired;
 use crate::tlv::*;
 use crate::transport::tx_ctx::TxCtx;
@@ -68,7 +68,7 @@ impl InteractionModel {
     // For now, we just return without doing anything to this exchange. This needs change
     fn invoke_req_handler(
         &mut self,
-        proto_ctx: &mut ProtoCtx,
+        proto_ctx: &mut ProtoRx,
         tx_ctx: &mut TxCtx,
     ) -> Result<ResponseRequired, Error> {
         tx_ctx.set_proto_opcode(OpCode::InvokeResponse as u8);
@@ -107,7 +107,7 @@ impl InteractionModel {
 impl proto_demux::HandleProto for InteractionModel {
     fn handle_proto_id(
         &mut self,
-        proto_ctx: &mut ProtoCtx,
+        proto_ctx: &mut ProtoRx,
         tx_ctx: &mut TxCtx,
     ) -> Result<ResponseRequired, Error> {
         let proto_opcode: OpCode =
@@ -134,6 +134,9 @@ mod tests {
     use crate::proto_demux::HandleProto;
     use crate::transport::exchange::Exchange;
     use crate::transport::session::Session;
+    use std::net::IpAddr;
+    use std::net::Ipv4Addr;
+    use std::net::SocketAddr;
     use std::sync::Arc;
     use std::sync::Mutex;
 
@@ -189,7 +192,14 @@ mod tests {
         let mut interaction_model = InteractionModel::new(data_model.clone());
         let mut exch: Exchange = Default::default();
         let mut sess: Session = Default::default();
-        let mut proto_ctx = ProtoCtx::new(0x01, 0x08, &mut sess, &mut exch, &b);
+        let mut proto_ctx = ProtoRx::new(
+            0x01,
+            0x08,
+            &mut sess,
+            &mut exch,
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
+            &b,
+        );
         let mut out_buf: [u8; 20] = [0; 20];
         let mut tx_ctx = TxCtx::new(&mut out_buf)?;
         let _result = interaction_model.handle_proto_id(&mut proto_ctx, &mut tx_ctx);

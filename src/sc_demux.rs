@@ -1,6 +1,6 @@
 use crate::error::*;
 use crate::proto_demux;
-use crate::proto_demux::ProtoCtx;
+use crate::proto_demux::ProtoRx;
 use crate::proto_demux::ResponseRequired;
 use crate::secure_channel::{common::*, pake::PAKE};
 use crate::transport::tx_ctx::TxCtx;
@@ -27,7 +27,7 @@ impl SecureChannel {
 
     fn mrpstandaloneack_handler(
         &mut self,
-        _proto_ctx: &mut ProtoCtx,
+        _proto_ctx: &mut ProtoRx,
         _tx_ctx: &mut TxCtx,
     ) -> Result<ResponseRequired, Error> {
         info!("In MRP StandAlone ACK Handler");
@@ -36,7 +36,7 @@ impl SecureChannel {
 
     fn pbkdfparamreq_handler(
         &mut self,
-        proto_ctx: &mut ProtoCtx,
+        proto_ctx: &mut ProtoRx,
         tx_ctx: &mut TxCtx,
     ) -> Result<ResponseRequired, Error> {
         info!("In PBKDF Param Request Handler");
@@ -47,7 +47,7 @@ impl SecureChannel {
 
     fn pasepake1_handler(
         &mut self,
-        proto_ctx: &mut ProtoCtx,
+        proto_ctx: &mut ProtoRx,
         tx_ctx: &mut TxCtx,
     ) -> Result<ResponseRequired, Error> {
         info!("In PASE Pake1 Handler");
@@ -58,7 +58,7 @@ impl SecureChannel {
 
     fn pasepake3_handler(
         &mut self,
-        proto_ctx: &mut ProtoCtx,
+        proto_ctx: &mut ProtoRx,
         tx_ctx: &mut TxCtx,
     ) -> Result<ResponseRequired, Error> {
         info!("In PASE Pake3 Handler");
@@ -70,7 +70,7 @@ impl SecureChannel {
 impl proto_demux::HandleProto for SecureChannel {
     fn handle_proto_id(
         &mut self,
-        proto_ctx: &mut ProtoCtx,
+        proto_ctx: &mut ProtoRx,
         tx_ctx: &mut TxCtx,
     ) -> Result<ResponseRequired, Error> {
         let proto_opcode: OpCode =

@@ -16,8 +16,13 @@ impl<'a> ParseBuf<'a> {
         }
     }
 
-    // Return the data that is valid as a slice
-    pub fn as_slice(&mut self) -> &mut [u8] {
+    // Return the data that is valid as a slice, consume self
+    pub fn as_slice(self) -> &'a mut [u8] {
+        &mut self.buf[self.read_off..(self.read_off + self.left)]
+    }
+
+    // Return the data that is valid as a slice, consume self
+    pub fn as_borrow_slice(&mut self) -> &mut [u8] {
         &mut self.buf[self.read_off..(self.read_off + self.left)]
     }
 
@@ -117,7 +122,7 @@ mod tests {
         assert_eq!(buf.le_u32().unwrap(), 0xcafebabe);
 
         assert_eq!(buf.tail(2).unwrap(), [0xc, 0xd]);
-        assert_eq!(buf.as_slice(), [0xa, 0xb]);
+        assert_eq!(buf.as_borrow_slice(), [0xa, 0xb]);
 
         assert_eq!(buf.tail(2).unwrap(), [0xa, 0xb]);
         assert_eq!(buf.as_slice(), []);

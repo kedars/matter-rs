@@ -94,7 +94,7 @@ impl ProtoHdr {
         if self.is_ack() {
             self.ack_msg_ctr = Some(parsebuf.le_u32()?);
         }
-        trace!("[rx payload]: {:x?}", parsebuf.as_slice());
+        trace!("[rx payload]: {:x?}", parsebuf.as_borrow_slice());
         Ok(())
     }
 
@@ -203,7 +203,7 @@ fn decrypt_in_place(recvd_ctr: u32, parsebuf: &mut ParseBuf, key: &[u8]) -> Resu
     get_iv(recvd_ctr, &mut iv)?;
     let nonce = GenericArray::from_slice(&iv);
 
-    let cipher_text = parsebuf.as_slice();
+    let cipher_text = parsebuf.as_borrow_slice();
     // println!("AAD: {:x?}", aad);
     // println!("Tag: {:x?}", tag);
     // println!("Cipher Text: {:x?}", cipher_text);

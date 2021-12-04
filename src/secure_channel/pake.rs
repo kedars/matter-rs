@@ -2,7 +2,7 @@ use super::{
     common::{create_sc_status_report, SCStatusCodes},
     spake2p::Spake2P,
 };
-use crate::proto_demux::ProtoCtx;
+use crate::proto_demux::ProtoRx;
 use crate::tlv::*;
 use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
@@ -47,7 +47,7 @@ impl PAKE {
     #[allow(non_snake_case)]
     pub fn handle_pasepake3(
         &mut self,
-        proto_ctx: &mut ProtoCtx,
+        proto_ctx: &mut ProtoRx,
         tx_ctx: &mut TxCtx,
     ) -> Result<(), Error> {
         let mut spake2_boxed = proto_ctx
@@ -88,7 +88,7 @@ impl PAKE {
     #[allow(non_snake_case)]
     pub fn handle_pasepake1(
         &mut self,
-        proto_ctx: &mut ProtoCtx,
+        proto_ctx: &mut ProtoRx,
         tx_ctx: &mut TxCtx,
     ) -> Result<(), Error> {
         let mut spake2_boxed = proto_ctx
@@ -117,7 +117,7 @@ impl PAKE {
 
     pub fn handle_pbkdfparamrequest(
         &mut self,
-        proto_ctx: &mut ProtoCtx,
+        proto_ctx: &mut ProtoRx,
         tx_ctx: &mut TxCtx,
     ) -> Result<(), Error> {
         let (initiator_random, initiator_sessid, passcode_id, has_params) =
