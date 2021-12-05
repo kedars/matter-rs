@@ -3,8 +3,6 @@ name = "matter"
 version = "0.1.0"
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [lib]
 name = "matter"
 path = "src/lib.rs"
@@ -12,10 +10,6 @@ path = "src/lib.rs"
 [features]
 default = ["crypto_openssl"]
 crypto_openssl = []
-
-[[bin]]
-name = "matter_bin"
-path = "src/main.rs"
 
 [dependencies]
 byteorder = "1.4.3"
