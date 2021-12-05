@@ -52,7 +52,7 @@ impl ReliableMessage {
         }
     }
 
-    pub fn before_msg_send(
+    pub fn pre_send(
         &mut self,
         sess_id: u16,
         exch_id: u16,
@@ -90,7 +90,7 @@ impl ReliableMessage {
      * -  there can be only one pending retransmission per exchange (so this is per-exchange)
      * -  duplicate detection should happen per session (obviously), so that part is per-session
      */
-    pub fn on_msg_recv(
+    pub fn recv(
         &mut self,
         sess_id: u16,
         exch_id: u16,
@@ -102,7 +102,7 @@ impl ReliableMessage {
             let ack_msg_ctr = proto_hdr.get_ack_msg_ctr().ok_or(Error::Invalid)?;
             if let Some(entry) = self.retrans_table.get(&(sess_id, exch_id)) {
                 if entry.get_msg_ctr() != ack_msg_ctr {
-                    error!("Mismatch in ack-table's msg counter and received msg counter");
+                    error!("Mismatch in retrans-table's msg counter and received msg counter: received {}, expected {}", ack_msg_ctr, entry.get_msg_ctr());
                 } else {
                     self.retrans_table.remove(&(sess_id, exch_id));
                 }

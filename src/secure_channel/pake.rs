@@ -2,11 +2,10 @@ use super::{
     common::{create_sc_status_report, SCStatusCodes},
     spake2p::Spake2P,
 };
-use crate::proto_demux::ProtoRx;
+use crate::proto_demux::{ProtoRx, ProtoTx};
 use crate::tlv::*;
 use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
-use crate::transport::tx_ctx::TxCtx;
 use crate::{error::Error, transport::session::CloneData};
 use hkdf::Hkdf;
 use log::error;
@@ -47,10 +46,10 @@ impl PAKE {
     #[allow(non_snake_case)]
     pub fn handle_pasepake3(
         &mut self,
-        proto_ctx: &mut ProtoRx,
-        tx_ctx: &mut TxCtx,
+        proto_rx: &mut ProtoRx,
+        proto_tx: &mut ProtoTx,
     ) -> Result<(), Error> {
-        let mut spake2_boxed = proto_ctx
+        let mut spake2_boxed = proto_rx
             .exchange
             .get_and_clear_exchange_data()
             .ok_or(Error::InvalidState)?;
@@ -58,7 +57,7 @@ impl PAKE {
             .downcast_mut::<Spake2P>()
             .ok_or(Error::InvalidState)?;
 
-        let cA = extract_pasepake_1_or_3_params(proto_ctx.buf)?;
+        let cA = extract_pasepake_1_or_3_params(proto_rx.buf)?;
         let (status_code, Ke) = spake2.handle_cA(cA);
 
         if status_code == SCStatusCodes::SessionEstablishmentSuccess {
@@ -77,10 +76,10 @@ impl PAKE {
             clone_data
                 .att_challenge
                 .copy_from_slice(&session_keys[32..48]);
-            proto_ctx.new_session = Some(proto_ctx.session.clone(&clone_data));
+            proto_rx.new_session = Some(proto_rx.session.clone(&clone_data));
         }
 
-        create_sc_status_report(tx_ctx, status_code)?;
+        create_sc_status_report(proto_tx, status_code)?;
         // Exchange data is already cleared
         Ok(())
     }
@@ -88,10 +87,10 @@ impl PAKE {
     #[allow(non_snake_case)]
     pub fn handle_pasepake1(
         &mut self,
-        proto_ctx: &mut ProtoRx,
-        tx_ctx: &mut TxCtx,
+        proto_rx: &mut ProtoRx,
+        proto_tx: &mut ProtoTx,
     ) -> Result<(), Error> {
-        let mut spake2_boxed = proto_ctx
+        let mut spake2_boxed = proto_rx
             .exchange
             .get_and_clear_exchange_data()
             .ok_or(Error::InvalidState)?;
@@ -99,29 +98,29 @@ impl PAKE {
             .downcast_mut::<Spake2P>()
             .ok_or(Error::InvalidState)?;
 
-        let pA = extract_pasepake_1_or_3_params(proto_ctx.buf)?;
+        let pA = extract_pasepake_1_or_3_params(proto_rx.buf)?;
         let mut pB: [u8; 65] = [0; 65];
         let mut cB: [u8; 32] = [0; 32];
         spake2.start_verifier(self.passwd, ITERATION_COUNT, &self.salt)?;
         spake2.handle_pA(pA, &mut pB, &mut cB)?;
 
-        let mut tlvwriter = TLVWriter::new(tx_ctx.get_write_buf());
+        let mut tlvwriter = TLVWriter::new(&mut proto_tx.write_buf);
         tlvwriter.put_start_struct(TagType::Anonymous, 0)?;
         tlvwriter.put_str8(TagType::Context, 1, &pB)?;
         tlvwriter.put_str8(TagType::Context, 2, &cB)?;
         tlvwriter.put_end_container()?;
 
-        proto_ctx.exchange.set_exchange_data(spake2_boxed);
+        proto_rx.exchange.set_exchange_data(spake2_boxed);
         Ok(())
     }
 
     pub fn handle_pbkdfparamrequest(
         &mut self,
-        proto_ctx: &mut ProtoRx,
-        tx_ctx: &mut TxCtx,
+        proto_rx: &mut ProtoRx,
+        proto_tx: &mut ProtoTx,
     ) -> Result<(), Error> {
         let (initiator_random, initiator_sessid, passcode_id, has_params) =
-            extract_pbkdfreq_params(proto_ctx.buf)?;
+            extract_pbkdfreq_params(proto_rx.buf)?;
         if passcode_id != 0 {
             error!("Can't yet handle passcode_id != 0");
             return Err(Error::Invalid);
@@ -134,14 +133,14 @@ impl PAKE {
         spake2p.set_app_data(initiator_sessid as u32);
 
         // Generate response
-        let mut tlvwriter = TLVWriter::new(tx_ctx.get_write_buf());
+        let mut tlvwriter = TLVWriter::new(&mut proto_tx.write_buf);
         tlvwriter.put_start_struct(TagType::Anonymous, 0)?;
         tlvwriter.put_str8(TagType::Context, 1, initiator_random)?;
         tlvwriter.put_str8(TagType::Context, 2, &our_random)?;
         tlvwriter.put_u16(
             TagType::Context,
             3,
-            proto_ctx.session.get_child_local_sess_id(),
+            proto_rx.session.get_child_local_sess_id(),
         )?;
         if !has_params {
             tlvwriter.put_start_struct(TagType::Context, 4)?;
@@ -151,8 +150,8 @@ impl PAKE {
         }
         tlvwriter.put_end_container()?;
 
-        spake2p.set_context(proto_ctx.buf, tx_ctx.as_slice());
-        proto_ctx.exchange.set_exchange_data(spake2p);
+        spake2p.set_context(proto_rx.buf, proto_tx.write_buf.as_slice());
+        proto_rx.exchange.set_exchange_data(spake2p);
         Ok(())
     }
 }

@@ -6,6 +6,8 @@ use crate::error::Error;
 
 use heapless::LinearMap;
 
+use super::{plain_hdr::PlainHdr, proto_hdr::ProtoHdr};
+
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum ExchangeRole {
     Initiator = 0,
@@ -61,6 +63,14 @@ impl Exchange {
 
     pub fn get_and_clear_exchange_data(&mut self) -> Option<Box<dyn Any>> {
         self.data.take()
+    }
+
+    pub fn send(&self, proto_hdr: &mut ProtoHdr) -> Result<(), Error> {
+        proto_hdr.exch_id = self.id;
+        if self.role == ExchangeRole::Initiator {
+            proto_hdr.set_initiator();
+        }
+        Ok(())
     }
 }
 
@@ -138,6 +148,21 @@ impl ExchangeMgr {
             error!("This should never happen");
             return Err(Error::NoSpace);
         }
+    }
+
+    pub fn recv(
+        &mut self,
+        plain_hdr: &PlainHdr,
+        proto_hdr: &ProtoHdr,
+    ) -> Result<&mut Exchange, Error> {
+        // Get the exchange
+        self.get(
+            plain_hdr.sess_id,
+            proto_hdr.exch_id,
+            get_complementary_role(proto_hdr.is_initiator()),
+            // We create a new exchange, only if the peer is the initiator
+            proto_hdr.is_initiator(),
+        )
     }
 }
 

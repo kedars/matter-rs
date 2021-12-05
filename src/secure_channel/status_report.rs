@@ -1,5 +1,5 @@
 use super::common::*;
-use crate::{error::Error, transport::tx_ctx::TxCtx};
+use crate::{error::Error, proto_demux::ProtoTx};
 
 #[allow(dead_code)]
 #[derive(Debug, Copy, Clone)]
@@ -23,17 +23,16 @@ pub enum GeneralCode {
     DataLoss = 16,
 }
 pub fn create_status_report(
-    tx_ctx: &mut TxCtx,
+    proto_tx: &mut ProtoTx,
     general_code: GeneralCode,
     proto_id: u32,
     proto_code: u16,
 ) -> Result<(), Error> {
-    tx_ctx.set_proto_id(PROTO_ID_SECURE_CHANNEL as u16);
-    tx_ctx.set_proto_opcode(OpCode::StatusReport as u8);
-    let writebuf = tx_ctx.get_write_buf();
-    writebuf.le_u16(general_code as u16)?;
-    writebuf.le_u32(proto_id)?;
-    writebuf.le_u16(proto_code)?;
+    proto_tx.proto_id = PROTO_ID_SECURE_CHANNEL;
+    proto_tx.proto_opcode = OpCode::StatusReport as u8;
+    proto_tx.write_buf.le_u16(general_code as u16)?;
+    proto_tx.write_buf.le_u32(proto_id)?;
+    proto_tx.write_buf.le_u16(proto_code)?;
 
     Ok(())
 }

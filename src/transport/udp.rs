@@ -18,11 +18,11 @@ impl UdpListener {
         Ok(UdpListener { socket })
     }
 
-    pub fn recv_from(&self, in_buf: &mut [u8]) -> Result<(usize, std::net::SocketAddr), Error> {
+    pub fn recv(&self, in_buf: &mut [u8]) -> Result<(usize, std::net::SocketAddr), Error> {
         Ok(self.socket.recv_from(in_buf)?)
     }
 
-    pub fn send_to(&self, out_buf: &[u8], addr: std::net::SocketAddr) -> Result<usize, Error> {
+    pub fn send(&self, out_buf: &[u8], addr: std::net::SocketAddr) -> Result<usize, Error> {
         Ok(self.socket.send_to(out_buf, addr)?)
     }
 }

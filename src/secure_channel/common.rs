@@ -1,6 +1,6 @@
 use num_derive::FromPrimitive;
 
-use crate::{error::Error, transport::tx_ctx::TxCtx};
+use crate::{error::Error, proto_demux::ProtoTx};
 
 use super::status_report::{create_status_report, GeneralCode};
 
@@ -35,7 +35,7 @@ pub enum SCStatusCodes {
 }
 
 pub fn create_sc_status_report(
-    tx_ctx: &mut TxCtx,
+    proto_tx: &mut ProtoTx,
     status_code: SCStatusCodes,
 ) -> Result<(), Error> {
     let general_code = match status_code {
@@ -48,7 +48,7 @@ pub fn create_sc_status_report(
         | SCStatusCodes::SessionNotFound => GeneralCode::Failure,
     };
     create_status_report(
-        tx_ctx,
+        proto_tx,
         general_code,
         PROTO_ID_SECURE_CHANNEL as u32,
         status_code as u16,

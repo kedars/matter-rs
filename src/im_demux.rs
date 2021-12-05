@@ -1,9 +1,8 @@
 use crate::error::*;
 use crate::proto_demux;
-use crate::proto_demux::ProtoRx;
 use crate::proto_demux::ResponseRequired;
+use crate::proto_demux::{ProtoRx, ProtoTx};
 use crate::tlv::*;
-use crate::transport::tx_ctx::TxCtx;
 use crate::utils::writebuf::WriteBuf;
 use log::error;
 use num;
@@ -68,12 +67,12 @@ impl InteractionModel {
     // For now, we just return without doing anything to this exchange. This needs change
     fn invoke_req_handler(
         &mut self,
-        proto_ctx: &mut ProtoRx,
-        tx_ctx: &mut TxCtx,
+        proto_rx: &mut ProtoRx,
+        proto_tx: &mut ProtoTx,
     ) -> Result<ResponseRequired, Error> {
-        tx_ctx.set_proto_opcode(OpCode::InvokeResponse as u8);
+        proto_tx.proto_opcode = OpCode::InvokeResponse as u8;
 
-        let root = get_root_node_struct(proto_ctx.buf).ok_or(Error::InvalidData)?;
+        let root = get_root_node_struct(proto_rx.buf).ok_or(Error::InvalidData)?;
         // Spec says tag should be 2, but CHIP Tool sends the tag as 0
         let mut cmd_list_iter = root
             .find_element(0)
@@ -94,7 +93,7 @@ impl InteractionModel {
             );
             let variable = cmd_data_ib.find_element(1).ok_or(Error::InvalidData)?;
             self.handler
-                .handle_invoke_cmd(&cmd_path_ib, variable, tx_ctx.get_write_buf())
+                .handle_invoke_cmd(&cmd_path_ib, variable, &mut proto_tx.write_buf)
                 .map_err(|e| {
                     error!("Error in handling command: {:?}", e);
                     e
@@ -107,15 +106,15 @@ impl InteractionModel {
 impl proto_demux::HandleProto for InteractionModel {
     fn handle_proto_id(
         &mut self,
-        proto_ctx: &mut ProtoRx,
-        tx_ctx: &mut TxCtx,
+        proto_rx: &mut ProtoRx,
+        proto_tx: &mut ProtoTx,
     ) -> Result<ResponseRequired, Error> {
         let proto_opcode: OpCode =
-            num::FromPrimitive::from_u8(proto_ctx.proto_opcode).ok_or(Error::Invalid)?;
-        tx_ctx.set_proto_id(PROTO_ID_INTERACTION_MODEL as u16);
+            num::FromPrimitive::from_u8(proto_rx.proto_opcode).ok_or(Error::Invalid)?;
+        proto_tx.proto_id = PROTO_ID_INTERACTION_MODEL;
 
         match proto_opcode {
-            OpCode::InvokeRequest => self.invoke_req_handler(proto_ctx, tx_ctx),
+            OpCode::InvokeRequest => self.invoke_req_handler(proto_rx, proto_tx),
             _ => {
                 error!("Opcode Not Handled: {:?}", proto_opcode);
                 Err(Error::InvalidOpcode)
@@ -192,7 +191,7 @@ mod tests {
         let mut interaction_model = InteractionModel::new(data_model.clone());
         let mut exch: Exchange = Default::default();
         let mut sess: Session = Default::default();
-        let mut proto_ctx = ProtoRx::new(
+        let mut proto_rx = ProtoRx::new(
             0x01,
             0x08,
             &mut sess,
@@ -201,8 +200,12 @@ mod tests {
             &b,
         );
         let mut out_buf: [u8; 20] = [0; 20];
-        let mut tx_ctx = TxCtx::new(&mut out_buf)?;
-        let _result = interaction_model.handle_proto_id(&mut proto_ctx, &mut tx_ctx);
+        let mut proto_tx = ProtoTx::new(
+            &mut out_buf,
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
+            0,
+        )?;
+        let _result = interaction_model.handle_proto_id(&mut proto_rx, &mut proto_tx);
 
         let data = data_model.node.lock().unwrap();
         assert_eq!(data.endpoint, 0);

@@ -4,12 +4,12 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use crate::error::*;
 use crate::proto_demux;
 use crate::proto_demux::ProtoRx;
+use crate::proto_demux::ProtoTx;
 use crate::transport::exchange;
 use crate::transport::mrp;
 use crate::transport::plain_hdr;
 use crate::transport::proto_hdr;
 use crate::transport::session;
-use crate::transport::tx_ctx;
 use crate::transport::udp;
 use crate::utils::parsebuf::ParseBuf;
 use colored::*;
@@ -73,7 +73,7 @@ impl Mgr {
         let mut proto_hdr = proto_hdr::ProtoHdr::default();
 
         // Read from the transport
-        let (len, src) = transport.recv_from(in_buf)?;
+        let (len, src) = transport.recv(in_buf)?;
         let mut parse_buf = ParseBuf::new(in_buf, len);
 
         info!("{} from src: {}", "Received".blue(), src);
@@ -81,30 +81,19 @@ impl Mgr {
         info!("Session Mgr: {}", sess_mgr);
         info!("Exchange Mgr: {}", exch_mgr);
 
-        // Read unencrypted packet header
-        plain_hdr.decode(&mut parse_buf)?;
-
         // Get session
         //      Ok to use unwrap here since we know 'src' is certainly not None
-        let (_, session) = sess_mgr
-            .get(plain_hdr.sess_id, src.ip(), plain_hdr.is_encrypted())
-            .ok_or(Error::NoSession)?;
+        let (_, session) = sess_mgr.recv(&mut plain_hdr, &mut parse_buf, src)?;
 
         // Read encrypted header
-        proto_hdr.decrypt_and_decode(&plain_hdr, &mut parse_buf, session.get_dec_key())?;
+        session.recv(&plain_hdr, &mut proto_hdr, &mut parse_buf)?;
 
         // Get the exchange
-        let exchange = exch_mgr.get(
-            plain_hdr.sess_id,
-            proto_hdr.exch_id,
-            exchange::get_complementary_role(proto_hdr.is_initiator()),
-            // We create a new exchange, only if the peer is the initiator
-            proto_hdr.is_initiator(),
-        )?;
+        let exchange = exch_mgr.recv(&plain_hdr, &proto_hdr)?;
         debug!("Exchange is {:?}", exchange);
 
         // Message Reliability Protocol
-        rel_mgr.on_msg_recv(plain_hdr.sess_id, proto_hdr.exch_id, &plain_hdr, &proto_hdr)?;
+        rel_mgr.recv(plain_hdr.sess_id, proto_hdr.exch_id, &plain_hdr, &proto_hdr)?;
 
         Ok(ProtoRx::new(
             proto_hdr.proto_id.into(),
@@ -114,6 +103,39 @@ impl Mgr {
             src,
             parse_buf.as_slice(),
         ))
+    }
+
+    // This function is send_to_exchange(). There will be a higher layer send() which will
+    // internally call send_to_exchange() after creating the necessary session and exchange
+    pub fn send_to_exchange(
+        transport: &udp::UdpListener,
+        rel_mgr: &mut mrp::ReliableMessage,
+        proto_tx: &mut ProtoTx,
+    ) -> Result<(), Error> {
+        let mut plain_hdr = plain_hdr::PlainHdr::default();
+        let mut proto_hdr = proto_hdr::ProtoHdr::default();
+
+        trace!("payload: {:x?}", proto_tx.write_buf.as_slice());
+        proto_hdr.proto_id = proto_tx.proto_id as u16;
+        proto_hdr.proto_opcode = proto_tx.proto_opcode;
+
+        let exchange = proto_tx.exchange.as_ref().ok_or(Error::NoExchange)?;
+        exchange.send(&mut proto_hdr)?;
+
+        let session = proto_tx.session.as_mut().ok_or(Error::NoSession)?;
+        session.pre_send(&mut plain_hdr)?;
+
+        rel_mgr.pre_send(
+            session.get_local_sess_id(),
+            exchange.get_id(),
+            &plain_hdr,
+            &mut proto_hdr,
+        )?;
+
+        session.send(&mut plain_hdr, &mut proto_hdr, &mut proto_tx.write_buf)?;
+
+        transport.send(proto_tx.write_buf.as_slice(), proto_tx.peer)?;
+        Ok(())
     }
 
     pub fn start(&mut self) -> Result<(), Error> {
@@ -136,16 +158,14 @@ impl Mgr {
                 }
             };
 
-            let mut tx_ctx = match tx_ctx::TxCtx::new(&mut out_buf) {
-                Ok(t) => t,
-                Err(e) => {
-                    error!("Error while creating TxCtx: {:?}", e);
-                    continue;
-                }
-            };
+            let mut proto_tx = ProtoTx::new(
+                &mut out_buf,
+                proto_rx.peer,
+                plain_hdr::max_plain_hdr_len() + proto_hdr::max_proto_hdr_len(),
+            )?;
 
             // Proto Dispatch
-            match self.proto_demux.handle(&mut proto_rx, &mut tx_ctx) {
+            match self.proto_demux.handle(&mut proto_rx, &mut proto_tx) {
                 Ok(r) => {
                     if let proto_demux::ResponseRequired::No = r {
                         // We need to send the Ack if reliability is enabled, in this case
@@ -157,16 +177,14 @@ impl Mgr {
             // Check if a new session was created as part of the protocol handling
             let new_session = proto_rx.new_session.take();
 
+            proto_tx.session = Some(proto_rx.session);
+            proto_tx.exchange = Some(proto_rx.exchange);
+            proto_tx.peer = proto_rx.peer;
             // tx_ctx now contains the response payload, prepare the send packet
-            match tx_ctx.prepare_send(&mut self.rel_mgr, proto_rx.session, proto_rx.exchange) {
-                Ok(_) => (),
-                Err(_) => continue,
-            }
-
-            match self.transport.send_to(tx_ctx.as_slice(), proto_rx.peer) {
+            match Mgr::send_to_exchange(&self.transport, &mut self.rel_mgr, &mut proto_tx) {
                 Ok(_) => (),
                 Err(e) => {
-                    error!("Error sending data: {:?}", e);
+                    error!("Error in sending msg {}", e);
                     continue;
                 }
             }

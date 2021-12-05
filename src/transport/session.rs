@@ -1,8 +1,15 @@
 use core::fmt;
+use std::net::SocketAddr;
 
-use crate::error::*;
+use crate::{
+    error::*,
+    transport::{plain_hdr, proto_hdr},
+    utils::{parsebuf::ParseBuf, writebuf::WriteBuf},
+};
 use heapless::Vec;
-use log::info;
+use log::{info, trace};
+
+use super::{plain_hdr::PlainHdr, proto_hdr::ProtoHdr};
 
 const MATTER_AES128_KEY_SIZE: usize = 16;
 
@@ -166,6 +173,53 @@ impl Session {
         self.mode = SessionMode::Encrypted;
         Ok(())
     }
+
+    pub fn recv(
+        &self,
+        plain_hdr: &PlainHdr,
+        proto_hdr: &mut ProtoHdr,
+        parse_buf: &mut ParseBuf,
+    ) -> Result<(), Error> {
+        proto_hdr.decrypt_and_decode(&plain_hdr, parse_buf, self.get_dec_key())
+    }
+
+    pub fn pre_send(&mut self, plain_hdr: &mut PlainHdr) -> Result<(), Error> {
+        plain_hdr.sess_id = self.get_peer_sess_id();
+        plain_hdr.ctr = self.get_msg_ctr();
+        if self.is_encrypted() {
+            plain_hdr.sess_type = plain_hdr::SessionType::Encrypted;
+        }
+        Ok(())
+    }
+
+    pub fn send(
+        &self,
+        plain_hdr: &mut PlainHdr,
+        proto_hdr: &mut ProtoHdr,
+        packet_buf: &mut WriteBuf,
+    ) -> Result<(), Error> {
+        // Generate encrypted header
+        let mut tmp_buf: [u8; proto_hdr::max_proto_hdr_len()] = [0; proto_hdr::max_proto_hdr_len()];
+        let mut write_buf = WriteBuf::new(&mut tmp_buf[..], proto_hdr::max_proto_hdr_len());
+        proto_hdr.encode(&mut write_buf)?;
+        packet_buf.prepend(write_buf.as_slice())?;
+
+        // Generate plain-text header
+        let mut tmp_buf: [u8; plain_hdr::max_plain_hdr_len()] = [0; plain_hdr::max_plain_hdr_len()];
+        let mut write_buf = WriteBuf::new(&mut tmp_buf[..], plain_hdr::max_plain_hdr_len());
+        plain_hdr.encode(&mut write_buf)?;
+        let plain_hdr_bytes = write_buf.as_slice();
+
+        trace!("unencrypted packet: {:x?}", packet_buf.as_slice());
+        let enc_key = self.get_enc_key();
+        if let Some(e) = enc_key {
+            proto_hdr::encrypt_in_place(plain_hdr.ctr, plain_hdr_bytes, packet_buf, e)?;
+        }
+
+        packet_buf.prepend(plain_hdr_bytes)?;
+        trace!("Full encrypted packet: {:x?}", packet_buf.as_slice());
+        Ok(())
+    }
 }
 
 impl fmt::Display for Session {
@@ -257,6 +311,20 @@ impl SessionMgr {
 
     pub fn get_session(&mut self, sess_index: usize) -> Option<&mut Session> {
         Some(&mut self.sessions[sess_index])
+    }
+
+    pub fn recv(
+        &mut self,
+        plain_hdr: &mut PlainHdr,
+        parse_buf: &mut ParseBuf,
+        src: SocketAddr,
+    ) -> Result<(usize, &mut Session), Error> {
+        // Read unencrypted packet header
+        plain_hdr.decode(parse_buf)?;
+
+        // Get session
+        self.get(plain_hdr.sess_id, src.ip(), plain_hdr.is_encrypted())
+            .ok_or(Error::NoSession)
     }
 }
 
