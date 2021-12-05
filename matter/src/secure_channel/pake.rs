@@ -76,7 +76,7 @@ impl PAKE {
             clone_data
                 .att_challenge
                 .copy_from_slice(&session_keys[32..48]);
-            proto_rx.new_session = Some(proto_rx.session.clone(&clone_data));
+            proto_tx.new_session = Some(proto_rx.session.clone(&clone_data));
         }
 
         create_sc_status_report(proto_tx, status_code)?;

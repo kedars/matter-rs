@@ -22,7 +22,6 @@ pub struct ProtoRx<'a> {
     pub session: &'a mut Session,
     pub exchange: &'a mut Exchange,
     pub peer: SocketAddr,
-    pub new_session: Option<Session>,
 }
 
 impl<'a> ProtoRx<'a> {
@@ -41,7 +40,6 @@ impl<'a> ProtoRx<'a> {
             session,
             buf,
             peer,
-            new_session: None,
         }
     }
 }
@@ -53,6 +51,9 @@ pub struct ProtoTx<'a> {
     pub session: Option<&'a mut Session>,
     pub exchange: Option<&'a mut Exchange>,
     pub peer: SocketAddr,
+    // This isn't really a Tx parameter. For now, it is shoved here, because the ProtoTx
+    // is more like an 'output' of the operation. It should be moved to some other location.
+    pub new_session: Option<Session>,
 }
 
 impl<'a> ProtoTx<'a> {
@@ -64,6 +65,7 @@ impl<'a> ProtoTx<'a> {
             proto_opcode: 0,
             session: None,
             exchange: None,
+            new_session: None,
         };
         p.write_buf.reserve(hdr_reserve)?;
         Ok(p)

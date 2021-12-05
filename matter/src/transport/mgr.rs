@@ -175,7 +175,7 @@ impl Mgr {
                 Err(_) => continue,
             }
             // Check if a new session was created as part of the protocol handling
-            let new_session = proto_rx.new_session.take();
+            let new_session = proto_tx.new_session.take();
 
             proto_tx.session = Some(proto_rx.session);
             proto_tx.exchange = Some(proto_rx.exchange);
