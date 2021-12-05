@@ -23,3 +23,4 @@
   - Allow some way to pass in the 'passcode' and 'salt'
   - In case of error in any of the legs, return StatusReport
   - Provide a way to delete the exchange
+  - SPAKE2+: the check with I (abort if h*X == I), as indicated by the RFC is pending
