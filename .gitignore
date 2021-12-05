@@ -1,1 +1,3 @@
-/target
+matter/target
+matter/Cargo.lock
+examples/onoff_light/target
