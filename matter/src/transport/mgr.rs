@@ -14,6 +14,8 @@ use crate::transport::udp;
 use crate::utils::parsebuf::ParseBuf;
 use colored::*;
 
+use super::session::Session;
+
 // Currently matches with the one in connectedhomeip repo
 const MAX_RX_BUF_SIZE: usize = 1583;
 
@@ -62,7 +64,7 @@ impl Mgr {
     }
 
     // Borrow-checker gymnastics
-    pub fn recv<'a>(
+    fn recv<'a>(
         transport: &mut udp::UdpListener,
         rel_mgr: &mut mrp::ReliableMessage,
         sess_mgr: &'a mut session::SessionMgr,
@@ -107,7 +109,7 @@ impl Mgr {
 
     // This function is send_to_exchange(). There will be a higher layer send() which will
     // internally call send_to_exchange() after creating the necessary session and exchange
-    pub fn send_to_exchange(
+    fn send_to_exchange(
         transport: &udp::UdpListener,
         rel_mgr: &mut mrp::ReliableMessage,
         proto_tx: &mut ProtoTx,
@@ -138,60 +140,68 @@ impl Mgr {
         Ok(())
     }
 
-    pub fn start(&mut self) -> Result<(), Error> {
-        /* I would have liked this in .bss instead of the stack, will likely move this later */
+    fn handle_rxtx(&mut self) -> Result<Option<Session>, Error> {
+        // I would have liked this in .bss instead of the stack, will likely move this
+        // later when we convert this into a pool
         let mut in_buf: [u8; MAX_RX_BUF_SIZE] = [0; MAX_RX_BUF_SIZE];
         let mut out_buf: [u8; MAX_RX_BUF_SIZE] = [0; MAX_RX_BUF_SIZE];
 
+        let mut proto_rx = Mgr::recv(
+            &mut self.transport,
+            &mut self.rel_mgr,
+            &mut self.sess_mgr,
+            &mut self.exch_mgr,
+            &mut in_buf,
+        )
+        .map_err(|e| {
+            error!("Error in recv: {:?}", e);
+            e
+        })?;
+
+        let mut proto_tx = ProtoTx::new(
+            &mut out_buf,
+            proto_rx.peer,
+            plain_hdr::max_plain_hdr_len() + proto_hdr::max_proto_hdr_len(),
+        )
+        .map_err(|e| {
+            error!("Error creating proto_tx {:?}", e);
+            e
+        })?;
+
+        // Proto Dispatch
+        match self.proto_demux.handle(&mut proto_rx, &mut proto_tx) {
+            Ok(r) => {
+                if let proto_demux::ResponseRequired::No = r {
+                    // We need to send the Ack if reliability is enabled, in this case
+                    return Ok(None);
+                }
+            }
+            Err(e) => {
+                error!("Error in proto_demux {:?}", e);
+                return Err(e);
+            }
+        }
+        // Check if a new session was created as part of the protocol handling
+        let new_session = proto_tx.new_session.take();
+
+        proto_tx.session = Some(proto_rx.session);
+        proto_tx.exchange = Some(proto_rx.exchange);
+        proto_tx.peer = proto_rx.peer;
+        // tx_ctx now contains the response payload, prepare the send packet
+        Mgr::send_to_exchange(&self.transport, &mut self.rel_mgr, &mut proto_tx).map_err(|e| {
+            error!("Error in sending msg {:?}", e);
+            e
+        })?;
+        Ok(new_session)
+    }
+
+    pub fn start(&mut self) -> Result<(), Error> {
         loop {
-            let mut proto_rx = match Mgr::recv(
-                &mut self.transport,
-                &mut self.rel_mgr,
-                &mut self.sess_mgr,
-                &mut self.exch_mgr,
-                &mut in_buf,
-            ) {
-                Ok(p) => p,
-                Err(e) => {
-                    error!("Error in recv: {:?}", e);
-                    continue;
-                }
-            };
-
-            let mut proto_tx = ProtoTx::new(
-                &mut out_buf,
-                proto_rx.peer,
-                plain_hdr::max_plain_hdr_len() + proto_hdr::max_proto_hdr_len(),
-            )?;
-
-            // Proto Dispatch
-            match self.proto_demux.handle(&mut proto_rx, &mut proto_tx) {
-                Ok(r) => {
-                    if let proto_demux::ResponseRequired::No = r {
-                        // We need to send the Ack if reliability is enabled, in this case
-                        continue;
-                    }
-                }
-                Err(_) => continue,
-            }
-            // Check if a new session was created as part of the protocol handling
-            let new_session = proto_tx.new_session.take();
-
-            proto_tx.session = Some(proto_rx.session);
-            proto_tx.exchange = Some(proto_rx.exchange);
-            proto_tx.peer = proto_rx.peer;
-            // tx_ctx now contains the response payload, prepare the send packet
-            match Mgr::send_to_exchange(&self.transport, &mut self.rel_mgr, &mut proto_tx) {
-                Ok(_) => (),
-                Err(e) => {
-                    error!("Error in sending msg {}", e);
-                    continue;
-                }
-            }
-
-            if let Some(c) = new_session {
+            if let Ok(new_session) = self.handle_rxtx() {
                 // If a new session was created, add it
-                self.sess_mgr.add_session(c)?;
+                if let Some(c) = new_session {
+                    self.sess_mgr.add_session(c)?;
+                }
             }
         }
     }
