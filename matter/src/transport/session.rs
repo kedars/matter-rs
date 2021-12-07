@@ -184,7 +184,7 @@ impl Session {
         proto_hdr: &mut ProtoHdr,
         parse_buf: &mut ParseBuf,
     ) -> Result<(), Error> {
-        proto_hdr.decrypt_and_decode(&plain_hdr, parse_buf, self.get_dec_key())
+        proto_hdr.decrypt_and_decode(plain_hdr, parse_buf, self.get_dec_key())
     }
 
     pub fn pre_send(&mut self, plain_hdr: &mut PlainHdr) -> Result<(), Error> {

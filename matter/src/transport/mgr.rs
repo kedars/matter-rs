@@ -232,14 +232,12 @@ impl Mgr {
             };
 
             // Handle network operations
-            if let Ok(new_session) = self.handle_rxtx(&mut in_buf, &mut proto_tx) {
+            if let Ok(Some(new_session)) = self.handle_rxtx(&mut in_buf, &mut proto_tx) {
                 // If a new session was created, add it
-                if let Some(c) = new_session {
-                    let _ = self
-                        .sess_mgr
-                        .add_session(c)
-                        .map_err(|e| error!("Error adding new session {:?}", e));
-                }
+                let _ = self
+                    .sess_mgr
+                    .add_session(new_session)
+                    .map_err(|e| error!("Error adding new session {:?}", e));
             }
             proto_tx.reset(RESERVE_HDR_SIZE);
 

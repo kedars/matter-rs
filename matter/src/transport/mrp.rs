@@ -116,7 +116,7 @@ impl ReliableMessage {
 
         let new_entry = RetransEntry::new(plain_hdr.ctr);
         if let Ok(result) = self.retrans_table.insert((sess_id, exch_id), new_entry) {
-            if let Some(_) = result {
+            if result.is_some() {
                 // This indicates there was some existing entry for same sess-id/exch-id, which shouldnt happen
                 error!("Previous retrans entry for this exchange already exists");
                 Err(Error::Invalid)
@@ -156,7 +156,7 @@ impl ReliableMessage {
         if proto_hdr.is_reliable() {
             let new_entry = AckEntry::new(plain_hdr.ctr)?;
             if let Ok(result) = self.ack_table.insert((sess_id, exch_id), new_entry) {
-                if let Some(_) = result {
+                if result.is_some() {
                     // This indicates there was some existing entry for same sess-id/exch-id, which shouldnt happen
                     // TODO: As per the spec if this happens, we need to send out the previous ACK and note this new ACK
                     error!("Previous ACK entry for this exchange already exists");

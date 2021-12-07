@@ -148,13 +148,13 @@ impl ExchangeMgr {
         // or it existed already
         if let Some(result) = self.exchanges.get_mut(&(sess_id, id)) {
             if result.get_role() == role {
-                return Ok(result);
+                Ok(result)
             } else {
-                return Err(Error::NoExchange);
+                Err(Error::NoExchange)
             }
         } else {
             error!("This should never happen");
-            return Err(Error::NoSpace);
+            Err(Error::NoSpace)
         }
     }
 
