@@ -54,3 +54,9 @@ pub fn create_sc_status_report(
         status_code as u16,
     )
 }
+
+pub fn create_mrp_standalone_ack(proto_tx: &mut ProtoTx) {
+    proto_tx.proto_id = PROTO_ID_SECURE_CHANNEL;
+    proto_tx.proto_opcode = OpCode::MRPStandAloneAck as u8;
+    proto_tx.reliable = false;
+}

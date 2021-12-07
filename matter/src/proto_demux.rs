@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use crate::error::*;
 use crate::transport::exchange::Exchange;
@@ -48,27 +48,34 @@ pub struct ProtoTx<'a> {
     pub proto_id: usize,
     pub proto_opcode: u8,
     pub write_buf: WriteBuf<'a>,
-    pub session: Option<&'a mut Session>,
-    pub exchange: Option<&'a mut Exchange>,
     pub peer: SocketAddr,
+    pub reliable: bool,
     // This isn't really a Tx parameter. For now, it is shoved here, because the ProtoTx
     // is more like an 'output' of the operation. It should be moved to some other location.
     pub new_session: Option<Session>,
 }
 
 impl<'a> ProtoTx<'a> {
-    pub fn new(buf: &'a mut [u8], peer: SocketAddr, hdr_reserve: usize) -> Result<Self, Error> {
+    pub fn new(buf: &'a mut [u8], hdr_reserve: usize) -> Result<Self, Error> {
         let mut p = ProtoTx {
             write_buf: WriteBuf::new(buf, buf.len()),
-            peer,
+            peer: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 8080),
             proto_id: 0,
             proto_opcode: 0,
-            session: None,
-            exchange: None,
+            reliable: true,
             new_session: None,
         };
         p.write_buf.reserve(hdr_reserve)?;
         Ok(p)
+    }
+
+    pub fn reset(&mut self, reserve: usize) {
+        self.proto_id = 0;
+        self.proto_opcode = 0;
+        // Placeholder
+        self.peer = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 8080);
+        self.new_session = None;
+        let _ = self.write_buf.reset(reserve);
     }
 }
 

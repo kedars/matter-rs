@@ -200,11 +200,7 @@ mod tests {
             &b,
         );
         let mut out_buf: [u8; 20] = [0; 20];
-        let mut proto_tx = ProtoTx::new(
-            &mut out_buf,
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
-            0,
-        )?;
+        let mut proto_tx = ProtoTx::new(&mut out_buf, 0)?;
         let _result = interaction_model.handle_proto_id(&mut proto_rx, &mut proto_tx);
 
         let data = data_model.node.lock().unwrap();

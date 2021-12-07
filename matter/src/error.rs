@@ -22,6 +22,7 @@ pub enum Error {
     InvalidData,
     InvalidKeyLength,
     InvalidOpcode,
+    InvalidPeerAddr,
     InvalidState,
     RwLock,
     TruncatedPacket,

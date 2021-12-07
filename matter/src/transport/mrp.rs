@@ -1,8 +1,16 @@
+use std::time::Duration;
+use std::time::SystemTime;
+
 use crate::error::*;
+use crate::proto_demux::ProtoTx;
+use crate::secure_channel;
 use crate::transport::plain_hdr;
 use crate::transport::proto_hdr;
 use heapless::LinearMap;
 use log::{error, info};
+
+// 200 ms
+const MRP_STANDALONE_ACK_TIMEOUT: u64 = 200;
 
 #[derive(Debug)]
 pub struct RetransEntry {
@@ -21,23 +29,38 @@ impl RetransEntry {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct AckEntry {
     // The msg counter that we should acknowledge
     msg_ctr: u32,
+    // The max time after which this entry must be ACK
+    ack_timeout: SystemTime,
 }
 
 impl AckEntry {
-    pub fn new(msg_ctr: u32) -> Self {
-        Self { msg_ctr }
+    pub fn new(msg_ctr: u32) -> Result<Self, Error> {
+        if let Some(ack_timeout) =
+            SystemTime::now().checked_add(Duration::from_millis(MRP_STANDALONE_ACK_TIMEOUT))
+        {
+            Ok(Self {
+                msg_ctr,
+                ack_timeout,
+            })
+        } else {
+            Err(Error::Invalid)
+        }
     }
 
     pub fn get_msg_ctr(&self) -> u32 {
         self.msg_ctr
     }
+
+    pub fn has_timed_out(&self) -> bool {
+        self.ack_timeout > SystemTime::now()
+    }
 }
 
-const MAX_MRP_ENTRIES: usize = 3;
+pub const MAX_MRP_ENTRIES: usize = 3;
 #[derive(Default, Debug)]
 pub struct ReliableMessage {
     // keys: sess-id exch-id
@@ -52,10 +75,28 @@ impl ReliableMessage {
         }
     }
 
+    // Check any pending acknowledgements / retransmissions and take action
+    pub fn get_acks_to_send(
+        &self,
+        expired_entries: &mut LinearMap<(u16, u16), (), MAX_MRP_ENTRIES>,
+    ) {
+        // Acknowledgements
+        for ((sess_id, exch_id), ack_entry) in self.ack_table.iter() {
+            if ack_entry.has_timed_out() {
+                let _ok = expired_entries.insert((*sess_id, *exch_id), ());
+            }
+        }
+    }
+
+    pub fn prepare_ack(&self, _sess_id: u16, _exch_id: u16, proto_tx: &mut ProtoTx) {
+        secure_channel::common::create_mrp_standalone_ack(proto_tx);
+    }
+
     pub fn pre_send(
         &mut self,
         sess_id: u16,
         exch_id: u16,
+        reliable: bool,
         plain_hdr: &plain_hdr::PlainHdr,
         proto_hdr: &mut proto_hdr::ProtoHdr,
     ) -> Result<(), Error> {
@@ -67,7 +108,10 @@ impl ReliableMessage {
             self.ack_table.remove(&(sess_id, exch_id));
         }
 
-        // For now, let's always set reliable, not sure when it is unreliable
+        if !reliable {
+            return Ok(());
+        }
+
         proto_hdr.set_reliable();
 
         let new_entry = RetransEntry::new(plain_hdr.ctr);
@@ -110,10 +154,11 @@ impl ReliableMessage {
         }
 
         if proto_hdr.is_reliable() {
-            let new_entry = AckEntry::new(plain_hdr.ctr);
+            let new_entry = AckEntry::new(plain_hdr.ctr)?;
             if let Ok(result) = self.ack_table.insert((sess_id, exch_id), new_entry) {
                 if let Some(_) = result {
                     // This indicates there was some existing entry for same sess-id/exch-id, which shouldnt happen
+                    // TODO: As per the spec if this happens, we need to send out the previous ACK and note this new ACK
                     error!("Previous ACK entry for this exchange already exists");
                     return Err(Error::Invalid);
                 }

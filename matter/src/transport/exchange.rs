@@ -53,6 +53,10 @@ impl Exchange {
         self.id == id && self.sess_id == sess_id && self.role == role
     }
 
+    pub fn is_match_ids(&self, id: u16, sess_id: u16) -> bool {
+        self.id == id && self.sess_id == sess_id
+    }
+
     pub fn set_exchange_data(&mut self, data: Box<dyn Any>) {
         self.data = Some(data);
     }
@@ -113,6 +117,10 @@ impl ExchangeMgr {
         Self {
             ..Default::default()
         }
+    }
+
+    pub fn get_with_id(&mut self, sess_id: u16, exch_id: u16) -> Option<&mut Exchange> {
+        self.exchanges.get_mut(&(sess_id, exch_id))
     }
 
     pub fn get(

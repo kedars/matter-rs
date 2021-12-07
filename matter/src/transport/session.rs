@@ -28,7 +28,7 @@ impl Default for SessionMode {
 #[derive(Debug, Default)]
 pub struct Session {
     // If this field is None, the rest of the members are ignored
-    peer_addr: Option<std::net::IpAddr>,
+    peer_addr: Option<std::net::SocketAddr>,
     // I find the session initiator/responder role getting confused with exchange initiator/responder
     // So, we might keep this as enc_key and dec_key for now
     dec_key: [u8; MATTER_AES128_KEY_SIZE],
@@ -78,7 +78,7 @@ impl Session {
     // then they eventually get converted into an encrypted session with the new_encrypted_session() which
     // clones from this plaintext session, but acquires the local/peer session IDs and the
     // encryption keys.
-    pub fn new(child_local_sess_id: u16, peer_addr: std::net::IpAddr) -> Session {
+    pub fn new(child_local_sess_id: u16, peer_addr: std::net::SocketAddr) -> Session {
         Session {
             peer_addr: Some(peer_addr),
             dec_key: [0; MATTER_AES128_KEY_SIZE],
@@ -125,6 +125,10 @@ impl Session {
 
     pub fn set_local_sess_id(&mut self) {
         self.local_sess_id = self.child_local_sess_id;
+    }
+
+    pub fn get_peer_addr(&self) -> Option<SocketAddr> {
+        self.peer_addr
     }
 
     // This is required for the bypass case
@@ -268,7 +272,7 @@ impl SessionMgr {
         next_sess_id
     }
 
-    pub fn add(&mut self, peer_addr: std::net::IpAddr) -> Result<(usize, &mut Session), Error> {
+    pub fn add(&mut self, peer_addr: std::net::SocketAddr) -> Result<(usize, &mut Session), Error> {
         let child_sess_id = self.get_next_sess_id();
         let session = Session::new(child_sess_id, peer_addr);
 
@@ -281,7 +285,12 @@ impl SessionMgr {
         self.sessions.push(session).map_err(|_s| Error::NoSpace)
     }
 
-    fn _get(&self, sess_id: u16, peer_addr: std::net::IpAddr, is_encrypted: bool) -> Option<usize> {
+    fn _get(
+        &self,
+        sess_id: u16,
+        peer_addr: std::net::SocketAddr,
+        is_encrypted: bool,
+    ) -> Option<usize> {
         let mode = if is_encrypted {
             SessionMode::Encrypted
         } else {
@@ -292,10 +301,16 @@ impl SessionMgr {
         })
     }
 
-    pub fn get(
+    pub fn get_with_id(&mut self, sess_id: u16) -> Option<&mut Session> {
+        self.sessions
+            .iter_mut()
+            .find(|s| s.local_sess_id == sess_id)
+    }
+
+    pub fn get_or_add(
         &mut self,
         sess_id: u16,
-        peer_addr: std::net::IpAddr,
+        peer_addr: std::net::SocketAddr,
         is_encrypted: bool,
     ) -> Option<(usize, &mut Session)> {
         if let Some(index) = self._get(sess_id, peer_addr, is_encrypted) {
@@ -323,7 +338,7 @@ impl SessionMgr {
         plain_hdr.decode(parse_buf)?;
 
         // Get session
-        self.get(plain_hdr.sess_id, src.ip(), plain_hdr.is_encrypted())
+        self.get_or_add(plain_hdr.sess_id, src, plain_hdr.is_encrypted())
             .ok_or(Error::NoSession)
     }
 }
@@ -342,25 +357,34 @@ impl fmt::Display for SessionMgr {
 #[cfg(test)]
 mod tests {
     use super::SessionMgr;
-    use std::net::Ipv4Addr;
+    use std::net::{Ipv4Addr, SocketAddr};
 
     #[test]
     fn test_next_sess_id_doesnt_reuse() {
         let mut sm = SessionMgr::new();
-        sm.add(std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)))
-            .unwrap();
+        sm.add(SocketAddr::new(
+            std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            8080,
+        ))
+        .unwrap();
         assert_eq!(sm.get_next_sess_id(), 2);
         assert_eq!(sm.get_next_sess_id(), 3);
-        sm.add(std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)))
-            .unwrap();
+        sm.add(SocketAddr::new(
+            std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            8080,
+        ))
+        .unwrap();
         assert_eq!(sm.get_next_sess_id(), 5);
     }
 
     #[test]
     fn test_next_sess_id_overflows() {
         let mut sm = SessionMgr::new();
-        sm.add(std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)))
-            .unwrap();
+        sm.add(SocketAddr::new(
+            std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            8080,
+        ))
+        .unwrap();
         assert_eq!(sm.get_next_sess_id(), 2);
         sm.next_sess_id = 65534;
         assert_eq!(sm.get_next_sess_id(), 65534);
