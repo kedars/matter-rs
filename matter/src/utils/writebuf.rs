@@ -25,17 +25,17 @@ impl<'a> WriteBuf<'a> {
         &mut self.buf[self.start..self.end]
     }
 
-    pub fn reset(&mut self, reserve: usize) -> Result<(), Error> {
+    pub fn reset(&mut self, reserve: usize) {
         self.start = reserve;
         self.end = reserve;
-        Ok(())
     }
 
     pub fn reserve(&mut self, reserve: usize) -> Result<(), Error> {
         if self.end != 0 || self.start != 0 {
             return Err(Error::Invalid);
         }
-        self.reset(reserve)
+        self.reset(reserve);
+        Ok(())
     }
 
     pub fn prepend_with<F>(&mut self, size: usize, f: F) -> Result<(), Error>

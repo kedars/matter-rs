@@ -75,7 +75,7 @@ impl<'a> ProtoTx<'a> {
         // Placeholder
         self.peer = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 8080);
         self.new_session = None;
-        let _ = self.write_buf.reset(reserve);
+        self.write_buf.reset(reserve);
     }
 }
 
