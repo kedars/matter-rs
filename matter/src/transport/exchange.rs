@@ -25,6 +25,10 @@ pub struct Exchange {
     id: u16,
     sess_id: u16,
     role: ExchangeRole,
+    // The number of users currently using this exchange. This will go away when
+    // we start using Arc/Rc and the Exchange object itself is dynamically allocated
+    // But, maybe that never happens
+    user_cnt: u8,
     // Currently I see this primarily used in PASE and CASE. If that is the limited use
     // of this, we might move this into a separate data structure, so as not to burden
     // all 'exchanges'.
@@ -37,8 +41,23 @@ impl Exchange {
             id,
             sess_id,
             role,
+            user_cnt: 1,
             data: None,
         }
+    }
+
+    pub fn acquire(&mut self) {
+        self.user_cnt += 1;
+    }
+
+    pub fn release(&mut self) {
+        self.user_cnt -= 1;
+        // Even if we get to a zero reference count, because the memory is static,
+        // an exchange manager purge call is required to clean us up
+    }
+
+    pub fn is_purgeable(&self) -> bool {
+        self.user_cnt == 0
     }
 
     pub fn get_id(&self) -> u16 {
@@ -82,8 +101,8 @@ impl fmt::Display for Exchange {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "exch_id: {:?}, sess_id: {}, role: {:?}, data: {:?}",
-            self.id, self.sess_id, self.role, self.data
+            "exch_id: {:?}, sess_id: {}, role: {:?}, data: {:?}, use_cnt: {}",
+            self.id, self.sess_id, self.role, self.data, self.user_cnt
         )
     }
 }
@@ -172,6 +191,19 @@ impl ExchangeMgr {
             proto_hdr.is_initiator(),
         )
     }
+
+    pub fn purge(&mut self) {
+        let mut to_purge: LinearMap<(u16, u16), (), MAX_EXCHANGES> = LinearMap::new();
+
+        for ((sess_id, exch_id), exchange) in self.exchanges.iter() {
+            if exchange.is_purgeable() {
+                let _ = to_purge.insert((*sess_id, *exch_id), ());
+            }
+        }
+        for ((sess_id, exch_id), _) in to_purge.iter() {
+            self.exchanges.remove(&(*sess_id, *exch_id));
+        }
+    }
 }
 
 impl fmt::Display for ExchangeMgr {
@@ -181,5 +213,46 @@ impl fmt::Display for ExchangeMgr {
             writeln!(f, "{{ {}, }},", s.1)?;
         }
         write!(f, "}}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ExchangeMgr, ExchangeRole};
+
+    #[test]
+    fn test_purge() {
+        let mut mgr = ExchangeMgr::new();
+        let _ = mgr.get(1, 2, ExchangeRole::Responder, true).unwrap();
+        let _ = mgr.get(1, 3, ExchangeRole::Responder, true).unwrap();
+
+        mgr.purge();
+        assert_eq!(mgr.get_with_id(1, 2).is_some(), true);
+        assert_eq!(mgr.get_with_id(1, 3).is_some(), true);
+
+        // Release e1
+        let e1 = mgr.get_with_id(1, 2).unwrap();
+        e1.release();
+        mgr.purge();
+        assert_eq!(mgr.get_with_id(1, 2).is_some(), false);
+        assert_eq!(mgr.get_with_id(1, 3).is_some(), true);
+
+        // Acquire e2
+        let e2 = mgr.get_with_id(1, 3).unwrap();
+        e2.acquire();
+        mgr.purge();
+        assert_eq!(mgr.get_with_id(1, 3).is_some(), true);
+
+        // Release e2 once
+        let e2 = mgr.get_with_id(1, 3).unwrap();
+        e2.release();
+        mgr.purge();
+        assert_eq!(mgr.get_with_id(1, 3).is_some(), true);
+
+        // Release e2 again
+        let e2 = mgr.get_with_id(1, 3).unwrap();
+        e2.release();
+        mgr.purge();
+        assert_eq!(mgr.get_with_id(1, 3).is_some(), false);
     }
 }
