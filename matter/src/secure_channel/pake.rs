@@ -80,7 +80,7 @@ impl PAKE {
         }
 
         create_sc_status_report(proto_tx, status_code)?;
-        // Exchange data is already cleared
+        proto_rx.exchange.close();
         Ok(())
     }
 

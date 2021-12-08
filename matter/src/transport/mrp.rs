@@ -9,6 +9,8 @@ use crate::transport::proto_hdr;
 use heapless::LinearMap;
 use log::{error, info};
 
+use super::exchange::Exchange;
+
 // 200 ms
 const MRP_STANDALONE_ACK_TIMEOUT: u64 = 200;
 
@@ -95,17 +97,20 @@ impl ReliableMessage {
     pub fn pre_send(
         &mut self,
         sess_id: u16,
-        exch_id: u16,
+        exchange: &mut Exchange,
         reliable: bool,
         plain_hdr: &plain_hdr::PlainHdr,
         proto_hdr: &mut proto_hdr::ProtoHdr,
     ) -> Result<(), Error> {
         // Check if any acknowledgements are pending for this exchange,
+        let exch_id = exchange.get_id();
+
         // if so, piggy back in the encoded header here
         if let Some(ack_entry) = self.ack_table.get(&(sess_id, exch_id)) {
             // Ack Entry exists, set ACK bit and remove from table
             proto_hdr.set_ack(ack_entry.get_msg_ctr());
             self.ack_table.remove(&(sess_id, exch_id));
+            exchange.release();
         }
 
         if !reliable {
@@ -116,6 +121,7 @@ impl ReliableMessage {
 
         let new_entry = RetransEntry::new(plain_hdr.ctr);
         if let Ok(result) = self.retrans_table.insert((sess_id, exch_id), new_entry) {
+            exchange.acquire();
             if result.is_some() {
                 // This indicates there was some existing entry for same sess-id/exch-id, which shouldnt happen
                 error!("Previous retrans entry for this exchange already exists");
@@ -137,10 +143,12 @@ impl ReliableMessage {
     pub fn recv(
         &mut self,
         sess_id: u16,
-        exch_id: u16,
+        exchange: &mut Exchange,
         plain_hdr: &plain_hdr::PlainHdr,
         proto_hdr: &proto_hdr::ProtoHdr,
     ) -> Result<(), Error> {
+        let exch_id = exchange.get_id();
+
         if proto_hdr.is_ack() {
             // Handle received Acks
             let ack_msg_ctr = proto_hdr.get_ack_msg_ctr().ok_or(Error::Invalid)?;
@@ -149,6 +157,7 @@ impl ReliableMessage {
                     error!("Mismatch in retrans-table's msg counter and received msg counter: received {}, expected {}", ack_msg_ctr, entry.get_msg_ctr());
                 } else {
                     self.retrans_table.remove(&(sess_id, exch_id));
+                    exchange.release();
                 }
             }
         }
@@ -156,6 +165,7 @@ impl ReliableMessage {
         if proto_hdr.is_reliable() {
             let new_entry = AckEntry::new(plain_hdr.ctr)?;
             if let Ok(result) = self.ack_table.insert((sess_id, exch_id), new_entry) {
+                exchange.acquire();
                 if result.is_some() {
                     // This indicates there was some existing entry for same sess-id/exch-id, which shouldnt happen
                     // TODO: As per the spec if this happens, we need to send out the previous ACK and note this new ACK

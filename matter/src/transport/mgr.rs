@@ -81,8 +81,6 @@ impl Mgr {
 
         info!("{} from src: {}", "Received".blue(), src);
         trace!("payload: {:x?}", parse_buf.as_borrow_slice());
-        info!("Session Mgr: {}", sess_mgr);
-        info!("Exchange Mgr: {}", exch_mgr);
 
         // Get session
         //      Ok to use unwrap here since we know 'src' is certainly not None
@@ -96,7 +94,7 @@ impl Mgr {
         debug!("Exchange is {:?}", exchange);
 
         // Message Reliability Protocol
-        rel_mgr.recv(plain_hdr.sess_id, proto_hdr.exch_id, &plain_hdr, &proto_hdr)?;
+        rel_mgr.recv(plain_hdr.sess_id, exchange, &plain_hdr, &proto_hdr)?;
 
         Ok(ProtoRx::new(
             proto_hdr.proto_id.into(),
@@ -153,7 +151,7 @@ impl Mgr {
 
         rel_mgr.pre_send(
             session.get_local_sess_id(),
-            exchange.get_id(),
+            exchange,
             proto_tx.reliable,
             &plain_hdr,
             &mut proto_hdr,
@@ -255,6 +253,13 @@ impl Mgr {
                     error!("Error in sending Ack {:?}", e);
                 }
             }
+
+            // Handle exchange purging
+            //    This need not be done in each turn of the loop, maybe once in 5 times or so?
+            self.exch_mgr.purge();
+
+            info!("Session Mgr: {}", self.sess_mgr);
+            info!("Exchange Mgr: {}", self.exch_mgr);
         }
     }
 }

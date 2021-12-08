@@ -46,6 +46,11 @@ impl Exchange {
         }
     }
 
+    pub fn close(&mut self) {
+        self.data = None;
+        self.release();
+    }
+
     pub fn acquire(&mut self) {
         self.user_cnt += 1;
     }
