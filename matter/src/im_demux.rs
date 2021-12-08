@@ -7,6 +7,7 @@ use crate::utils::writebuf::WriteBuf;
 use log::error;
 use num;
 use num_derive::FromPrimitive;
+use std::any::Any;
 use std::sync::Arc;
 
 /* Handle messages related to the Interation Model
@@ -30,9 +31,37 @@ enum OpCode {
     TimedRequest = 10,
 }
 
+#[derive(PartialEq)]
+pub enum TransactionState {
+    Ongoing,
+    Complete,
+}
+pub struct Transaction {
+    pub state: TransactionState,
+    pub data: Option<Box<dyn Any>>,
+}
+
+impl Transaction {
+    pub fn new() -> Self {
+        Self {
+            state: TransactionState::Ongoing,
+            data: None,
+        }
+    }
+
+    pub fn complete(&mut self) {
+        self.state = TransactionState::Complete
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.state == TransactionState::Complete
+    }
+}
+
 pub trait HandleInteraction {
     fn handle_invoke_cmd(
         &self,
+        trans: &mut Transaction,
         cmd_path_ib: &CmdPathIb,
         variable: TLVElement,
         resp_buf: &mut WriteBuf,
@@ -67,6 +96,7 @@ impl InteractionModel {
     // For now, we just return without doing anything to this exchange. This needs change
     fn invoke_req_handler(
         &mut self,
+        trans: &mut Transaction,
         proto_rx: &mut ProtoRx,
         proto_tx: &mut ProtoTx,
     ) -> Result<ResponseRequired, Error> {
@@ -93,7 +123,7 @@ impl InteractionModel {
             );
             let variable = cmd_data_ib.find_element(1).ok_or(Error::InvalidData)?;
             self.handler
-                .handle_invoke_cmd(&cmd_path_ib, variable, &mut proto_tx.write_buf)
+                .handle_invoke_cmd(trans, &cmd_path_ib, variable, &mut proto_tx.write_buf)
                 .map_err(|e| {
                     error!("Error in handling command: {:?}", e);
                     e
@@ -109,17 +139,23 @@ impl proto_demux::HandleProto for InteractionModel {
         proto_rx: &mut ProtoRx,
         proto_tx: &mut ProtoTx,
     ) -> Result<ResponseRequired, Error> {
+        let mut trans = Transaction::new();
         let proto_opcode: OpCode =
             num::FromPrimitive::from_u8(proto_rx.proto_opcode).ok_or(Error::Invalid)?;
         proto_tx.proto_id = PROTO_ID_INTERACTION_MODEL;
 
-        match proto_opcode {
-            OpCode::InvokeRequest => self.invoke_req_handler(proto_rx, proto_tx),
+        let result = match proto_opcode {
+            OpCode::InvokeRequest => self.invoke_req_handler(&mut trans, proto_rx, proto_tx)?,
             _ => {
                 error!("Opcode Not Handled: {:?}", proto_opcode);
-                Err(Error::InvalidOpcode)
+                return Err(Error::InvalidOpcode);
             }
+        };
+
+        if trans.is_complete() {
+            proto_rx.exchange.close();
         }
+        Ok(result)
     }
 
     fn get_proto_id(&self) -> usize {
@@ -160,6 +196,7 @@ mod tests {
     impl HandleInteraction for DataModel {
         fn handle_invoke_cmd(
             &self,
+            _trans: &mut Transaction,
             cmd_path_ib: &CmdPathIb,
             variable: TLVElement,
             _resp_buf: &mut WriteBuf,

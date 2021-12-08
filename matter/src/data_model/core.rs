@@ -23,6 +23,7 @@ impl DataModel {
 impl HandleInteraction for DataModel {
     fn handle_invoke_cmd(
         &self,
+        trans: &mut Transaction,
         cmd_path_ib: &CmdPathIb,
         _variable: TLVElement,
         resp_buf: &mut WriteBuf,
@@ -42,6 +43,9 @@ impl HandleInteraction for DataModel {
             0x02, 0x18, 0x36, 0x02, 0x04, 0x00, 0x04, 0x01, 0x04, 0x00, 0x18, 0x18, 0x18, 0x18,
         ];
         resp_buf.copy_from_slice(&dummy_invoke_resp[..]).unwrap();
+
+        // Always mark complete for now
+        trans.complete();
         Ok(())
     }
 }
