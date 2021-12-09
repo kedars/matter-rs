@@ -2,6 +2,7 @@ use crate::error::*;
 use crate::proto_demux;
 use crate::proto_demux::ResponseRequired;
 use crate::proto_demux::{ProtoRx, ProtoTx};
+use crate::tlv;
 use crate::tlv::*;
 use crate::utils::writebuf::WriteBuf;
 use log::error;
@@ -126,6 +127,7 @@ impl InteractionModel {
                 .handle_invoke_cmd(trans, &cmd_path_ib, variable, &mut proto_tx.write_buf)
                 .map_err(|e| {
                     error!("Error in handling command: {:?}", e);
+                    tlv::print_tlv_list(proto_rx.buf);
                     e
                 })?;
         }
