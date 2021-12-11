@@ -12,16 +12,15 @@ fn handle_command_csrrequest(
     _cluster: &mut Cluster,
     cmd_req: &mut CommandReq,
 ) -> Result<(), Error> {
-    match cmd_req.cmd_path_ib.command as u16 {
-        CMD_CSRREQUEST_ID => info!("Handling CSRRequest"),
-        _ => info!("Command not supported"),
-    }
-    info!("Received variable:");
-    let mut iter = cmd_req.data.into_iter().ok_or(Error::Invalid)?;
-    while let Some(a) = iter.next() {
-        info!("{}", a)
-    }
+    info!("Handling CSRRequest");
 
+    let csr_nonce = cmd_req
+        .data
+        .find_element(0)
+        .ok_or(Error::Invalid)?
+        .get_slice()
+        .ok_or(Error::InvalidData)?;
+    info!("Received CSR Nonce:{:?}", csr_nonce);
     Ok(())
 }
 
