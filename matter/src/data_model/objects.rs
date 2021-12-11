@@ -1,6 +1,8 @@
 use crate::error::*;
 use std::fmt;
 
+use super::core::CommandReq;
+
 /* This file needs some major revamp.
  * - instead of allocating all over the heap, we should use some kind of slab/block allocator
  * - instead of arrays, can use linked-lists to conserve space and avoid the internal fragmentation
@@ -49,7 +51,7 @@ impl std::fmt::Display for Attribute {
     }
 }
 
-pub type CommandCb = fn(&mut Cluster, id: u16) -> Result<(), Error>;
+pub type CommandCb = fn(&mut Cluster, cmd_req: &mut CommandReq) -> Result<(), Error>;
 
 pub struct Command {
     id: u16,
@@ -102,15 +104,15 @@ impl Cluster {
         Err(Error::NoSpace)
     }
 
-    pub fn handle_command(&mut self, cmd_id: u16) -> Result<(), Error> {
+    pub fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), Error> {
         let cmd = self
             .commands
             .iter()
-            .find(|x| x.as_ref().map_or(false, |c| c.id == cmd_id))
+            .find(|x| x.as_ref().map_or(false, |c| c.id == cmd_req.cmd_id))
             .ok_or(Error::CommandNotFound)?
             .as_ref()
             .ok_or(Error::CommandNotFound)?;
-        (cmd.cb)(self, cmd_id)
+        (cmd.cb)(self, cmd_req)
     }
 }
 

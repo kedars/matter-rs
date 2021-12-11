@@ -1,4 +1,4 @@
-use super::objects::*;
+use super::{core::CommandReq, objects::*};
 use crate::error::*;
 use log::info;
 
@@ -15,13 +15,26 @@ fn attr_on_off_new() -> Result<Box<Attribute>, Error> {
     Attribute::new(ATTR_ON_OFF_ID, AttrValue::Bool(false))
 }
 
-fn handle_command_on_off(_cluster: &mut Cluster, cmd_id: u16) -> Result<(), Error> {
-    match cmd_id {
+fn handle_command_on_off(_cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Result<(), Error> {
+    match cmd_req.cmd_id {
         CMD_OFF_ID => info!("Handling off"),
         CMD_ON_ID => info!("Handling on"),
         CMD_TOGGLE_ID => info!("Handling toggle"),
         _ => info!("Command not supported"),
     }
+    // This whole response is hard-coded here. Ideally, this should only write the status of it's own invoke
+    // and the caller API should handle generation of the rest of the structure
+    let dummy_invoke_resp = [
+        0x15, 0x36, 0x00, 0x15, 0x37, 0x00, 0x24, 0x00, 0x00, 0x24, 0x02, 0x31, 0x24, 0x03, 0x02,
+        0x18, 0x36, 0x02, 0x04, 0x00, 0x04, 0x01, 0x04, 0x00, 0x18, 0x18, 0x18, 0x18,
+    ];
+    cmd_req
+        .resp_buf
+        .copy_from_slice(&dummy_invoke_resp[..])
+        .unwrap();
+
+    // Always mark complete for now
+    cmd_req.trans.complete();
     Ok(())
 }
 

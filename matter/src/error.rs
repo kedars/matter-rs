@@ -8,6 +8,7 @@ pub enum Error {
     EndpointNotFound,
     Crypto(ccm::aead::Error),
     OpenSSL(openssl::error::ErrorStack),
+    NoCommand,
     NoEndpoint,
     NoExchange,
     NoHandler,

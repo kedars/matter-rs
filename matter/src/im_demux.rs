@@ -78,15 +78,18 @@ pub struct CmdPathIb {
     /* As per the spec these should be U16, U32, and U16 respectively */
     pub endpoint: Option<u8>,
     pub cluster: Option<u8>,
-    pub command: Option<u8>,
+    pub command: u8,
 }
 
-fn get_cmd_path_ib(cmd_path: &TLVElement) -> CmdPathIb {
-    CmdPathIb {
+fn get_cmd_path_ib(cmd_path: &TLVElement) -> Result<CmdPathIb, Error> {
+    Ok(CmdPathIb {
         endpoint: cmd_path.find_element(0).and_then(|x| x.get_u8()),
         cluster: cmd_path.find_element(2).and_then(|x| x.get_u8()),
-        command: cmd_path.find_element(3).and_then(|x| x.get_u8()),
-    }
+        command: cmd_path
+            .find_element(3)
+            .and_then(|x| x.get_u8())
+            .ok_or(Error::NoCommand)?,
+    })
 }
 
 impl InteractionModel {
@@ -121,7 +124,7 @@ impl InteractionModel {
                     .ok_or(Error::InvalidData)?
                     .confirm_list()
                     .ok_or(Error::InvalidData)?,
-            );
+            )?;
             let variable = cmd_data_ib.find_element(1).ok_or(Error::InvalidData)?;
             self.handler
                 .handle_invoke_cmd(trans, &cmd_path_ib, variable, &mut proto_tx.write_buf)
@@ -206,7 +209,7 @@ mod tests {
             let mut data = self.node.lock().unwrap();
             data.endpoint = cmd_path_ib.endpoint.unwrap();
             data.cluster = cmd_path_ib.cluster.unwrap();
-            data.command = cmd_path_ib.command.unwrap();
+            data.command = cmd_path_ib.command;
             variable.confirm_struct().unwrap();
             data.variable = variable.find_element(1).unwrap().get_u8().unwrap();
             Ok(())

@@ -20,32 +20,36 @@ impl DataModel {
     }
 }
 
+pub struct CommandReq<'a, 'b> {
+    pub cmd_id: u16,
+    pub variable: TLVElement<'a>,
+    pub resp_buf: &'a mut WriteBuf<'b>,
+    pub trans: &'a mut Transaction,
+}
+
 impl HandleInteraction for DataModel {
     fn handle_invoke_cmd(
         &self,
         trans: &mut Transaction,
         cmd_path_ib: &CmdPathIb,
-        _variable: TLVElement,
+        variable: TLVElement,
         resp_buf: &mut WriteBuf,
     ) -> Result<(), Error> {
         info!("Invoke Commmand Handler executing: {:?}", cmd_path_ib);
+        let mut cmd_req = CommandReq {
+            trans,
+            variable,
+            resp_buf,
+            cmd_id: cmd_path_ib.command.into(),
+        };
         {
             let mut node = self.node.write()?;
             // For now, let's not support wildcard
             node.get_endpoint(cmd_path_ib.endpoint.unwrap_or(1).into())?
                 .get_cluster(cmd_path_ib.cluster.unwrap_or(1).into())?
-                .handle_command(cmd_path_ib.command.unwrap_or(1).into())?;
+                .handle_command(&mut cmd_req)?;
         }
-        // This whole response is hard-coded here. Ideally, this should only write the status of it's own invoke
-        // and the caller API should handle generation of the rest of the structure
-        let dummy_invoke_resp = [
-            0x15, 0x36, 0x00, 0x15, 0x37, 0x00, 0x24, 0x00, 0x00, 0x24, 0x02, 0x31, 0x24, 0x03,
-            0x02, 0x18, 0x36, 0x02, 0x04, 0x00, 0x04, 0x01, 0x04, 0x00, 0x18, 0x18, 0x18, 0x18,
-        ];
-        resp_buf.copy_from_slice(&dummy_invoke_resp[..]).unwrap();
 
-        // Always mark complete for now
-        trans.complete();
         Ok(())
     }
 }
