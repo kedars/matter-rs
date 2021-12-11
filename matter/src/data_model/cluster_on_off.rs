@@ -1,5 +1,5 @@
-use super::{core::CommandReq, objects::*};
-use crate::error::*;
+use super::objects::*;
+use crate::{error::*, interaction_model::CommandReq};
 use log::info;
 
 const CLUSTER_ONOFF_ID: u32 = 0x0006;
@@ -16,7 +16,7 @@ fn attr_on_off_new() -> Result<Box<Attribute>, Error> {
 }
 
 fn handle_command_on_off(_cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Result<(), Error> {
-    match cmd_req.cmd_id {
+    match cmd_req.cmd_path_ib.command as u16 {
         CMD_OFF_ID => info!("Handling off"),
         CMD_ON_ID => info!("Handling on"),
         CMD_TOGGLE_ID => info!("Handling toggle"),

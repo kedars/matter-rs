@@ -1,7 +1,7 @@
 pub mod core;
 pub mod data_model;
 pub mod error;
-pub mod im_demux;
+pub mod interaction_model;
 pub mod proto_demux;
 pub mod sc_demux;
 pub mod secure_channel;

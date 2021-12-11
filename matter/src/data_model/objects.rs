@@ -1,7 +1,5 @@
-use crate::error::*;
+use crate::{error::*, interaction_model::CommandReq};
 use std::fmt;
-
-use super::core::CommandReq;
 
 /* This file needs some major revamp.
  * - instead of allocating all over the heap, we should use some kind of slab/block allocator
@@ -108,7 +106,10 @@ impl Cluster {
         let cmd = self
             .commands
             .iter()
-            .find(|x| x.as_ref().map_or(false, |c| c.id == cmd_req.cmd_id))
+            .find(|x| {
+                x.as_ref()
+                    .map_or(false, |c| c.id == cmd_req.cmd_path_ib.command.into())
+            })
             .ok_or(Error::CommandNotFound)?
             .as_ref()
             .ok_or(Error::CommandNotFound)?;

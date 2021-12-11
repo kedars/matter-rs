@@ -2,14 +2,15 @@ use crate::error::*;
 use crate::proto_demux;
 use crate::proto_demux::ResponseRequired;
 use crate::proto_demux::{ProtoRx, ProtoTx};
-use crate::tlv;
-use crate::tlv::*;
-use crate::utils::writebuf::WriteBuf;
 use log::error;
 use num;
 use num_derive::FromPrimitive;
-use std::any::Any;
 use std::sync::Arc;
+
+use super::HandleInteraction;
+use super::InteractionModel;
+use super::Transaction;
+use super::TransactionState;
 
 /* Handle messages related to the Interation Model
  */
@@ -18,7 +19,7 @@ use std::sync::Arc;
 const PROTO_ID_INTERACTION_MODEL: usize = 0x01;
 
 #[derive(FromPrimitive, Debug)]
-enum OpCode {
+pub enum OpCode {
     Reserved = 0,
     StatusResponse = 1,
     ReadRequest = 2,
@@ -30,16 +31,6 @@ enum OpCode {
     InvokeRequest = 8,
     InvokeResponse = 9,
     TimedRequest = 10,
-}
-
-#[derive(PartialEq)]
-pub enum TransactionState {
-    Ongoing,
-    Complete,
-}
-pub struct Transaction {
-    pub state: TransactionState,
-    pub data: Option<Box<dyn Any>>,
 }
 
 impl Transaction {
@@ -59,82 +50,9 @@ impl Transaction {
     }
 }
 
-pub trait HandleInteraction {
-    fn handle_invoke_cmd(
-        &self,
-        trans: &mut Transaction,
-        cmd_path_ib: &CmdPathIb,
-        variable: TLVElement,
-        resp_buf: &mut WriteBuf,
-    ) -> Result<(), Error>;
-}
-
-pub struct InteractionModel {
-    handler: Arc<dyn HandleInteraction>,
-}
-
-#[derive(Debug)]
-pub struct CmdPathIb {
-    /* As per the spec these should be U16, U32, and U16 respectively */
-    pub endpoint: Option<u8>,
-    pub cluster: Option<u8>,
-    pub command: u8,
-}
-
-fn get_cmd_path_ib(cmd_path: &TLVElement) -> Result<CmdPathIb, Error> {
-    Ok(CmdPathIb {
-        endpoint: cmd_path.find_element(0).and_then(|x| x.get_u8()),
-        cluster: cmd_path.find_element(2).and_then(|x| x.get_u8()),
-        command: cmd_path
-            .find_element(3)
-            .and_then(|x| x.get_u8())
-            .ok_or(Error::NoCommand)?,
-    })
-}
-
 impl InteractionModel {
     pub fn new(handler: Arc<dyn HandleInteraction>) -> InteractionModel {
         InteractionModel { handler }
-    }
-
-    // For now, we just return without doing anything to this exchange. This needs change
-    fn invoke_req_handler(
-        &mut self,
-        trans: &mut Transaction,
-        proto_rx: &mut ProtoRx,
-        proto_tx: &mut ProtoTx,
-    ) -> Result<ResponseRequired, Error> {
-        proto_tx.proto_opcode = OpCode::InvokeResponse as u8;
-
-        let root = get_root_node_struct(proto_rx.buf).ok_or(Error::InvalidData)?;
-        // Spec says tag should be 2, but CHIP Tool sends the tag as 0
-        let mut cmd_list_iter = root
-            .find_element(0)
-            .ok_or(Error::InvalidData)?
-            .confirm_array()
-            .ok_or(Error::InvalidData)?
-            .into_iter()
-            .ok_or(Error::InvalidData)?;
-
-        while let Some(cmd_data_ib) = cmd_list_iter.next() {
-            // CommandDataIB has CommandPath(0) + Variable(1)
-            let cmd_path_ib = get_cmd_path_ib(
-                &cmd_data_ib
-                    .find_element(0)
-                    .ok_or(Error::InvalidData)?
-                    .confirm_list()
-                    .ok_or(Error::InvalidData)?,
-            )?;
-            let variable = cmd_data_ib.find_element(1).ok_or(Error::InvalidData)?;
-            self.handler
-                .handle_invoke_cmd(trans, &cmd_path_ib, variable, &mut proto_tx.write_buf)
-                .map_err(|e| {
-                    error!("Error in handling command: {:?}", e);
-                    tlv::print_tlv_list(proto_rx.buf);
-                    e
-                })?;
-        }
-        Ok(ResponseRequired::Yes)
     }
 }
 
@@ -170,7 +88,8 @@ impl proto_demux::HandleProto for InteractionModel {
 
 #[cfg(test)]
 mod tests {
-    use crate::im_demux::*;
+    use crate::interaction_model::demux::*;
+    use crate::interaction_model::CommandReq;
     use crate::proto_demux::HandleProto;
     use crate::transport::exchange::Exchange;
     use crate::transport::session::Session;
@@ -199,19 +118,13 @@ mod tests {
         }
     }
     impl HandleInteraction for DataModel {
-        fn handle_invoke_cmd(
-            &self,
-            _trans: &mut Transaction,
-            cmd_path_ib: &CmdPathIb,
-            variable: TLVElement,
-            _resp_buf: &mut WriteBuf,
-        ) -> Result<(), Error> {
+        fn handle_invoke_cmd(&self, cmd_req: &mut CommandReq) -> Result<(), Error> {
             let mut data = self.node.lock().unwrap();
-            data.endpoint = cmd_path_ib.endpoint.unwrap();
-            data.cluster = cmd_path_ib.cluster.unwrap();
-            data.command = cmd_path_ib.command;
-            variable.confirm_struct().unwrap();
-            data.variable = variable.find_element(1).unwrap().get_u8().unwrap();
+            data.endpoint = cmd_req.cmd_path_ib.endpoint.unwrap();
+            data.cluster = cmd_req.cmd_path_ib.cluster.unwrap();
+            data.command = cmd_req.cmd_path_ib.command;
+            cmd_req.data.confirm_struct().unwrap();
+            data.variable = cmd_req.data.find_element(1).unwrap().get_u8().unwrap();
             Ok(())
         }
     }

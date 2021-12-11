@@ -1,5 +1,6 @@
 use crate::{
-    data_model::core::DataModel, error::*, im_demux::*, sc_demux::SecureChannel, transport,
+    data_model::core::DataModel, error::*, interaction_model::InteractionModel,
+    sc_demux::SecureChannel, transport,
 };
 use std::sync::Arc;
 
