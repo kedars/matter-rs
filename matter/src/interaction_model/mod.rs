@@ -2,7 +2,7 @@ use std::any::Any;
 
 use std::sync::Arc;
 
-use crate::{error::Error, tlv::TLVElement, utils::writebuf::WriteBuf};
+use crate::{error::Error, tlv::TLVElement, tlv_writer::TLVWriter};
 
 #[derive(PartialEq)]
 pub enum TransactionState {
@@ -22,15 +22,14 @@ pub struct CmdPathIb {
     pub command: u8,
 }
 
-pub struct CommandReq<'a, 'b> {
-    pub cmd_path_ib: CmdPathIb,
-    pub data: TLVElement<'a>,
-    pub resp_buf: &'a mut WriteBuf<'b>,
-    pub trans: &'a mut Transaction,
-}
-
 pub trait HandleInteraction {
-    fn handle_invoke_cmd(&self, cmd_req: &mut CommandReq) -> Result<(), Error>;
+    fn handle_invoke_cmd(
+        &self,
+        cmd_path_ib: &CmdPathIb,
+        data: TLVElement,
+        trans: &mut Transaction,
+        tlvwriter: &mut TLVWriter,
+    ) -> Result<(), Error>;
 }
 
 pub struct InteractionModel {

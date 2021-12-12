@@ -1,4 +1,4 @@
-use crate::{error::*, interaction_model::CommandReq};
+use crate::{error::*, interaction_model::Transaction, tlv::TLVElement, tlv_writer::TLVWriter};
 use std::fmt;
 
 /* This file needs some major revamp.
@@ -68,6 +68,15 @@ impl Command {
     }
 }
 
+pub struct CommandReq<'a, 'b, 'c> {
+    pub endpoint: u8,
+    pub cluster: u8,
+    pub command: u8,
+    pub data: TLVElement<'a>,
+    pub resp: &'a mut TLVWriter<'b, 'c>,
+    pub trans: &'a mut Transaction,
+}
+
 #[derive(Default)]
 pub struct Cluster {
     id: u32,
@@ -106,10 +115,7 @@ impl Cluster {
         let cmd = self
             .commands
             .iter()
-            .find(|x| {
-                x.as_ref()
-                    .map_or(false, |c| c.id == cmd_req.cmd_path_ib.command.into())
-            })
+            .find(|x| x.as_ref().map_or(false, |c| c.id == cmd_req.command.into()))
             .ok_or(Error::CommandNotFound)?
             .as_ref()
             .ok_or(Error::CommandNotFound)?;

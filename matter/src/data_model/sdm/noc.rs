@@ -1,7 +1,6 @@
 // Node Operational Credentials Cluster
 use crate::data_model::objects::*;
 use crate::error::*;
-use crate::interaction_model::CommandReq;
 use log::info;
 
 const CLUSTER_OPERATIONAL_CREDENTIALS_ID: u32 = 0x003E;

@@ -89,8 +89,10 @@ impl proto_demux::HandleProto for InteractionModel {
 #[cfg(test)]
 mod tests {
     use crate::interaction_model::demux::*;
-    use crate::interaction_model::CommandReq;
+    use crate::interaction_model::CmdPathIb;
     use crate::proto_demux::HandleProto;
+    use crate::tlv::TLVElement;
+    use crate::tlv_writer::TLVWriter;
     use crate::transport::exchange::Exchange;
     use crate::transport::session::Session;
     use std::net::IpAddr;
@@ -118,13 +120,19 @@ mod tests {
         }
     }
     impl HandleInteraction for DataModel {
-        fn handle_invoke_cmd(&self, cmd_req: &mut CommandReq) -> Result<(), Error> {
-            let mut data = self.node.lock().unwrap();
-            data.endpoint = cmd_req.cmd_path_ib.endpoint.unwrap();
-            data.cluster = cmd_req.cmd_path_ib.cluster.unwrap();
-            data.command = cmd_req.cmd_path_ib.command;
-            cmd_req.data.confirm_struct().unwrap();
-            data.variable = cmd_req.data.find_element(1).unwrap().get_u8().unwrap();
+        fn handle_invoke_cmd(
+            &self,
+            cmd_path_ib: &CmdPathIb,
+            data: TLVElement,
+            _trans: &mut Transaction,
+            _tlvwriter: &mut TLVWriter,
+        ) -> Result<(), Error> {
+            let mut common_data = self.node.lock().unwrap();
+            common_data.endpoint = cmd_path_ib.endpoint.unwrap_or(1);
+            common_data.cluster = cmd_path_ib.cluster.unwrap_or(0);
+            common_data.command = cmd_path_ib.command;
+            data.confirm_struct().unwrap();
+            common_data.variable = data.find_element(1).unwrap().get_u8().unwrap();
             Ok(())
         }
     }

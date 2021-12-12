@@ -1,7 +1,9 @@
 use super::{device_types::device_type_add_root_node, objects::*};
 use crate::{
     error::*,
-    interaction_model::{CommandReq, HandleInteraction},
+    interaction_model::{CmdPathIb, HandleInteraction, Transaction},
+    tlv::TLVElement,
+    tlv_writer::TLVWriter,
 };
 use log::info;
 use std::sync::RwLock;
@@ -24,18 +26,30 @@ impl DataModel {
 }
 
 impl HandleInteraction for DataModel {
-    fn handle_invoke_cmd(&self, cmd_req: &mut CommandReq) -> Result<(), Error> {
-        info!(
-            "Invoke Commmand Handler executing: {:?}",
-            cmd_req.cmd_path_ib
-        );
+    fn handle_invoke_cmd(
+        &self,
+        cmd_path_ib: &CmdPathIb,
+        data: TLVElement,
+        trans: &mut Transaction,
+        tlvwriter: &mut TLVWriter,
+    ) -> Result<(), Error> {
+        info!("Invoke Commmand Handler executing: {:?}", cmd_path_ib);
+
+        let mut cmd_req = CommandReq {
+            // TODO: Need to support wildcards
+            endpoint: cmd_path_ib.endpoint.unwrap_or(1),
+            cluster: cmd_path_ib.cluster.unwrap_or(0),
+            command: cmd_path_ib.command,
+            data,
+            trans,
+            resp: tlvwriter,
+        };
 
         {
             let mut node = self.node.write()?;
-            // For now, let's not support wildcard
-            node.get_endpoint(cmd_req.cmd_path_ib.endpoint.unwrap_or(1).into())?
-                .get_cluster(cmd_req.cmd_path_ib.cluster.unwrap_or(1).into())?
-                .handle_command(cmd_req)?;
+            node.get_endpoint(cmd_req.endpoint.into())?
+                .get_cluster(cmd_req.cluster.into())?
+                .handle_command(&mut cmd_req)?;
         }
 
         Ok(())
