@@ -1,5 +1,9 @@
 use super::objects::*;
-use crate::{error::*, interaction_model::command, tlv_common::TagType};
+use crate::{
+    error::*,
+    interaction_model::command::{self, COMMAND_DATA_STATUS_TAG},
+    tlv_common::TagType,
+};
 use log::info;
 
 const CLUSTER_ONOFF_ID: u32 = 0x0006;
@@ -23,11 +27,23 @@ fn handle_command_on_off(_cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Re
         _ => info!("Command not supported"),
     }
 
-    // TODO: This whole this is completely mismatched with the spec. But it is what the chip-tool
+    // TODO: This whole thing is completely mismatched with the spec. But it is what the chip-tool
     // expects, so...
-    command::put_cmd_status_ib_start(&mut cmd_req.resp)?;
-    command::put_cmd_path_ib(&mut cmd_req.resp, TagType::Context, 0, 0, 49, 2)?;
-    command::put_status_ib(&mut cmd_req.resp, TagType::Context, 2, 0)?;
+    command::put_cmd_status_ib_start(&mut cmd_req.resp, TagType::Anonymous, 0)?;
+    command::put_cmd_path_ib(
+        &mut cmd_req.resp,
+        TagType::Context,
+        command::COMMAND_DATA_PATH_TAG,
+        cmd_req.endpoint as u16,
+        cmd_req.cluster as u32,
+        cmd_req.command as u16,
+    )?;
+    command::put_status_ib(
+        &mut cmd_req.resp,
+        TagType::Context,
+        COMMAND_DATA_STATUS_TAG,
+        0,
+    )?;
     command::put_cmd_status_ib_end(&mut cmd_req.resp)?;
     // Always mark complete for now
     cmd_req.trans.complete();

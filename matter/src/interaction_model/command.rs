@@ -11,6 +11,10 @@ use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
 use log::error;
 
+pub const COMMAND_DATA_PATH_TAG: u64 = 0;
+pub const COMMAND_DATA_DATA_TAG: u64 = 1;
+pub const COMMAND_DATA_STATUS_TAG: u64 = 2;
+
 fn get_cmd_path_ib(cmd_path: &TLVElement) -> Result<CmdPathIb, Error> {
     Ok(CmdPathIb {
         endpoint: cmd_path.find_element(0).and_then(|x| x.get_u8()),
@@ -53,8 +57,12 @@ pub fn put_status_ib(
     tlvwriter.put_end_container()
 }
 
-pub fn put_cmd_status_ib_start(tlvwriter: &mut TLVWriter) -> Result<(), Error> {
-    tlvwriter.put_start_struct(TagType::Anonymous, 0)
+pub fn put_cmd_status_ib_start(
+    tlvwriter: &mut TLVWriter,
+    tag_type: TagType,
+    tag_val: u64,
+) -> Result<(), Error> {
+    tlvwriter.put_start_struct(tag_type, tag_val)
 }
 
 pub fn put_cmd_status_ib_end(tlvwriter: &mut TLVWriter) -> Result<(), Error> {
