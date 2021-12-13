@@ -22,8 +22,8 @@ pub struct CmdPathIb {
     pub command: u8,
 }
 
-pub trait HandleInteraction {
-    fn handle_invoke_cmd(
+pub trait InteractionConsumer {
+    fn consume_invoke_cmd(
         &self,
         cmd_path_ib: &CmdPathIb,
         data: TLVElement,
@@ -33,7 +33,7 @@ pub trait HandleInteraction {
 }
 
 pub struct InteractionModel {
-    handler: Arc<dyn HandleInteraction>,
+    consumer: Arc<dyn InteractionConsumer>,
 }
 pub mod command;
 pub mod demux;

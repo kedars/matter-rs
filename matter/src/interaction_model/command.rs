@@ -70,7 +70,7 @@ pub fn put_cmd_status_ib_end(tlvwriter: &mut TLVWriter) -> Result<(), Error> {
 }
 
 impl InteractionModel {
-    pub fn invoke_req_handler(
+    pub fn handle_invoke_req(
         &mut self,
         trans: &mut Transaction,
         proto_rx: &mut ProtoRx,
@@ -102,8 +102,8 @@ impl InteractionModel {
             )?;
             let data = cmd_data_ib.find_element(1).ok_or(Error::InvalidData)?;
 
-            self.handler
-                .handle_invoke_cmd(&cmd_path_ib, data, trans, &mut tlvwriter)
+            self.consumer
+                .consume_invoke_cmd(&cmd_path_ib, data, trans, &mut tlvwriter)
                 .map_err(|e| {
                     error!("Error in handling command: {:?}", e);
                     tlv::print_tlv_list(proto_rx.buf);

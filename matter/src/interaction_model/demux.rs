@@ -7,7 +7,7 @@ use num;
 use num_derive::FromPrimitive;
 use std::sync::Arc;
 
-use super::HandleInteraction;
+use super::InteractionConsumer;
 use super::InteractionModel;
 use super::Transaction;
 use super::TransactionState;
@@ -51,8 +51,8 @@ impl Transaction {
 }
 
 impl InteractionModel {
-    pub fn new(handler: Arc<dyn HandleInteraction>) -> InteractionModel {
-        InteractionModel { handler }
+    pub fn new(consumer: Arc<dyn InteractionConsumer>) -> InteractionModel {
+        InteractionModel { consumer }
     }
 }
 
@@ -68,7 +68,7 @@ impl proto_demux::HandleProto for InteractionModel {
         proto_tx.proto_id = PROTO_ID_INTERACTION_MODEL;
 
         let result = match proto_opcode {
-            OpCode::InvokeRequest => self.invoke_req_handler(&mut trans, proto_rx, proto_tx)?,
+            OpCode::InvokeRequest => self.handle_invoke_req(&mut trans, proto_rx, proto_tx)?,
             _ => {
                 error!("Opcode Not Handled: {:?}", proto_opcode);
                 return Err(Error::InvalidOpcode);
@@ -119,8 +119,8 @@ mod tests {
             }
         }
     }
-    impl HandleInteraction for DataModel {
-        fn handle_invoke_cmd(
+    impl InteractionConsumer for DataModel {
+        fn consume_invoke_cmd(
             &self,
             cmd_path_ib: &CmdPathIb,
             data: TLVElement,

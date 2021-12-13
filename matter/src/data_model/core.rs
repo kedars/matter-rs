@@ -1,7 +1,7 @@
 use super::{device_types::device_type_add_root_node, objects::*};
 use crate::{
     error::*,
-    interaction_model::{CmdPathIb, HandleInteraction, Transaction},
+    interaction_model::{CmdPathIb, InteractionConsumer, Transaction},
     tlv::TLVElement,
     tlv_writer::TLVWriter,
 };
@@ -25,8 +25,8 @@ impl DataModel {
     }
 }
 
-impl HandleInteraction for DataModel {
-    fn handle_invoke_cmd(
+impl InteractionConsumer for DataModel {
+    fn consume_invoke_cmd(
         &self,
         cmd_path_ib: &CmdPathIb,
         data: TLVElement,
