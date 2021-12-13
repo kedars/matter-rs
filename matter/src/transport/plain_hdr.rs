@@ -34,13 +34,13 @@ impl PlainHdr {
     // it will have an additional 'message length' field first
     pub fn decode(&mut self, msg: &mut ParseBuf) -> Result<(), Error> {
         self.flags = msg.le_u8()?;
+        self.sess_id = msg.le_u16()?;
         let sec_flags = msg.le_u8()?;
-        self.sess_type = if (sec_flags & SESSION_TYPE_MASK) == 1 {
+        self.sess_type = if self.sess_id != 0 {
             SessionType::Encrypted
         } else {
             SessionType::None
         };
-        self.sess_id = msg.le_u16()?;
         self.ctr = msg.le_u32()?;
 
         info!(
@@ -52,13 +52,9 @@ impl PlainHdr {
 
     pub fn encode(&mut self, resp_buf: &mut WriteBuf) -> Result<(), Error> {
         resp_buf.le_u8(self.flags)?;
-        // XXX Not sure why this is 0x11, instead of 0x01
-        resp_buf.le_u8(if self.sess_type == SessionType::Encrypted {
-            0x11
-        } else {
-            0x10
-        })?;
         resp_buf.le_u16(self.sess_id)?;
+        // XXX Not sure why this is 0x11, instead of 0x01
+        resp_buf.le_u8(0)?;
         resp_buf.le_u32(self.ctr)?;
         Ok(())
     }

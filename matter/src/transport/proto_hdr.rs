@@ -8,7 +8,7 @@ use crate::utils::writebuf::WriteBuf;
 use aes::Aes128;
 use ccm::aead::{generic_array::GenericArray, AeadInPlace, NewAead};
 use ccm::{
-    consts::{U12, U16},
+    consts::{U13, U16},
     Ccm,
 };
 use log::{info, trace};
@@ -143,14 +143,15 @@ impl fmt::Display for ProtoHdr {
 // Values as per the Matter spec
 const AAD_LEN: usize = 8;
 const TAG_LEN: usize = 16;
-const IV_LEN: usize = 12;
+const IV_LEN: usize = 13;
 
 fn get_iv(recvd_ctr: u32, iv: &mut [u8]) -> Result<(), Error> {
     // The IV is the source address (64-bit) followed by the message counter (32-bit)
     let mut write_buf = WriteBuf::new(iv, IV_LEN);
     // For some reason, this is 0 in the 'bypass' mode
-    write_buf.le_u64(0)?;
+    write_buf.le_u8(0)?;
     write_buf.le_u32(recvd_ctr)?;
+    write_buf.le_u64(0)?;
     Ok(())
 }
 
@@ -168,7 +169,7 @@ pub fn encrypt_in_place(
     // Cipher Text
     let cipher_text = writebuf.as_mut_slice();
 
-    type AesCcm = Ccm<Aes128, U16, U12>;
+    type AesCcm = Ccm<Aes128, U16, U13>;
     let cipher = AesCcm::new(GenericArray::from_slice(key));
     let tag = cipher.encrypt_in_place_detached(nonce, plain_hdr, cipher_text)?;
     //println!("Tag: {:x?}", tag);
@@ -210,7 +211,7 @@ fn decrypt_in_place(recvd_ctr: u32, parsebuf: &mut ParseBuf, key: &[u8]) -> Resu
     // println!("IV: {:x?}", iv);
 
     // Matter Spec says Nonce size is 13, but the code has 12
-    type AesCcm = Ccm<Aes128, U16, U12>;
+    type AesCcm = Ccm<Aes128, U16, U13>;
     let cipher = AesCcm::new(GenericArray::from_slice(key));
     cipher.decrypt_in_place_detached(nonce, &aad, cipher_text, tag)?;
 

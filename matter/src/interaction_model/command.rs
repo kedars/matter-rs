@@ -10,6 +10,7 @@ use crate::tlv::*;
 use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
 use log::error;
+use log::info;
 
 pub const COMMAND_DATA_PATH_TAG: u8 = 0;
 pub const COMMAND_DATA_DATA_TAG: u8 = 1;
@@ -91,6 +92,10 @@ pub fn put_cmd_status_status(cmd_req: &mut CommandReq, status: u8) -> Result<(),
     put_cmd_status_ib_end(&mut cmd_req.resp)
 }
 
+const _INVOKE_REQ_CTX_TAG_SUPPRESS_RESPONSE: u32 = 0;
+const _INVOKE_REQ_CTX_TAG_TIMED_REQ: u32 = 1;
+const INVOKE_REQ_CTX_TAG_INVOKE_REQUESTS: u32 = 2;
+
 impl InteractionModel {
     pub fn handle_invoke_req(
         &mut self,
@@ -98,13 +103,14 @@ impl InteractionModel {
         proto_rx: &mut ProtoRx,
         proto_tx: &mut ProtoTx,
     ) -> Result<ResponseRequired, Error> {
+        info!("In Invoke Req");
         proto_tx.proto_opcode = OpCode::InvokeResponse as u8;
 
         let mut tlvwriter = TLVWriter::new(&mut proto_tx.write_buf);
         let root = get_root_node_struct(proto_rx.buf).ok_or(Error::InvalidData)?;
         // Spec says tag should be 2, but CHIP Tool sends the tag as 0
         let mut cmd_list_iter = root
-            .find_element(0)
+            .find_element(INVOKE_REQ_CTX_TAG_INVOKE_REQUESTS)
             .ok_or(Error::InvalidData)?
             .confirm_array()
             .ok_or(Error::InvalidData)?

@@ -176,19 +176,24 @@ fn extract_pbkdfreq_params(buf: &[u8]) -> Result<(&[u8], u16, u16, bool), Error>
     let initiator_sessid = root
         .find_element(2)
         .ok_or(Error::Invalid)?
-        .get_u16()
+        .get_u8()
         .ok_or(Error::Invalid)?;
     let passcode_id = root
         .find_element(3)
         .ok_or(Error::Invalid)?
-        .get_u16()
+        .get_u8()
         .ok_or(Error::Invalid)?;
     let has_params = root
         .find_element(4)
         .ok_or(Error::Invalid)?
         .get_bool()
         .ok_or(Error::Invalid)?;
-    Ok((initiator_random, initiator_sessid, passcode_id, has_params))
+    Ok((
+        initiator_random,
+        initiator_sessid as u16,
+        passcode_id as u16,
+        has_params,
+    ))
 }
 
 const PBKDF_RANDOM_LEN: usize = 32;
