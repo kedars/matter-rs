@@ -2,13 +2,40 @@
 use crate::data_model::objects::*;
 use crate::error::*;
 use crate::interaction_model::command;
+use crate::pki::pki::{self, KeyPair};
 use crate::tlv_common::TagType;
+use crate::tlv_writer::TLVWriter;
+use crate::utils::writebuf::WriteBuf;
 use log::info;
+
+const MAX_CSR_LEN: usize = 300;
+// As defined in the Matter Spec
+const RESP_MAX: usize = 900;
 
 const CLUSTER_OPERATIONAL_CREDENTIALS_ID: u32 = 0x003E;
 
 const CMD_CSRREQUEST_ID: u16 = 0x04;
 const CMD_CSRRESPONSE_ID: u16 = 0x05;
+
+fn add_nocsrelement(
+    noc_keypair: &KeyPair,
+    csr_nonce: &[u8],
+    resp: &mut TLVWriter,
+) -> Result<(), Error> {
+    let mut csr: [u8; MAX_CSR_LEN] = [0; MAX_CSR_LEN];
+    let len = noc_keypair.get_csr(&mut csr)?;
+    let csr = &csr[0..len];
+    let mut buf: [u8; RESP_MAX] = [0; RESP_MAX];
+    let mut write_buf = WriteBuf::new(&mut buf, RESP_MAX);
+    let mut writer = TLVWriter::new(&mut write_buf);
+    writer.put_start_struct(TagType::Anonymous, 0)?;
+    writer.put_str8(TagType::Context, 1, csr)?;
+    writer.put_str8(TagType::Context, 2, csr_nonce)?;
+    writer.put_end_container()?;
+
+    resp.put_str8(TagType::Context, 0, write_buf.as_slice())?;
+    Ok(())
+}
 
 fn handle_command_csrrequest(
     _cluster: &mut Cluster,
@@ -24,6 +51,8 @@ fn handle_command_csrrequest(
         .ok_or(Error::InvalidData)?;
     info!("Received CSR Nonce:{:?}", csr_nonce);
 
+    let noc_keypair = pki::KeyPair::new()?;
+
     // TODO: This whole thing is completely mismatched with the spec. But it is what the chip-tool
     // expects, so...
     command::put_cmd_status_ib_start(&mut cmd_req.resp, TagType::Anonymous, 0)?;
@@ -38,9 +67,8 @@ fn handle_command_csrrequest(
     cmd_req
         .resp
         .put_start_struct(TagType::Context, command::COMMAND_DATA_DATA_TAG)?;
-    cmd_req
-        .resp
-        .put_str8(TagType::Context, 0, b"ThisistheNoCSRElementintheresponse")?;
+
+    add_nocsrelement(&noc_keypair, csr_nonce, cmd_req.resp)?;
     cmd_req
         .resp
         .put_str8(TagType::Context, 1, b"ThisistheAttestationSignature")?;
