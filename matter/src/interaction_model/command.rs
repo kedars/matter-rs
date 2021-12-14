@@ -1,4 +1,4 @@
-use super::demux::OpCode;
+use super::core::OpCode;
 use super::CmdPathIb;
 use super::InteractionModel;
 use super::Transaction;

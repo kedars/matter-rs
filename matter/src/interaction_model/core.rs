@@ -88,7 +88,7 @@ impl proto_demux::HandleProto for InteractionModel {
 
 #[cfg(test)]
 mod tests {
-    use crate::interaction_model::demux::*;
+    use crate::interaction_model::core::*;
     use crate::interaction_model::CmdPathIb;
     use crate::proto_demux::HandleProto;
     use crate::tlv::TLVElement;

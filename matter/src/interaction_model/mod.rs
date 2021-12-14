@@ -36,4 +36,4 @@ pub struct InteractionModel {
     consumer: Arc<dyn InteractionConsumer>,
 }
 pub mod command;
-pub mod demux;
+pub mod core;
