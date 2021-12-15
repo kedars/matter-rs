@@ -275,6 +275,13 @@ impl<'a> TLVElement<'a> {
         }
     }
 
+    pub fn get_u64(&self) -> Option<u64> {
+        match self.element_type {
+            ElementType::U64(a) => Some(a),
+            _ => None,
+        }
+    }
+
     pub fn get_slice(&self) -> Option<&'a [u8]> {
         match self.element_type {
             ElementType::Str8l(s) => Some(s),
