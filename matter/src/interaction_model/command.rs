@@ -15,6 +15,15 @@ pub const COMMAND_DATA_PATH_TAG: u64 = 0;
 pub const COMMAND_DATA_DATA_TAG: u64 = 1;
 pub const COMMAND_DATA_STATUS_TAG: u64 = 2;
 
+pub struct CommandReq<'a, 'b, 'c> {
+    pub endpoint: u8,
+    pub cluster: u8,
+    pub command: u8,
+    pub data: TLVElement<'a>,
+    pub resp: &'a mut TLVWriter<'b, 'c>,
+    pub trans: &'a mut Transaction,
+}
+
 fn get_cmd_path_ib(cmd_path: &TLVElement) -> Result<CmdPathIb, Error> {
     Ok(CmdPathIb {
         endpoint: cmd_path.find_element(0).and_then(|x| x.get_u8()),
@@ -67,6 +76,27 @@ pub fn put_cmd_status_ib_start(
 
 pub fn put_cmd_status_ib_end(tlvwriter: &mut TLVWriter) -> Result<(), Error> {
     tlvwriter.put_end_container()
+}
+
+pub fn put_cmd_status_status(cmd_req: &mut CommandReq, status: u8) -> Result<(), Error> {
+    // TODO: This whole thing is completely mismatched with the spec. But it is what the chip-tool
+    // expects, so...
+    put_cmd_status_ib_start(&mut cmd_req.resp, TagType::Anonymous, 0)?;
+    put_cmd_path_ib(
+        &mut cmd_req.resp,
+        TagType::Context,
+        COMMAND_DATA_PATH_TAG,
+        cmd_req.endpoint as u16,
+        cmd_req.cluster as u32,
+        cmd_req.command as u16,
+    )?;
+    put_status_ib(
+        &mut cmd_req.resp,
+        TagType::Context,
+        COMMAND_DATA_STATUS_TAG,
+        status,
+    )?;
+    put_cmd_status_ib_end(&mut cmd_req.resp)
 }
 
 impl InteractionModel {

@@ -1,4 +1,4 @@
-use crate::{error::*, interaction_model::Transaction, tlv::TLVElement, tlv_writer::TLVWriter};
+use crate::{error::*, interaction_model::command::CommandReq};
 use std::fmt;
 
 /* This file needs some major revamp.
@@ -66,15 +66,6 @@ impl Command {
     pub fn new(id: u16, cb: CommandCb) -> Result<Box<Command>, Error> {
         Ok(Box::new(Command { id, cb }))
     }
-}
-
-pub struct CommandReq<'a, 'b, 'c> {
-    pub endpoint: u8,
-    pub cluster: u8,
-    pub command: u8,
-    pub data: TLVElement<'a>,
-    pub resp: &'a mut TLVWriter<'b, 'c>,
-    pub trans: &'a mut Transaction,
 }
 
 #[derive(Default)]

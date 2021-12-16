@@ -1,7 +1,7 @@
 use super::{device_types::device_type_add_root_node, objects::*};
 use crate::{
     error::*,
-    interaction_model::{CmdPathIb, InteractionConsumer, Transaction},
+    interaction_model::{command::CommandReq, CmdPathIb, InteractionConsumer, Transaction},
     tlv::TLVElement,
     tlv_writer::TLVWriter,
 };

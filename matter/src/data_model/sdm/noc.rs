@@ -1,11 +1,11 @@
 // Node Operational Credentials Cluster
 use crate::data_model::objects::*;
-use crate::error::*;
-use crate::interaction_model::command;
+use crate::interaction_model::command::{self, CommandReq};
 use crate::pki::pki::{self, KeyPair};
 use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
 use crate::utils::writebuf::WriteBuf;
+use crate::{error::*, tlv};
 use log::info;
 
 // Some placeholder value for now
@@ -95,24 +95,7 @@ fn handle_command_addtrustedrootcert(
         .ok_or(Error::InvalidData)?;
     info!("Received Trusted Cert:{:?}", root_cert);
 
-    // TODO: This whole thing is completely mismatched with the spec. But it is what the chip-tool
-    // expects, so...
-    command::put_cmd_status_ib_start(&mut cmd_req.resp, TagType::Anonymous, 0)?;
-    command::put_cmd_path_ib(
-        &mut cmd_req.resp,
-        TagType::Context,
-        command::COMMAND_DATA_PATH_TAG,
-        cmd_req.endpoint as u16,
-        CLUSTER_OPERATIONAL_CREDENTIALS_ID,
-        cmd_req.command as u16,
-    )?;
-    command::put_status_ib(
-        &mut cmd_req.resp,
-        TagType::Context,
-        command::COMMAND_DATA_STATUS_TAG,
-        0,
-    )?;
-    command::put_cmd_status_ib_end(&mut cmd_req.resp)?;
+    command::put_cmd_status_status(cmd_req, 0)?;
     Ok(())
 }
 
@@ -160,9 +143,14 @@ fn get_addnoc_params<'a, 'b, 'c>(
 
 fn handle_command_addnoc(_cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Result<(), Error> {
     info!("Handling AddNOC");
-    let (_noc_value, _icac_value, _ipk_value, _case_admin_node_id, _vendor_id) =
+    let (noc_value, icac_value, _ipk_value, _case_admin_node_id, _vendor_id) =
         get_addnoc_params(cmd_req)?;
 
+    info!("Received NOC as:");
+    tlv::print_tlv_list(&noc_value);
+
+    info!("Received ICAC as:");
+    tlv::print_tlv_list(&icac_value);
     command::put_cmd_status_ib_start(&mut cmd_req.resp, TagType::Anonymous, 0)?;
     command::put_cmd_path_ib(
         &mut cmd_req.resp,

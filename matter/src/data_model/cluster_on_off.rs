@@ -1,8 +1,7 @@
 use super::objects::*;
 use crate::{
     error::*,
-    interaction_model::command::{self, COMMAND_DATA_STATUS_TAG},
-    tlv_common::TagType,
+    interaction_model::command::{self, CommandReq},
 };
 use log::info;
 
@@ -27,24 +26,7 @@ fn handle_command_on_off(_cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Re
         _ => info!("Command not supported"),
     }
 
-    // TODO: This whole thing is completely mismatched with the spec. But it is what the chip-tool
-    // expects, so...
-    command::put_cmd_status_ib_start(&mut cmd_req.resp, TagType::Anonymous, 0)?;
-    command::put_cmd_path_ib(
-        &mut cmd_req.resp,
-        TagType::Context,
-        command::COMMAND_DATA_PATH_TAG,
-        cmd_req.endpoint as u16,
-        cmd_req.cluster as u32,
-        cmd_req.command as u16,
-    )?;
-    command::put_status_ib(
-        &mut cmd_req.resp,
-        TagType::Context,
-        COMMAND_DATA_STATUS_TAG,
-        0,
-    )?;
-    command::put_cmd_status_ib_end(&mut cmd_req.resp)?;
+    command::put_cmd_status_status(cmd_req, 0)?;
     // Always mark complete for now
     cmd_req.trans.complete();
     Ok(())
