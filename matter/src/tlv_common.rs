@@ -1,23 +1,21 @@
-use num_derive::FromPrimitive;
-
 /* Tag Types */
-#[derive(FromPrimitive, Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum TagType {
-    Anonymous = 0,
-    Context = 1,
-    CommonPrf16 = 2,
-    CommonPrf32 = 3,
-    ImplPrf16 = 4,
-    ImplPrf32 = 5,
-    FullQual48 = 6,
-    FullQual64 = 7,
-    Last,
+    Anonymous,
+    Context(u8),
+    CommonPrf16(u16),
+    CommonPrf32(u32),
+    ImplPrf16(u16),
+    ImplPrf32(u32),
+    FullQual48(u64),
+    FullQual64(u64),
 }
 pub const TAG_SHIFT_BITS: u8 = 5;
 pub const TAG_MASK: u8 = 0xe0;
 pub const TYPE_MASK: u8 = 0x1f;
+pub const MAX_TAG_INDEX: usize = 8;
 
-pub static TAG_SIZE_MAP: [usize; TagType::Last as usize] = [
+pub static TAG_SIZE_MAP: [usize; MAX_TAG_INDEX] = [
     0, // Anonymous
     1, // Context
     2, // CommonPrf16

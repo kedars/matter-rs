@@ -52,12 +52,35 @@ pub enum ElementType<'a> {
     Last,
 }
 
+const MAX_VALUE_INDEX: usize = 25;
+
+// This is a function that takes a TLVListIterator and returns the tag type
+type ExtractTag = for<'a> fn(&TLVListIterator<'a>) -> TagType;
+static TAG_EXTRACTOR: [ExtractTag; 8] = [
+    // Anonymous 0
+    |_t| TagType::Anonymous,
+    // Context 1
+    |t| TagType::Context(t.buf[t.current]),
+    // CommonPrf16 2
+    |t| TagType::CommonPrf16(LittleEndian::read_u16(&t.buf[t.current..])),
+    // CommonPrf32 3
+    |t| TagType::CommonPrf32(LittleEndian::read_u32(&t.buf[t.current..])),
+    // ImplPrf16 4
+    |t| TagType::ImplPrf16(LittleEndian::read_u16(&t.buf[t.current..])),
+    // ImplPrf32 5
+    |t| TagType::ImplPrf32(LittleEndian::read_u32(&t.buf[t.current..])),
+    // FullQual48 6
+    |t| TagType::FullQual48(LittleEndian::read_u48(&t.buf[t.current..]) as u64),
+    // FullQual64 7
+    |t| TagType::FullQual64(LittleEndian::read_u64(&t.buf[t.current..])),
+];
+
 // This is a function that takes a TLVListIterator and returns the element type
 // Some elements (like strings), also consume additional size, than that mentioned
 // if this is the case, the additional size is returned
 type ExtractValue = for<'a> fn(&TLVListIterator<'a>) -> (usize, ElementType<'a>);
 
-static VALUE_EXTRACTOR: [ExtractValue; 25] = [
+static VALUE_EXTRACTOR: [ExtractValue; MAX_VALUE_INDEX] = [
     // S8   0
     { |t| (0, ElementType::S8(t.buf[t.current] as i8)) },
     // S16  1
@@ -201,7 +224,7 @@ static VALUE_EXTRACTOR: [ExtractValue; 25] = [
 ];
 
 // The array indices here correspond to the numeric value of the Element Type as defined in the Matter Spec
-static VALUE_SIZE_MAP: [usize; 25] = [
+static VALUE_SIZE_MAP: [usize; MAX_VALUE_INDEX] = [
     1, // S8   0
     2, // S16  1
     4, // S32  2
@@ -233,7 +256,6 @@ static VALUE_SIZE_MAP: [usize; 25] = [
 pub struct TLVElement<'a> {
     tag_type: TagType,
     element_type: ElementType<'a>,
-    tag: u32,
 }
 
 impl<'a> TLVElement<'a> {
@@ -320,10 +342,11 @@ impl<'a> TLVElement<'a> {
 
     pub fn find_element(&self, tag: u32) -> Option<TLVElement<'a>> {
         let mut iter = self.into_iter()?;
+        let match_tag: TagType = TagType::Context(tag as u8);
         loop {
             match iter.next() {
                 Some(a) => {
-                    if a.tag_type != TagType::Anonymous && a.tag == tag {
+                    if match_tag == a.tag_type {
                         return Some(a);
                     }
                 }
@@ -337,7 +360,8 @@ impl<'a> fmt::Display for TLVElement<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.tag_type {
             TagType::Anonymous => (),
-            _ => write!(f, "{}:", self.tag)?,
+            TagType::Context(tag) => write!(f, "{}:", tag)?,
+            _ => write!(f, "Other Context Tag")?,
         }
         match self.element_type {
             ElementType::Struct(_) => write!(f, "{{"),
@@ -373,31 +397,23 @@ impl<'a> TLVListIterator<'a> {
     }
 
     // Caller should ensure they are reading the _right_ tag at the _right_ place
-    fn read_this_tag(&mut self, tag_type: TagType) -> Option<u32> {
+    fn read_this_tag(&mut self, tag_type: u8) -> Option<TagType> {
+        if tag_type as usize >= MAX_TAG_INDEX {
+            return None;
+        }
         let tag_size = TAG_SIZE_MAP[tag_type as usize];
         if tag_size > self.left {
             return None;
         }
-        let tag: u32 = match tag_type {
-            TagType::Anonymous => 0_u32,
-            TagType::Context => self.buf[self.current] as u32,
-            TagType::CommonPrf16 | TagType::ImplPrf16 => {
-                LittleEndian::read_u16(&self.buf[self.current..]) as u32
-            }
-            TagType::CommonPrf32 | TagType::ImplPrf32 => {
-                LittleEndian::read_u32(&self.buf[self.current..])
-            }
-            TagType::FullQual48 => LittleEndian::read_u48(&self.buf[self.current..]) as u32,
-            TagType::FullQual64 => LittleEndian::read_u64(&self.buf[self.current..]) as u32,
-            _ => {
-                return None;
-            }
-        };
+        let tag = (TAG_EXTRACTOR[tag_type as usize])(self);
         self.advance(tag_size);
         Some(tag)
     }
 
     fn read_this_value(&mut self, element_type: u8) -> Option<ElementType<'a>> {
+        if element_type as usize >= MAX_VALUE_INDEX {
+            return None;
+        }
         let mut size = VALUE_SIZE_MAP[element_type as usize];
         if size > self.left {
             error!("Invalid value found: {}", element_type);
@@ -424,12 +440,11 @@ impl<'a> TLVListIterator<'a> {
         /* Read Control */
         let control = self.buf[self.current];
         let tag_type = (control & TAG_MASK) >> TAG_SHIFT_BITS;
-        let tag_type: TagType = num::FromPrimitive::from_u8(tag_type)?;
         let element_type = control & TYPE_MASK;
         self.advance(1);
 
         /* Consume Tag */
-        let tag = self.read_this_tag(tag_type)?;
+        let tag_type = self.read_this_tag(tag_type)?;
 
         /* Consume Value */
         let element_type = self.read_this_value(element_type)?;
@@ -437,7 +452,6 @@ impl<'a> TLVListIterator<'a> {
         Some(TLVElement {
             tag_type,
             element_type,
-            tag,
         })
     }
 }
@@ -569,6 +583,17 @@ mod tests {
     }
 
     #[test]
+    fn test_invalid_value_type() {
+        // The 0x24 is a a tagged integer, here we leave out the integer value
+        let b = [0x15, 0x1f, 0x0];
+        let tlvlist = TLVList::new(&b, b.len());
+        let mut tlv_iter = tlvlist.into_iter();
+        // Skip the 0x15
+        tlv_iter.next();
+        assert_eq!(tlv_iter.next(), None);
+    }
+
+    #[test]
     fn test_short_length_value_immediate() {
         // The 0x24 is a a tagged integer, here we leave out the integer value
         let b = [0x15, 0x24, 0x0];
@@ -601,13 +626,12 @@ mod tests {
         assert_eq!(
             tlv_iter.next(),
             Some(TLVElement {
-                tag_type: TagType::Context,
+                tag_type: TagType::Context(0),
                 element_type: ElementType::Array(Pointer {
                     buf: &[21, 54, 0],
                     current: 3,
                     left: 0
                 }),
-                tag: 0
             })
         );
     }
@@ -623,9 +647,8 @@ mod tests {
         assert_eq!(
             tlv_iter.next(),
             Some(TLVElement {
-                tag_type: TagType::Context,
+                tag_type: TagType::Context(1),
                 element_type: ElementType::U8(2),
-                tag: 1
             })
         );
     }
@@ -641,9 +664,8 @@ mod tests {
         assert_eq!(
             tlv_iter.next(),
             Some(TLVElement {
-                tag_type: TagType::Context,
+                tag_type: TagType::Context(5),
                 element_type: ElementType::Str8l(&[0x73, 0x6d, 0x61, 0x72]),
-                tag: 5
             })
         );
     }
@@ -670,25 +692,22 @@ mod tests {
         assert_eq!(
             root_iter.next(),
             Some(TLVElement {
-                tag_type: TagType::Context,
+                tag_type: TagType::Context(0),
                 element_type: ElementType::U8(2),
-                tag: 0
             })
         );
         assert_eq!(
             root_iter.next(),
             Some(TLVElement {
-                tag_type: TagType::Context,
+                tag_type: TagType::Context(2),
                 element_type: ElementType::U32(135246),
-                tag: 2
             })
         );
         assert_eq!(
             root_iter.next(),
             Some(TLVElement {
-                tag_type: TagType::Context,
+                tag_type: TagType::Context(3),
                 element_type: ElementType::Str8l(&[0x73, 0x6d, 0x61, 0x72]),
-                tag: 3
             })
         );
     }
@@ -705,25 +724,22 @@ mod tests {
         assert_eq!(
             root.find_element(0),
             Some(TLVElement {
-                tag_type: TagType::Context,
+                tag_type: TagType::Context(0),
                 element_type: ElementType::U8(2),
-                tag: 0
             })
         );
         assert_eq!(
             root.find_element(2),
             Some(TLVElement {
-                tag_type: TagType::Context,
+                tag_type: TagType::Context(2),
                 element_type: ElementType::U32(135246),
-                tag: 2
             })
         );
         assert_eq!(
             root.find_element(3),
             Some(TLVElement {
-                tag_type: TagType::Context,
+                tag_type: TagType::Context(3),
                 element_type: ElementType::Str8l(&[0x73, 0x6d, 0x61, 0x72]),
-                tag: 3
             })
         );
     }
@@ -739,25 +755,22 @@ mod tests {
         assert_eq!(
             root_iter.next(),
             Some(TLVElement {
-                tag_type: TagType::Context,
+                tag_type: TagType::Context(0),
                 element_type: ElementType::U8(2),
-                tag: 0
             })
         );
         assert_eq!(
             root_iter.next(),
             Some(TLVElement {
-                tag_type: TagType::Context,
+                tag_type: TagType::Context(2),
                 element_type: ElementType::U32(135246),
-                tag: 2
             })
         );
         assert_eq!(
             root_iter.next(),
             Some(TLVElement {
-                tag_type: TagType::Context,
+                tag_type: TagType::Context(3),
                 element_type: ElementType::Str8l(&[0x73, 0x6d, 0x61, 0x72]),
-                tag: 3
             })
         );
     }
@@ -788,25 +801,22 @@ mod tests {
         assert_eq!(
             cmd_path.find_element(0),
             Some(TLVElement {
-                tag_type: TagType::Context,
+                tag_type: TagType::Context(0),
                 element_type: ElementType::U8(2),
-                tag: 0
             })
         );
         assert_eq!(
             cmd_path.find_element(2),
             Some(TLVElement {
-                tag_type: TagType::Context,
+                tag_type: TagType::Context(2),
                 element_type: ElementType::U8(6),
-                tag: 2
             })
         );
         assert_eq!(
             cmd_path.find_element(3),
             Some(TLVElement {
-                tag_type: TagType::Context,
+                tag_type: TagType::Context(3),
                 element_type: ElementType::U8(1),
-                tag: 3
             })
         );
         assert_eq!(cmd_path.find_element(1), None);
@@ -836,9 +846,8 @@ mod tests {
         assert_eq!(
             sub_root_iter.next(),
             Some(TLVElement {
-                tag_type: TagType::Context,
+                tag_type: TagType::Context(1),
                 element_type: ElementType::U8(2),
-                tag: 1
             })
         );
         assert_eq!(sub_root_iter.next(), None);
@@ -863,14 +872,14 @@ mod tests {
         // These are the decoded elements that we expect from this input
         let verify_matrix: [(TagType, ElementType); 13] = [
             (TagType::Anonymous, ElementType::Struct(dummy_pointer)),
-            (TagType::Context, ElementType::Array(dummy_pointer)),
+            (TagType::Context(0), ElementType::Array(dummy_pointer)),
             (TagType::Anonymous, ElementType::Struct(dummy_pointer)),
-            (TagType::Context, ElementType::List(dummy_pointer)),
-            (TagType::Context, ElementType::U8(2)),
-            (TagType::Context, ElementType::U8(6)),
-            (TagType::Context, ElementType::U8(1)),
+            (TagType::Context(0), ElementType::List(dummy_pointer)),
+            (TagType::Context(0), ElementType::U8(2)),
+            (TagType::Context(2), ElementType::U8(6)),
+            (TagType::Context(3), ElementType::U8(1)),
             (TagType::Anonymous, ElementType::EndCnt),
-            (TagType::Context, ElementType::Struct(dummy_pointer)),
+            (TagType::Context(1), ElementType::Struct(dummy_pointer)),
             (TagType::Anonymous, ElementType::EndCnt),
             (TagType::Anonymous, ElementType::EndCnt),
             (TagType::Anonymous, ElementType::EndCnt),

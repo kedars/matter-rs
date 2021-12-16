@@ -11,9 +11,9 @@ use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
 use log::error;
 
-pub const COMMAND_DATA_PATH_TAG: u64 = 0;
-pub const COMMAND_DATA_DATA_TAG: u64 = 1;
-pub const COMMAND_DATA_STATUS_TAG: u64 = 2;
+pub const COMMAND_DATA_PATH_TAG: u8 = 0;
+pub const COMMAND_DATA_DATA_TAG: u8 = 1;
+pub const COMMAND_DATA_STATUS_TAG: u8 = 2;
 
 pub struct CommandReq<'a, 'b, 'c> {
     pub endpoint: u8,
@@ -38,40 +38,34 @@ fn get_cmd_path_ib(cmd_path: &TLVElement) -> Result<CmdPathIb, Error> {
 pub fn put_cmd_path_ib(
     tlvwriter: &mut TLVWriter,
     tag_type: TagType,
-    tag_val: u64,
     endpoint: u16,
     cluster: u32,
     command: u16,
 ) -> Result<(), Error> {
-    tlvwriter.put_start_list(tag_type, tag_val)?;
+    tlvwriter.put_start_list(tag_type)?;
     // Spec says U16, U32, U16, but chip-tool expects u8
-    tlvwriter.put_u8(TagType::Context, 0, endpoint as u8)?;
-    tlvwriter.put_u8(TagType::Context, 2, cluster as u8)?;
-    tlvwriter.put_u8(TagType::Context, 3, command as u8)?;
+    tlvwriter.put_u8(TagType::Context(0), endpoint as u8)?;
+    tlvwriter.put_u8(TagType::Context(2), cluster as u8)?;
+    tlvwriter.put_u8(TagType::Context(3), command as u8)?;
     tlvwriter.put_end_container()
 }
 
 pub fn put_status_ib(
     tlvwriter: &mut TLVWriter,
     tag_type: TagType,
-    tag_val: u64,
     general_code: u8,
 ) -> Result<(), Error> {
-    tlvwriter.put_start_array(tag_type, tag_val)?;
+    tlvwriter.put_start_array(tag_type)?;
     // Spec says U16, U32, U16, but chip-tool expects u8
-    tlvwriter.put_u8(TagType::Anonymous, 0, general_code)?;
+    tlvwriter.put_u8(TagType::Anonymous, general_code)?;
     // TODO: This seems to be a leftover in the chip-tool, the status IB has different elements actually
-    tlvwriter.put_u8(TagType::Anonymous, 0, 1)?;
-    tlvwriter.put_u8(TagType::Anonymous, 0, 0)?;
+    tlvwriter.put_u8(TagType::Anonymous, 1)?;
+    tlvwriter.put_u8(TagType::Anonymous, 0)?;
     tlvwriter.put_end_container()
 }
 
-pub fn put_cmd_status_ib_start(
-    tlvwriter: &mut TLVWriter,
-    tag_type: TagType,
-    tag_val: u64,
-) -> Result<(), Error> {
-    tlvwriter.put_start_struct(tag_type, tag_val)
+pub fn put_cmd_status_ib_start(tlvwriter: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
+    tlvwriter.put_start_struct(tag_type)
 }
 
 pub fn put_cmd_status_ib_end(tlvwriter: &mut TLVWriter) -> Result<(), Error> {
@@ -81,19 +75,17 @@ pub fn put_cmd_status_ib_end(tlvwriter: &mut TLVWriter) -> Result<(), Error> {
 pub fn put_cmd_status_status(cmd_req: &mut CommandReq, status: u8) -> Result<(), Error> {
     // TODO: This whole thing is completely mismatched with the spec. But it is what the chip-tool
     // expects, so...
-    put_cmd_status_ib_start(&mut cmd_req.resp, TagType::Anonymous, 0)?;
+    put_cmd_status_ib_start(&mut cmd_req.resp, TagType::Anonymous)?;
     put_cmd_path_ib(
         &mut cmd_req.resp,
-        TagType::Context,
-        COMMAND_DATA_PATH_TAG,
+        TagType::Context(COMMAND_DATA_PATH_TAG),
         cmd_req.endpoint as u16,
         cmd_req.cluster as u32,
         cmd_req.command as u16,
     )?;
     put_status_ib(
         &mut cmd_req.resp,
-        TagType::Context,
-        COMMAND_DATA_STATUS_TAG,
+        TagType::Context(COMMAND_DATA_STATUS_TAG),
         status,
     )?;
     put_cmd_status_ib_end(&mut cmd_req.resp)
@@ -119,8 +111,8 @@ impl InteractionModel {
             .into_iter()
             .ok_or(Error::InvalidData)?;
 
-        tlvwriter.put_start_struct(TagType::Anonymous, 0)?;
-        tlvwriter.put_start_array(TagType::Context, 0)?;
+        tlvwriter.put_start_struct(TagType::Anonymous)?;
+        tlvwriter.put_start_array(TagType::Context(0))?;
         while let Some(cmd_data_ib) = cmd_list_iter.next() {
             // CommandDataIB has CommandPath(0) + Data(1)
             let cmd_path_ib = get_cmd_path_ib(

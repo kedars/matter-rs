@@ -32,12 +32,12 @@ fn add_nocsrelement(
     let mut buf: [u8; RESP_MAX] = [0; RESP_MAX];
     let mut write_buf = WriteBuf::new(&mut buf, RESP_MAX);
     let mut writer = TLVWriter::new(&mut write_buf);
-    writer.put_start_struct(TagType::Anonymous, 0)?;
-    writer.put_str8(TagType::Context, 1, csr)?;
-    writer.put_str8(TagType::Context, 2, csr_nonce)?;
+    writer.put_start_struct(TagType::Anonymous)?;
+    writer.put_str8(TagType::Context(1), csr)?;
+    writer.put_str8(TagType::Context(2), csr_nonce)?;
     writer.put_end_container()?;
 
-    resp.put_str8(TagType::Context, 0, write_buf.as_slice())?;
+    resp.put_str8(TagType::Context(0), write_buf.as_slice())?;
     Ok(())
 }
 
@@ -59,23 +59,22 @@ fn handle_command_csrrequest(
 
     // TODO: This whole thing is completely mismatched with the spec. But it is what the chip-tool
     // expects, so...
-    command::put_cmd_status_ib_start(&mut cmd_req.resp, TagType::Anonymous, 0)?;
+    command::put_cmd_status_ib_start(&mut cmd_req.resp, TagType::Anonymous)?;
     command::put_cmd_path_ib(
         &mut cmd_req.resp,
-        TagType::Context,
-        command::COMMAND_DATA_PATH_TAG,
+        TagType::Context(command::COMMAND_DATA_PATH_TAG),
         0,
         CLUSTER_OPERATIONAL_CREDENTIALS_ID,
         CMD_CSRRESPONSE_ID,
     )?;
     cmd_req
         .resp
-        .put_start_struct(TagType::Context, command::COMMAND_DATA_DATA_TAG)?;
+        .put_start_struct(TagType::Context(command::COMMAND_DATA_DATA_TAG))?;
 
     add_nocsrelement(&noc_keypair, csr_nonce, cmd_req.resp)?;
     cmd_req
         .resp
-        .put_str8(TagType::Context, 1, b"ThisistheAttestationSignature")?;
+        .put_str8(TagType::Context(1), b"ThisistheAttestationSignature")?;
     cmd_req.resp.put_end_container()?;
     command::put_cmd_status_ib_end(&mut cmd_req.resp)?;
     Ok(())
@@ -151,25 +150,24 @@ fn handle_command_addnoc(_cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Re
 
     info!("Received ICAC as:");
     tlv::print_tlv_list(&icac_value);
-    command::put_cmd_status_ib_start(&mut cmd_req.resp, TagType::Anonymous, 0)?;
+    command::put_cmd_status_ib_start(&mut cmd_req.resp, TagType::Anonymous)?;
     command::put_cmd_path_ib(
         &mut cmd_req.resp,
-        TagType::Context,
-        command::COMMAND_DATA_PATH_TAG,
+        TagType::Context(command::COMMAND_DATA_PATH_TAG),
         0,
         CLUSTER_OPERATIONAL_CREDENTIALS_ID,
         CMD_NOCRESPONSE_ID,
     )?;
     cmd_req
         .resp
-        .put_start_struct(TagType::Context, command::COMMAND_DATA_DATA_TAG)?;
+        .put_start_struct(TagType::Context(command::COMMAND_DATA_DATA_TAG))?;
 
     // Status
-    cmd_req.resp.put_u8(TagType::Context, 0, 0)?;
+    cmd_req.resp.put_u8(TagType::Context(0), 0)?;
     // Fabric Index  - hard-coded for now
-    cmd_req.resp.put_u8(TagType::Context, 1, 0)?;
+    cmd_req.resp.put_u8(TagType::Context(1), 0)?;
     // Debug string
-    cmd_req.resp.put_str8(TagType::Context, 2, b"")?;
+    cmd_req.resp.put_str8(TagType::Context(2), b"")?;
     cmd_req.resp.put_end_container()?;
     command::put_cmd_status_ib_end(&mut cmd_req.resp)?;
 

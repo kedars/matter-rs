@@ -50,68 +50,72 @@ impl<'a, 'b> TLVWriter<'a, 'b> {
     fn put_control_tag(
         &mut self,
         tag_type: TagType,
-        tag_val: u64,
         val_type: WriteElementType,
     ) -> Result<(), Error> {
+        let (tag_id, tag_val) = match tag_type {
+            TagType::Anonymous => (0 as u8, 0),
+            TagType::Context(v) => (1, v as u64),
+            TagType::CommonPrf16(v) => (2, v as u64),
+            TagType::CommonPrf32(v) => (3, v as u64),
+            TagType::ImplPrf16(v) => (4, v as u64),
+            TagType::ImplPrf32(v) => (5, v as u64),
+            TagType::FullQual48(v) => (6, v as u64),
+            TagType::FullQual64(v) => (7, v as u64),
+        };
         self.buf
-            .le_u8(((tag_type as u8) << TAG_SHIFT_BITS) | (val_type as u8))?;
+            .le_u8(((tag_id) << TAG_SHIFT_BITS) | (val_type as u8))?;
         if tag_type != TagType::Anonymous {
-            self.buf.le_uint(TAG_SIZE_MAP[tag_type as usize], tag_val)?;
+            self.buf.le_uint(TAG_SIZE_MAP[tag_id as usize], tag_val)?;
         }
         Ok(())
     }
 
-    pub fn put_u8(&mut self, tag_type: TagType, tag_val: u64, data: u8) -> Result<(), Error> {
-        self.put_control_tag(tag_type, tag_val, WriteElementType::U8)?;
+    pub fn put_u8(&mut self, tag_type: TagType, data: u8) -> Result<(), Error> {
+        self.put_control_tag(tag_type, WriteElementType::U8)?;
         self.buf.le_u8(data)
     }
 
-    pub fn put_u16(&mut self, tag_type: TagType, tag_val: u64, data: u16) -> Result<(), Error> {
-        self.put_control_tag(tag_type, tag_val, WriteElementType::U16)?;
+    pub fn put_u16(&mut self, tag_type: TagType, data: u16) -> Result<(), Error> {
+        self.put_control_tag(tag_type, WriteElementType::U16)?;
         self.buf.le_u16(data)
     }
 
-    pub fn put_u32(&mut self, tag_type: TagType, tag_val: u64, data: u32) -> Result<(), Error> {
-        self.put_control_tag(tag_type, tag_val, WriteElementType::U32)?;
+    pub fn put_u32(&mut self, tag_type: TagType, data: u32) -> Result<(), Error> {
+        self.put_control_tag(tag_type, WriteElementType::U32)?;
         self.buf.le_u32(data)
     }
 
-    pub fn put_str8(&mut self, tag_type: TagType, tag_val: u64, data: &[u8]) -> Result<(), Error> {
-        self.put_control_tag(tag_type, tag_val, WriteElementType::Str8l)?;
+    pub fn put_str8(&mut self, tag_type: TagType, data: &[u8]) -> Result<(), Error> {
+        self.put_control_tag(tag_type, WriteElementType::Str8l)?;
         self.buf.le_u8(data.len() as u8)?;
         self.buf.copy_from_slice(data)
     }
 
-    fn put_no_val(
-        &mut self,
-        tag_type: TagType,
-        tag_val: u64,
-        element: WriteElementType,
-    ) -> Result<(), Error> {
-        self.put_control_tag(tag_type, tag_val, element)
+    fn put_no_val(&mut self, tag_type: TagType, element: WriteElementType) -> Result<(), Error> {
+        self.put_control_tag(tag_type, element)
     }
 
-    pub fn put_start_struct(&mut self, tag_type: TagType, tag_val: u64) -> Result<(), Error> {
-        self.put_no_val(tag_type, tag_val, WriteElementType::Struct)
+    pub fn put_start_struct(&mut self, tag_type: TagType) -> Result<(), Error> {
+        self.put_no_val(tag_type, WriteElementType::Struct)
     }
 
-    pub fn put_start_array(&mut self, tag_type: TagType, tag_val: u64) -> Result<(), Error> {
-        self.put_no_val(tag_type, tag_val, WriteElementType::Array)
+    pub fn put_start_array(&mut self, tag_type: TagType) -> Result<(), Error> {
+        self.put_no_val(tag_type, WriteElementType::Array)
     }
 
-    pub fn put_start_list(&mut self, tag_type: TagType, tag_val: u64) -> Result<(), Error> {
-        self.put_no_val(tag_type, tag_val, WriteElementType::List)
+    pub fn put_start_list(&mut self, tag_type: TagType) -> Result<(), Error> {
+        self.put_no_val(tag_type, WriteElementType::List)
     }
 
     pub fn put_end_container(&mut self) -> Result<(), Error> {
-        self.put_no_val(TagType::Anonymous, 0, WriteElementType::EndCnt)
+        self.put_no_val(TagType::Anonymous, WriteElementType::EndCnt)
     }
 
-    pub fn put_bool(&mut self, tag_type: TagType, tag_val: u64, val: bool) -> Result<(), Error> {
+    pub fn put_bool(&mut self, tag_type: TagType, val: bool) -> Result<(), Error> {
         if val {
-            self.put_no_val(tag_type, tag_val, WriteElementType::True)
+            self.put_no_val(tag_type, WriteElementType::True)
         } else {
-            self.put_no_val(tag_type, tag_val, WriteElementType::False)
+            self.put_no_val(tag_type, WriteElementType::False)
         }
     }
 }
@@ -129,13 +133,13 @@ mod tests {
         let mut writebuf = WriteBuf::new(&mut buf, buf_len);
         let mut tlvwriter = TLVWriter::new(&mut writebuf);
 
-        tlvwriter.put_start_struct(TagType::Anonymous, 12).unwrap();
-        tlvwriter.put_u8(TagType::Anonymous, 0, 12).unwrap();
-        tlvwriter.put_u8(TagType::Context, 1, 13).unwrap();
-        tlvwriter.put_u16(TagType::Anonymous, 0, 12).unwrap();
-        tlvwriter.put_u16(TagType::Context, 2, 13).unwrap();
-        tlvwriter.put_start_array(TagType::Context, 3).unwrap();
-        tlvwriter.put_bool(TagType::Anonymous, 0, true).unwrap();
+        tlvwriter.put_start_struct(TagType::Anonymous).unwrap();
+        tlvwriter.put_u8(TagType::Anonymous, 12).unwrap();
+        tlvwriter.put_u8(TagType::Context(1), 13).unwrap();
+        tlvwriter.put_u16(TagType::Anonymous, 12).unwrap();
+        tlvwriter.put_u16(TagType::Context(2), 13).unwrap();
+        tlvwriter.put_start_array(TagType::Context(3)).unwrap();
+        tlvwriter.put_bool(TagType::Anonymous, true).unwrap();
         tlvwriter.put_end_container().unwrap();
         tlvwriter.put_end_container().unwrap();
         assert_eq!(
@@ -151,13 +155,13 @@ mod tests {
         let mut writebuf = WriteBuf::new(&mut buf, buf_len);
         let mut tlvwriter = TLVWriter::new(&mut writebuf);
 
-        tlvwriter.put_u8(TagType::Anonymous, 0, 12).unwrap();
-        tlvwriter.put_u8(TagType::Context, 1, 13).unwrap();
-        match tlvwriter.put_u16(TagType::Anonymous, 0, 12) {
+        tlvwriter.put_u8(TagType::Anonymous, 12).unwrap();
+        tlvwriter.put_u8(TagType::Context(1), 13).unwrap();
+        match tlvwriter.put_u16(TagType::Anonymous, 12) {
             Ok(_) => panic!("This should have returned error"),
             _ => (),
         }
-        match tlvwriter.put_u16(TagType::Context, 2, 13) {
+        match tlvwriter.put_u16(TagType::Context(2), 13) {
             Ok(_) => panic!("This should have returned error"),
             _ => (),
         }
@@ -171,13 +175,13 @@ mod tests {
         let mut writebuf = WriteBuf::new(&mut buf, buf_len);
         let mut tlvwriter = TLVWriter::new(&mut writebuf);
 
-        tlvwriter.put_u8(TagType::Context, 1, 13).unwrap();
+        tlvwriter.put_u8(TagType::Context(1), 13).unwrap();
         tlvwriter
-            .put_str8(TagType::Anonymous, 0, &[10, 11, 12, 13, 14])
+            .put_str8(TagType::Anonymous, &[10, 11, 12, 13, 14])
             .unwrap();
-        tlvwriter.put_u16(TagType::Context, 2, 13).unwrap();
+        tlvwriter.put_u16(TagType::Context(2), 13).unwrap();
         tlvwriter
-            .put_str8(TagType::Context, 3, &[20, 21, 22])
+            .put_str8(TagType::Context(3), &[20, 21, 22])
             .unwrap();
         assert_eq!(
             buf,
