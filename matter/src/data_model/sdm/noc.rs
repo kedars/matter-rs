@@ -57,9 +57,11 @@ fn handle_command_csrrequest(
 
     let noc_keypair = pki::KeyPair::new()?;
 
-    // TODO: This whole thing is completely mismatched with the spec. But it is what the chip-tool
-    // expects, so...
-    command::put_cmd_status_ib_start(&mut cmd_req.resp, TagType::Anonymous)?;
+    command::put_invoke_response_ib_start(
+        &mut cmd_req.resp,
+        TagType::Anonymous,
+        command::InvokeResponseType::Command,
+    )?;
     command::put_cmd_path_ib(
         &mut cmd_req.resp,
         TagType::Context(command::COMMAND_DATA_PATH_TAG),
@@ -76,7 +78,7 @@ fn handle_command_csrrequest(
         .resp
         .put_str8(TagType::Context(1), b"ThisistheAttestationSignature")?;
     cmd_req.resp.put_end_container()?;
-    command::put_cmd_status_ib_end(&mut cmd_req.resp)?;
+    command::put_invoke_response_ib_end(&mut cmd_req.resp)?;
     Ok(())
 }
 
@@ -94,7 +96,7 @@ fn handle_command_addtrustedrootcert(
         .ok_or(Error::InvalidData)?;
     info!("Received Trusted Cert:{:?}", root_cert);
 
-    command::put_cmd_status_status(cmd_req, 0)?;
+    command::put_invoke_response_ib_with_status(cmd_req, 0, 0)?;
     Ok(())
 }
 
@@ -157,7 +159,11 @@ fn handle_command_addnoc(_cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Re
         e
     });
 
-    command::put_cmd_status_ib_start(&mut cmd_req.resp, TagType::Anonymous)?;
+    command::put_invoke_response_ib_start(
+        &mut cmd_req.resp,
+        TagType::Anonymous,
+        command::InvokeResponseType::Command,
+    )?;
     command::put_cmd_path_ib(
         &mut cmd_req.resp,
         TagType::Context(command::COMMAND_DATA_PATH_TAG),
@@ -176,7 +182,7 @@ fn handle_command_addnoc(_cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Re
     // Debug string
     cmd_req.resp.put_str8(TagType::Context(2), b"")?;
     cmd_req.resp.put_end_container()?;
-    command::put_cmd_status_ib_end(&mut cmd_req.resp)?;
+    command::put_invoke_response_ib_end(&mut cmd_req.resp)?;
 
     Ok(())
 }

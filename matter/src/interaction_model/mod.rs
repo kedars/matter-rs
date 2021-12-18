@@ -16,10 +16,9 @@ pub struct Transaction {
 
 #[derive(Debug)]
 pub struct CmdPathIb {
-    /* As per the spec these should be U16, U32, and U16 respectively */
-    pub endpoint: Option<u8>,
-    pub cluster: Option<u8>,
-    pub command: u8,
+    pub endpoint: Option<u16>,
+    pub cluster: Option<u32>,
+    pub command: u16,
 }
 
 pub trait InteractionConsumer {

@@ -102,9 +102,9 @@ mod tests {
     use std::sync::Mutex;
 
     struct Node {
-        pub endpoint: u8,
-        pub cluster: u8,
-        pub command: u8,
+        pub endpoint: u16,
+        pub cluster: u32,
+        pub command: u16,
         pub variable: u8,
     }
 

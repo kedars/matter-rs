@@ -16,10 +16,16 @@ pub const COMMAND_DATA_PATH_TAG: u8 = 0;
 pub const COMMAND_DATA_DATA_TAG: u8 = 1;
 pub const COMMAND_DATA_STATUS_TAG: u8 = 2;
 
+#[derive(Debug, PartialEq)]
+pub enum InvokeResponseType {
+    Command,
+    Status,
+}
+
 pub struct CommandReq<'a, 'b, 'c> {
-    pub endpoint: u8,
-    pub cluster: u8,
-    pub command: u8,
+    pub endpoint: u16,
+    pub cluster: u32,
+    pub command: u16,
     pub data: TLVElement<'a>,
     pub resp: &'a mut TLVWriter<'b, 'c>,
     pub trans: &'a mut Transaction,
@@ -27,12 +33,18 @@ pub struct CommandReq<'a, 'b, 'c> {
 
 fn get_cmd_path_ib(cmd_path: &TLVElement) -> Result<CmdPathIb, Error> {
     Ok(CmdPathIb {
-        endpoint: cmd_path.find_element(0).and_then(|x| x.get_u8()),
-        cluster: cmd_path.find_element(2).and_then(|x| x.get_u8()),
-        command: cmd_path
-            .find_element(3)
+        endpoint: cmd_path
+            .find_element(0)
             .and_then(|x| x.get_u8())
-            .ok_or(Error::NoCommand)?,
+            .map(|e| e as u16),
+        cluster: cmd_path
+            .find_element(1)
+            .and_then(|x| x.get_u8())
+            .map(|c| c as u32),
+        command: cmd_path
+            .find_element(2)
+            .and_then(|x| x.get_u8())
+            .ok_or(Error::NoCommand)? as u16,
     })
 }
 
@@ -44,52 +56,65 @@ pub fn put_cmd_path_ib(
     command: u16,
 ) -> Result<(), Error> {
     tlvwriter.put_start_list(tag_type)?;
-    // Spec says U16, U32, U16, but chip-tool expects u8
-    tlvwriter.put_u8(TagType::Context(0), endpoint as u8)?;
-    tlvwriter.put_u8(TagType::Context(2), cluster as u8)?;
-    tlvwriter.put_u8(TagType::Context(3), command as u8)?;
+    tlvwriter.put_u16(TagType::Context(0), endpoint)?;
+    tlvwriter.put_u32(TagType::Context(1), cluster)?;
+    tlvwriter.put_u16(TagType::Context(2), command)?;
     tlvwriter.put_end_container()
 }
 
 pub fn put_status_ib(
     tlvwriter: &mut TLVWriter,
     tag_type: TagType,
-    general_code: u8,
+    status: u32,
+    cluster_status: u32,
 ) -> Result<(), Error> {
-    tlvwriter.put_start_array(tag_type)?;
-    // Spec says U16, U32, U16, but chip-tool expects u8
-    tlvwriter.put_u8(TagType::Anonymous, general_code)?;
-    // TODO: This seems to be a leftover in the chip-tool, the status IB has different elements actually
-    tlvwriter.put_u8(TagType::Anonymous, 1)?;
-    tlvwriter.put_u8(TagType::Anonymous, 0)?;
+    tlvwriter.put_start_struct(tag_type)?;
+    tlvwriter.put_u32(TagType::Context(0), status)?;
+    tlvwriter.put_u32(TagType::Context(1), cluster_status)?;
     tlvwriter.put_end_container()
 }
 
-pub fn put_cmd_status_ib_start(tlvwriter: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
-    tlvwriter.put_start_struct(tag_type)
+pub fn put_invoke_response_ib_start(
+    tlvwriter: &mut TLVWriter,
+    tag_type: TagType,
+    response_type: InvokeResponseType,
+) -> Result<(), Error> {
+    tlvwriter.put_start_struct(tag_type)?;
+    match response_type {
+        InvokeResponseType::Command => tlvwriter.put_start_struct(TagType::Context(0)),
+        InvokeResponseType::Status => tlvwriter.put_start_struct(TagType::Context(1)),
+    }
 }
 
-pub fn put_cmd_status_ib_end(tlvwriter: &mut TLVWriter) -> Result<(), Error> {
+pub fn put_invoke_response_ib_end(tlvwriter: &mut TLVWriter) -> Result<(), Error> {
+    tlvwriter.put_end_container()?;
     tlvwriter.put_end_container()
 }
 
-pub fn put_cmd_status_status(cmd_req: &mut CommandReq, status: u8) -> Result<(), Error> {
-    // TODO: This whole thing is completely mismatched with the spec. But it is what the chip-tool
-    // expects, so...
-    put_cmd_status_ib_start(&mut cmd_req.resp, TagType::Anonymous)?;
+pub fn put_invoke_response_ib_with_status(
+    cmd_req: &mut CommandReq,
+    status: u32,
+    cluster_status: u32,
+) -> Result<(), Error> {
+    put_invoke_response_ib_start(
+        &mut cmd_req.resp,
+        TagType::Anonymous,
+        InvokeResponseType::Status,
+    )?;
     put_cmd_path_ib(
         &mut cmd_req.resp,
         TagType::Context(COMMAND_DATA_PATH_TAG),
-        cmd_req.endpoint as u16,
-        cmd_req.cluster as u32,
-        cmd_req.command as u16,
+        cmd_req.endpoint,
+        cmd_req.cluster,
+        cmd_req.command,
     )?;
     put_status_ib(
         &mut cmd_req.resp,
         TagType::Context(COMMAND_DATA_STATUS_TAG),
         status,
+        cluster_status,
     )?;
-    put_cmd_status_ib_end(&mut cmd_req.resp)
+    put_invoke_response_ib_end(&mut cmd_req.resp)
 }
 
 const _INVOKE_REQ_CTX_TAG_SUPPRESS_RESPONSE: u32 = 0;
@@ -118,7 +143,10 @@ impl InteractionModel {
             .ok_or(Error::InvalidData)?;
 
         tlvwriter.put_start_struct(TagType::Anonymous)?;
-        tlvwriter.put_start_array(TagType::Context(0))?;
+        // Suppress Response
+        tlvwriter.put_bool(TagType::Context(0), false)?;
+        // Array of InvokeResponse IBs
+        tlvwriter.put_start_array(TagType::Context(1))?;
         while let Some(cmd_data_ib) = cmd_list_iter.next() {
             // CommandDataIB has CommandPath(0) + Data(1)
             let cmd_path_ib = get_cmd_path_ib(
