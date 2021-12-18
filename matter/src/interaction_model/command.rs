@@ -9,17 +9,48 @@ use crate::tlv;
 use crate::tlv::*;
 use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
+use crate::tlv_writer::ToTLV;
 use log::error;
 use log::info;
 
-pub const COMMAND_DATA_PATH_TAG: u8 = 0;
-pub const COMMAND_DATA_DATA_TAG: u8 = 1;
-pub const COMMAND_DATA_STATUS_TAG: u8 = 2;
+#[derive(Debug, Clone, Copy)]
+pub enum InvokeResponse<F>
+where
+    F: Fn(&mut TLVWriter) -> Result<(), Error>,
+{
+    Command(CmdPathIb, F),
+    Status(CmdPathIb, u32, u32, F),
+}
 
-#[derive(Debug, PartialEq)]
-pub enum InvokeResponseType {
-    Command,
-    Status,
+#[allow(non_snake_case)]
+pub fn dummy(_t: &mut TLVWriter) -> Result<(), Error> {
+    Ok(())
+}
+
+impl<F: Fn(&mut TLVWriter) -> Result<(), Error>> ToTLV for InvokeResponse<F> {
+    fn to_tlv(
+        self: &InvokeResponse<F>,
+        tlvwriter: &mut TLVWriter,
+        tag_type: TagType,
+    ) -> Result<(), Error> {
+        tlvwriter.put_start_struct(tag_type)?;
+        match self {
+            InvokeResponse::Command(cmd_path, data_cb) => {
+                tlvwriter.put_start_struct(TagType::Context(0))?;
+                tlvwriter.put_object(TagType::Context(0), cmd_path)?;
+                tlvwriter.put_start_struct(TagType::Context(1))?;
+                data_cb(tlvwriter)?;
+                tlvwriter.put_end_container()?;
+            }
+            InvokeResponse::Status(cmd_path, status, cluster_status, _) => {
+                tlvwriter.put_start_struct(TagType::Context(1))?;
+                tlvwriter.put_object(TagType::Context(0), cmd_path)?;
+                put_status_ib(tlvwriter, TagType::Context(1), *status, *cluster_status)?;
+            }
+        }
+        tlvwriter.put_end_container()?;
+        tlvwriter.put_end_container()
+    }
 }
 
 pub struct CommandReq<'a, 'b, 'c> {
@@ -31,38 +62,51 @@ pub struct CommandReq<'a, 'b, 'c> {
     pub trans: &'a mut Transaction,
 }
 
-fn get_cmd_path_ib(cmd_path: &TLVElement) -> Result<CmdPathIb, Error> {
-    Ok(CmdPathIb {
-        endpoint: cmd_path
-            .find_element(0)
-            .and_then(|x| x.get_u8())
-            .map(|e| e as u16),
-        cluster: cmd_path
-            .find_element(1)
-            .and_then(|x| x.get_u8())
-            .map(|c| c as u32),
-        command: cmd_path
-            .find_element(2)
-            .and_then(|x| x.get_u8())
-            .ok_or(Error::NoCommand)? as u16,
-    })
+impl<'a, 'b, 'c> CommandReq<'a, 'b, 'c> {
+    pub fn to_cmd_path_ib(&self) -> CmdPathIb {
+        CmdPathIb {
+            endpoint: Some(self.endpoint),
+            cluster: Some(self.cluster),
+            command: self.command,
+        }
+    }
 }
 
-pub fn put_cmd_path_ib(
-    tlvwriter: &mut TLVWriter,
-    tag_type: TagType,
-    endpoint: u16,
-    cluster: u32,
-    command: u16,
-) -> Result<(), Error> {
-    tlvwriter.put_start_list(tag_type)?;
-    tlvwriter.put_u16(TagType::Context(0), endpoint)?;
-    tlvwriter.put_u32(TagType::Context(1), cluster)?;
-    tlvwriter.put_u16(TagType::Context(2), command)?;
-    tlvwriter.put_end_container()
+impl CmdPathIb {
+    fn from_tlv(cmd_path: &TLVElement) -> Result<Self, Error> {
+        Ok(Self {
+            endpoint: cmd_path
+                .find_element(0)
+                .and_then(|x| x.get_u8())
+                .map(|e| e as u16),
+            cluster: cmd_path
+                .find_element(1)
+                .and_then(|x| x.get_u8())
+                .map(|c| c as u32),
+            command: cmd_path
+                .find_element(2)
+                .and_then(|x| x.get_u8())
+                .ok_or(Error::NoCommand)? as u16,
+        })
+    }
 }
 
-pub fn put_status_ib(
+impl ToTLV for CmdPathIb {
+    fn to_tlv(&self, tlvwriter: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
+        tlvwriter.put_start_list(tag_type)?;
+        if let Some(endpoint) = self.endpoint {
+            tlvwriter.put_u16(TagType::Context(0), endpoint)?;
+        }
+        if let Some(cluster) = self.cluster {
+            tlvwriter.put_u32(TagType::Context(1), cluster)?;
+        }
+        tlvwriter.put_u16(TagType::Context(2), self.command)?;
+
+        tlvwriter.put_end_container()
+    }
+}
+
+fn put_status_ib(
     tlvwriter: &mut TLVWriter,
     tag_type: TagType,
     status: u32,
@@ -72,49 +116,6 @@ pub fn put_status_ib(
     tlvwriter.put_u32(TagType::Context(0), status)?;
     tlvwriter.put_u32(TagType::Context(1), cluster_status)?;
     tlvwriter.put_end_container()
-}
-
-pub fn put_invoke_response_ib_start(
-    tlvwriter: &mut TLVWriter,
-    tag_type: TagType,
-    response_type: InvokeResponseType,
-) -> Result<(), Error> {
-    tlvwriter.put_start_struct(tag_type)?;
-    match response_type {
-        InvokeResponseType::Command => tlvwriter.put_start_struct(TagType::Context(0)),
-        InvokeResponseType::Status => tlvwriter.put_start_struct(TagType::Context(1)),
-    }
-}
-
-pub fn put_invoke_response_ib_end(tlvwriter: &mut TLVWriter) -> Result<(), Error> {
-    tlvwriter.put_end_container()?;
-    tlvwriter.put_end_container()
-}
-
-pub fn put_invoke_response_ib_with_status(
-    cmd_req: &mut CommandReq,
-    status: u32,
-    cluster_status: u32,
-) -> Result<(), Error> {
-    put_invoke_response_ib_start(
-        &mut cmd_req.resp,
-        TagType::Anonymous,
-        InvokeResponseType::Status,
-    )?;
-    put_cmd_path_ib(
-        &mut cmd_req.resp,
-        TagType::Context(COMMAND_DATA_PATH_TAG),
-        cmd_req.endpoint,
-        cmd_req.cluster,
-        cmd_req.command,
-    )?;
-    put_status_ib(
-        &mut cmd_req.resp,
-        TagType::Context(COMMAND_DATA_STATUS_TAG),
-        status,
-        cluster_status,
-    )?;
-    put_invoke_response_ib_end(&mut cmd_req.resp)
 }
 
 const _INVOKE_REQ_CTX_TAG_SUPPRESS_RESPONSE: u32 = 0;
@@ -149,7 +150,7 @@ impl InteractionModel {
         tlvwriter.put_start_array(TagType::Context(1))?;
         while let Some(cmd_data_ib) = cmd_list_iter.next() {
             // CommandDataIB has CommandPath(0) + Data(1)
-            let cmd_path_ib = get_cmd_path_ib(
+            let cmd_path_ib = CmdPathIb::from_tlv(
                 &cmd_data_ib
                     .find_element(0)
                     .ok_or(Error::InvalidData)?

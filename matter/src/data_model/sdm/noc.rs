@@ -1,6 +1,7 @@
 // Node Operational Credentials Cluster
 use crate::data_model::objects::*;
-use crate::interaction_model::command::{self, CommandReq};
+use crate::interaction_model::command::{self, CommandReq, InvokeResponse};
+use crate::interaction_model::CmdPathIb;
 use crate::pki::pki::{self, KeyPair};
 use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
@@ -57,29 +58,18 @@ fn handle_command_csrrequest(
 
     let noc_keypair = pki::KeyPair::new()?;
 
-    command::put_invoke_response_ib_start(
-        &mut cmd_req.resp,
-        TagType::Anonymous,
-        command::InvokeResponseType::Command,
-    )?;
-    command::put_cmd_path_ib(
-        &mut cmd_req.resp,
-        TagType::Context(command::COMMAND_DATA_PATH_TAG),
-        0,
-        CLUSTER_OPERATIONAL_CREDENTIALS_ID,
-        CMD_CSRRESPONSE_ID,
-    )?;
-    cmd_req
-        .resp
-        .put_start_struct(TagType::Context(command::COMMAND_DATA_DATA_TAG))?;
-
-    add_nocsrelement(&noc_keypair, csr_nonce, cmd_req.resp)?;
-    cmd_req
-        .resp
-        .put_str8(TagType::Context(1), b"ThisistheAttestationSignature")?;
-    cmd_req.resp.put_end_container()?;
-    command::put_invoke_response_ib_end(&mut cmd_req.resp)?;
-    Ok(())
+    let invoke_resp = InvokeResponse::Command(
+        CmdPathIb {
+            endpoint: Some(0),
+            cluster: Some(CLUSTER_OPERATIONAL_CREDENTIALS_ID),
+            command: CMD_CSRRESPONSE_ID,
+        },
+        |t| {
+            add_nocsrelement(&noc_keypair, csr_nonce, t)?;
+            t.put_str8(TagType::Context(1), b"ThisistheAttestationSignature")
+        },
+    );
+    cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)
 }
 
 fn handle_command_addtrustedrootcert(
@@ -96,8 +86,8 @@ fn handle_command_addtrustedrootcert(
         .ok_or(Error::InvalidData)?;
     info!("Received Trusted Cert:{:?}", root_cert);
 
-    command::put_invoke_response_ib_with_status(cmd_req, 0, 0)?;
-    Ok(())
+    let invoke_resp = InvokeResponse::Status(cmd_req.to_cmd_path_ib(), 0, 0, command::dummy);
+    cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)
 }
 
 fn get_addnoc_params<'a, 'b, 'c>(
@@ -159,32 +149,22 @@ fn handle_command_addnoc(_cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Re
         e
     });
 
-    command::put_invoke_response_ib_start(
-        &mut cmd_req.resp,
-        TagType::Anonymous,
-        command::InvokeResponseType::Command,
-    )?;
-    command::put_cmd_path_ib(
-        &mut cmd_req.resp,
-        TagType::Context(command::COMMAND_DATA_PATH_TAG),
-        0,
-        CLUSTER_OPERATIONAL_CREDENTIALS_ID,
-        CMD_NOCRESPONSE_ID,
-    )?;
-    cmd_req
-        .resp
-        .put_start_struct(TagType::Context(command::COMMAND_DATA_DATA_TAG))?;
-
-    // Status
-    cmd_req.resp.put_u8(TagType::Context(0), 0)?;
-    // Fabric Index  - hard-coded for now
-    cmd_req.resp.put_u8(TagType::Context(1), 0)?;
-    // Debug string
-    cmd_req.resp.put_str8(TagType::Context(2), b"")?;
-    cmd_req.resp.put_end_container()?;
-    command::put_invoke_response_ib_end(&mut cmd_req.resp)?;
-
-    Ok(())
+    let invoke_resp = InvokeResponse::Command(
+        CmdPathIb {
+            endpoint: Some(0),
+            cluster: Some(CLUSTER_OPERATIONAL_CREDENTIALS_ID),
+            command: CMD_NOCRESPONSE_ID,
+        },
+        |t| {
+            // Status
+            t.put_u8(TagType::Context(0), 0)?;
+            // Fabric Index  - hard-coded for now
+            t.put_u8(TagType::Context(1), 0)?;
+            // Debug string
+            t.put_str8(TagType::Context(2), b"")
+        },
+    );
+    cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)
 }
 
 fn command_csrrequest_new() -> Result<Box<Command>, Error> {

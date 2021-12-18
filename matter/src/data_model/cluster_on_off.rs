@@ -1,7 +1,8 @@
 use super::objects::*;
 use crate::{
     error::*,
-    interaction_model::command::{self, CommandReq},
+    interaction_model::command::{self, CommandReq, InvokeResponse},
+    tlv_common::TagType,
 };
 use log::info;
 
@@ -26,7 +27,8 @@ fn handle_command_on_off(_cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Re
         _ => info!("Command not supported"),
     }
 
-    command::put_invoke_response_ib_with_status(cmd_req, 0, 0)?;
+    let invoke_resp = InvokeResponse::Status(cmd_req.to_cmd_path_ib(), 0, 0, command::dummy);
+    cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)?;
     // Always mark complete for now
     cmd_req.trans.complete();
     Ok(())

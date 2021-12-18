@@ -14,7 +14,7 @@ pub struct Transaction {
     pub data: Option<Box<dyn Any>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct CmdPathIb {
     pub endpoint: Option<u16>,
     pub cluster: Option<u32>,

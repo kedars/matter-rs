@@ -1,9 +1,8 @@
 use crate::data_model::objects::*;
+use crate::interaction_model::command::InvokeResponse;
+use crate::interaction_model::CmdPathIb;
 use crate::tlv_common::TagType;
-use crate::{
-    error::*,
-    interaction_model::command::{self, CommandReq},
-};
+use crate::{error::*, interaction_model::command::CommandReq};
 use log::info;
 
 const CLUSTER_GENERAL_COMMISSIONING_ID: u32 = 0x0030;
@@ -35,26 +34,18 @@ fn handle_command_armfailsafe(
         expiry_len, bread_crumb
     );
 
-    command::put_invoke_response_ib_start(
-        &mut cmd_req.resp,
-        TagType::Anonymous,
-        command::InvokeResponseType::Command,
-    )?;
-    command::put_cmd_path_ib(
-        &mut cmd_req.resp,
-        TagType::Context(command::COMMAND_DATA_PATH_TAG),
-        0,
-        CLUSTER_GENERAL_COMMISSIONING_ID,
-        CMD_ARMFAILSAFE_RESPONSE_ID,
-    )?;
-    cmd_req
-        .resp
-        .put_start_struct(TagType::Context(command::COMMAND_DATA_DATA_TAG))?;
-    cmd_req.resp.put_u8(TagType::Context(0), 0)?;
-    cmd_req.resp.put_utf8(TagType::Context(1), b"")?;
-    cmd_req.resp.put_end_container()?;
-    command::put_invoke_response_ib_end(&mut cmd_req.resp)?;
-    Ok(())
+    let invoke_resp = InvokeResponse::Command(
+        CmdPathIb {
+            endpoint: Some(0),
+            cluster: Some(CLUSTER_GENERAL_COMMISSIONING_ID),
+            command: CMD_ARMFAILSAFE_RESPONSE_ID,
+        },
+        |t| {
+            t.put_u8(TagType::Context(0), 0)?;
+            t.put_utf8(TagType::Context(1), b"")
+        },
+    );
+    cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)
 }
 
 fn command_armfailsafe_new() -> Result<Box<Command>, Error> {

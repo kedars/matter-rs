@@ -124,6 +124,13 @@ impl<'a, 'b> TLVWriter<'a, 'b> {
             self.put_no_val(tag_type, WriteElementType::False)
         }
     }
+
+    pub fn put_object(&mut self, tag_type: TagType, object: &dyn ToTLV) -> Result<(), Error> {
+        object.to_tlv(self, tag_type)
+    }
+}
+pub trait ToTLV {
+    fn to_tlv(&self, tlvwriter: &mut TLVWriter, tag: TagType) -> Result<(), Error>;
 }
 
 #[cfg(test)]
