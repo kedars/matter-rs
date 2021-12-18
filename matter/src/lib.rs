@@ -1,3 +1,4 @@
+pub mod cert;
 pub mod core;
 pub mod data_model;
 pub mod error;
