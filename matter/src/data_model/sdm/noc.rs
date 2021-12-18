@@ -5,8 +5,8 @@ use crate::pki::pki::{self, KeyPair};
 use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
 use crate::utils::writebuf::WriteBuf;
-use crate::{error::*, tlv};
-use log::info;
+use crate::{cert, error::*};
+use log::{error, info};
 
 // Some placeholder value for now
 const MAX_CSR_LEN: usize = 300;
@@ -146,10 +146,17 @@ fn handle_command_addnoc(_cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Re
         get_addnoc_params(cmd_req)?;
 
     info!("Received NOC as:");
-    tlv::print_tlv_list(&noc_value);
+    cert::print_cert(&noc_value).map_err(|e| {
+        error!("Error parsing NOC");
+        e
+    })?;
 
     info!("Received ICAC as:");
-    tlv::print_tlv_list(&icac_value);
+    let _ = cert::print_cert(&icac_value).map_err(|e| {
+        error!("Error parsing ICAC");
+        e
+    });
+
     command::put_cmd_status_ib_start(&mut cmd_req.resp, TagType::Anonymous)?;
     command::put_cmd_path_ib(
         &mut cmd_req.resp,
