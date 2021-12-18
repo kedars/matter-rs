@@ -132,7 +132,7 @@ mod tests {
             common_data.cluster = cmd_path_ib.cluster.unwrap_or(0);
             common_data.command = cmd_path_ib.command;
             data.confirm_struct().unwrap();
-            common_data.variable = data.find_element(1).unwrap().get_u8().unwrap();
+            common_data.variable = data.find_element(0).unwrap().get_u8().unwrap();
             Ok(())
         }
     }
@@ -141,8 +141,9 @@ mod tests {
     fn test_valid_invoke_cmd() -> Result<(), Error> {
         // An invoke command for endpoint 0, cluster 49, command 12 and a u8 variable value of 0x05
         let b = [
-            0x15, 0x36, 0x00, 0x15, 0x37, 0x00, 0x24, 0x00, 0x00, 0x24, 0x02, 0x31, 0x24, 0x03,
-            0x0c, 0x18, 0x35, 0x01, 0x24, 0x01, 0x05, 0x18, 0x18, 0x18, 0x18,
+            0x15, 0x28, 0x00, 0x28, 0x01, 0x36, 0x02, 0x15, 0x37, 0x00, 0x24, 0x00, 0x00, 0x24,
+            0x01, 0x31, 0x24, 0x02, 0x0c, 0x18, 0x35, 0x01, 0x24, 0x00, 0x05, 0x18, 0x18, 0x18,
+            0x18,
         ];
 
         let data_model = Arc::new(DataModel::new(Node {
@@ -164,7 +165,9 @@ mod tests {
         );
         let mut out_buf: [u8; 20] = [0; 20];
         let mut proto_tx = ProtoTx::new(&mut out_buf, 0)?;
-        let _result = interaction_model.handle_proto_id(&mut proto_rx, &mut proto_tx);
+        interaction_model
+            .handle_proto_id(&mut proto_rx, &mut proto_tx)
+            .unwrap();
 
         let data = data_model.node.lock().unwrap();
         assert_eq!(data.endpoint, 0);

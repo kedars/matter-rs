@@ -3,8 +3,6 @@ use crate::utils::parsebuf::ParseBuf;
 use crate::utils::writebuf::WriteBuf;
 use log::info;
 
-const SESSION_TYPE_MASK: u8 = 0x01;
-
 #[derive(Debug, PartialEq)]
 pub enum SessionType {
     None,
@@ -21,10 +19,6 @@ impl Default for SessionType {
 #[derive(Debug, Default)]
 pub struct PlainHdr {
     pub flags: u8,
-    /* For the current spec that this is working against, the security flags have following structure:
-     * bit 0: if 1, AES-CCM crypto is used for the packet
-     * other bits seem to be reserved
-     */
     pub sess_type: SessionType,
     pub sess_id: u16,
     pub ctr: u32,
@@ -35,7 +29,7 @@ impl PlainHdr {
     pub fn decode(&mut self, msg: &mut ParseBuf) -> Result<(), Error> {
         self.flags = msg.le_u8()?;
         self.sess_id = msg.le_u16()?;
-        let sec_flags = msg.le_u8()?;
+        let _sec_flags = msg.le_u8()?;
         self.sess_type = if self.sess_id != 0 {
             SessionType::Encrypted
         } else {
@@ -53,7 +47,6 @@ impl PlainHdr {
     pub fn encode(&mut self, resp_buf: &mut WriteBuf) -> Result<(), Error> {
         resp_buf.le_u8(self.flags)?;
         resp_buf.le_u16(self.sess_id)?;
-        // XXX Not sure why this is 0x11, instead of 0x01
         resp_buf.le_u8(0)?;
         resp_buf.le_u32(self.ctr)?;
         Ok(())
