@@ -48,12 +48,7 @@ fn handle_command_csrrequest(
 ) -> Result<(), Error> {
     info!("Handling CSRRequest");
 
-    let csr_nonce = cmd_req
-        .data
-        .find_element(0)
-        .ok_or(Error::Invalid)?
-        .get_slice()
-        .ok_or(Error::InvalidData)?;
+    let csr_nonce = cmd_req.data.find_tag(0)?.get_slice()?;
     info!("Received CSR Nonce:{:?}", csr_nonce);
 
     let noc_keypair = pki::KeyPair::new()?;
@@ -78,12 +73,7 @@ fn handle_command_addtrustedrootcert(
 ) -> Result<(), Error> {
     info!("Handling AddTrustedRootCert");
 
-    let root_cert = cmd_req
-        .data
-        .find_element(0)
-        .ok_or(Error::Invalid)?
-        .get_slice()
-        .ok_or(Error::InvalidData)?;
+    let root_cert = cmd_req.data.find_tag(0)?.get_slice()?;
     info!("Received Trusted Cert:{:?}", root_cert);
 
     let invoke_resp = InvokeResponse::Status(cmd_req.to_cmd_path_ib(), 0, 0, command::dummy);
@@ -93,36 +83,11 @@ fn handle_command_addtrustedrootcert(
 fn get_addnoc_params<'a, 'b, 'c>(
     cmd_req: &mut CommandReq<'a, 'b, 'c>,
 ) -> Result<(&'a [u8], &'a [u8], &'a [u8], u32, u16), Error> {
-    let noc_value = cmd_req
-        .data
-        .find_element(0)
-        .ok_or(Error::Invalid)?
-        .get_slice()
-        .ok_or(Error::InvalidData)?;
-    let icac_value = cmd_req
-        .data
-        .find_element(1)
-        .ok_or(Error::Invalid)?
-        .get_slice()
-        .ok_or(Error::InvalidData)?;
-    let ipk_value = cmd_req
-        .data
-        .find_element(2)
-        .ok_or(Error::Invalid)?
-        .get_slice()
-        .ok_or(Error::InvalidData)?;
-    let case_admin_node_id = cmd_req
-        .data
-        .find_element(3)
-        .ok_or(Error::Invalid)?
-        .get_u32()
-        .ok_or(Error::InvalidData)?;
-    let vendor_id = cmd_req
-        .data
-        .find_element(4)
-        .ok_or(Error::Invalid)?
-        .get_u16()
-        .ok_or(Error::InvalidData)?;
+    let noc_value = cmd_req.data.find_tag(0)?.get_slice()?;
+    let icac_value = cmd_req.data.find_tag(1)?.get_slice()?;
+    let ipk_value = cmd_req.data.find_tag(2)?.get_slice()?;
+    let case_admin_node_id = cmd_req.data.find_tag(3)?.get_u32()?;
+    let vendor_id = cmd_req.data.find_tag(4)?.get_u16()?;
     Ok((
         noc_value,
         icac_value,

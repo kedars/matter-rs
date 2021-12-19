@@ -46,7 +46,7 @@ const KEY_USAGE_DECIPHER_ONLY: u16 = 0x0100;
 pub fn print_key_usage(t: TLVElement) -> Result<(), Error> {
     println!("    X509v3 Key Usage: critical");
     // TODO This should be u16, but we get u8 for now
-    let key_usage = t.get_u8().ok_or(Error::Invalid)? as u16;
+    let key_usage = t.get_u8()? as u16;
     let mut comma = "        ";
     if (key_usage & KEY_USAGE_DIGITAL_SIGN) != 0 {
         print!("{} digitalSignature", comma);
@@ -90,14 +90,10 @@ pub fn print_key_usage(t: TLVElement) -> Result<(), Error> {
 
 pub fn print_extended_key_usage(t: TLVElement) -> Result<(), Error> {
     println!("    X509v3 Extended Key Usage:");
-    let mut iter = t
-        .confirm_array()
-        .ok_or(Error::Invalid)?
-        .into_iter()
-        .ok_or(Error::Invalid)?;
+    let mut iter = t.confirm_array()?.into_iter().ok_or(Error::Invalid)?;
     let mut comma = "        ";
     while let Some(t) = iter.next() {
-        print!("{}{}", comma, t.get_u8().ok_or(Error::Invalid)?);
+        print!("{}{}", comma, t.get_u8()?);
         comma = ",";
     }
     println!("");
@@ -106,16 +102,12 @@ pub fn print_extended_key_usage(t: TLVElement) -> Result<(), Error> {
 
 pub fn print_basic_constraints(t: TLVElement) -> Result<(), Error> {
     println!("    X509v3 Basic Constraints:");
-    let mut iter = t
-        .confirm_struct()
-        .ok_or(Error::Invalid)?
-        .into_iter()
-        .ok_or(Error::Invalid)?;
+    let mut iter = t.confirm_struct()?.into_iter().ok_or(Error::Invalid)?;
     while let Some(t) = iter.next() {
         if let TagType::Context(tag) = t.get_tag() {
             match tag {
-                1 => println!("        CA = {:?}", t.get_bool().ok_or(Error::Invalid)?),
-                2 => println!("        Path Len = {:?}", t.get_u8().ok_or(Error::Invalid)?),
+                1 => println!("        CA = {:?}", t.get_bool()?),
+                2 => println!("        Path Len = {:?}", t.get_u8()?),
                 _ => println!("Unsupport Tag"),
             }
         }
@@ -125,29 +117,16 @@ pub fn print_basic_constraints(t: TLVElement) -> Result<(), Error> {
 
 pub fn print_extensions(t: TLVElement) -> Result<(), Error> {
     println!("X509v3 extensions:");
-    let mut iter = t
-        .confirm_list()
-        .ok_or(Error::Invalid)?
-        .into_iter()
-        .ok_or(Error::Invalid)?;
+    let mut iter = t.confirm_list()?.into_iter().ok_or(Error::Invalid)?;
     while let Some(t) = iter.next() {
         if let TagType::Context(tag) = t.get_tag() {
             match tag {
                 1 => print_basic_constraints(t)?,
                 2 => print_key_usage(t)?,
                 3 => print_extended_key_usage(t)?,
-                4 => println!(
-                    "    Subject Key Id: {:x?}",
-                    t.get_slice().ok_or(Error::Invalid)?
-                ),
-                5 => println!(
-                    "    Authority Key Id: {:x?}",
-                    t.get_slice().ok_or(Error::Invalid)?
-                ),
-                6 => println!(
-                    "    Future Extensions: {:x?}",
-                    t.get_slice().ok_or(Error::Invalid)?
-                ),
+                4 => println!("    Subject Key Id: {:x?}", t.get_slice()?),
+                5 => println!("    Authority Key Id: {:x?}", t.get_slice()?),
+                6 => println!("    Future Extensions: {:x?}", t.get_slice()?),
                 _ => println!("Unsupported Tag"),
             }
         }
@@ -156,33 +135,17 @@ pub fn print_extensions(t: TLVElement) -> Result<(), Error> {
 }
 
 pub fn print_dn_list(t: TLVElement) -> Result<(), Error> {
-    let mut iter = t
-        .confirm_list()
-        .ok_or(Error::Invalid)?
-        .into_iter()
-        .ok_or(Error::Invalid)?;
+    let mut iter = t.confirm_list()?.into_iter().ok_or(Error::Invalid)?;
     while let Some(t) = iter.next() {
         if let TagType::Context(tag) = t.get_tag() {
             match tag {
-                17 => println!(
-                    "    Chip Node Id = {:x?}",
-                    t.get_u64().ok_or(Error::Invalid)?
-                ),
-                18 => println!(
-                    "    Chip Firmware Signing Id = {:?}",
-                    t.get_u8().ok_or(Error::Invalid)?
-                ),
-                19 => println!("    Chip ICA Id = {:?}", t.get_u8().ok_or(Error::Invalid)?),
-                20 => println!(
-                    "    Chip Root CA Id = {:?}",
-                    t.get_u8().ok_or(Error::Invalid)?
-                ),
-                21 => println!(
-                    "    Chip Fabric Id = {:?}",
-                    t.get_u8().ok_or(Error::Invalid)?
-                ),
-                22 => println!("    Chip NOC AT1 = {:?}", t.get_u8().ok_or(Error::Invalid)?),
-                23 => println!("    Chip NOC AT2 = {:?}", t.get_u8().ok_or(Error::Invalid)?),
+                17 => println!("    Chip Node Id = {:x?}", t.get_u64()?),
+                18 => println!("    Chip Firmware Signing Id = {:?}", t.get_u8()?),
+                19 => println!("    Chip ICA Id = {:?}", t.get_u8()?),
+                20 => println!("    Chip Root CA Id = {:?}", t.get_u8()?),
+                21 => println!("    Chip Fabric Id = {:?}", t.get_u8()?),
+                22 => println!("    Chip NOC AT1 = {:?}", t.get_u8()?),
+                23 => println!("    Chip NOC AT2 = {:?}", t.get_u8()?),
                 _ => println!("Unsupported tag"),
             }
         }
@@ -191,40 +154,37 @@ pub fn print_dn_list(t: TLVElement) -> Result<(), Error> {
 }
 
 pub fn print_cert(buf: &[u8]) -> Result<(), Error> {
-    let mut iter = tlv::get_root_node_struct(buf)
-        .ok_or(Error::Invalid)?
-        .into_iter()
-        .unwrap();
+    let mut iter = tlv::get_root_node_struct(buf)?.into_iter().unwrap();
 
     while let Some(t) = iter.next() {
         if let TagType::Context(tag) = t.get_tag() {
             match tag {
-                1 => println!("Serial Number: {:x?}", t.get_slice().ok_or(Error::Invalid)?),
+                1 => println!("Serial Number: {:x?}", t.get_slice()?),
                 2 => println!(
                     "Signature Algorithm: {:?}",
-                    get_sign_algo(t.get_u8().ok_or(Error::Invalid)?).ok_or(Error::Invalid)?
+                    get_sign_algo(t.get_u8()?).ok_or(Error::Invalid)?
                 ),
                 3 => {
                     println!("Issuer:");
                     print_dn_list(t)?;
                 }
-                4 => println!("Not Before: {:?}", t.get_u32().ok_or(Error::Invalid)?),
-                5 => println!("Not After: {:?}", t.get_u32().ok_or(Error::Invalid)?),
+                4 => println!("Not Before: {:?}", t.get_u32()?),
+                5 => println!("Not After: {:?}", t.get_u32()?),
                 6 => {
                     println!("Subject:");
                     print_dn_list(t)?;
                 }
                 7 => println!(
                     "Public Key Algorithm: {:?}",
-                    get_pubkey_algo(t.get_u8().ok_or(Error::Invalid)?).ok_or(Error::Invalid)?,
+                    get_pubkey_algo(t.get_u8()?).ok_or(Error::Invalid)?,
                 ),
                 8 => println!(
                     "Elliptic Curve: {:?}",
-                    get_ec_curve_id(t.get_u8().ok_or(Error::Invalid)?).ok_or(Error::Invalid)?
+                    get_ec_curve_id(t.get_u8()?).ok_or(Error::Invalid)?
                 ),
-                9 => println!("Public-Key: {:?}", t.get_slice().ok_or(Error::Invalid)?),
+                9 => println!("Public-Key: {:?}", t.get_slice()?),
                 10 => print_extensions(t)?,
-                11 => println!("Signature: {:x?}", t.get_slice().ok_or(Error::Invalid)?),
+                11 => println!("Signature: {:x?}", t.get_slice()?),
                 _ => println!("Unsupported tag\n"),
             }
         }

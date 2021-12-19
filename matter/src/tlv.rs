@@ -1,3 +1,5 @@
+use crate::error::Error;
+
 use super::tlv_common::*;
 
 use byteorder::{ByteOrder, LittleEndian};
@@ -276,81 +278,81 @@ impl<'a> TLVElement<'a> {
         })
     }
 
-    pub fn get_u8(&self) -> Option<u8> {
+    pub fn get_u8(&self) -> Result<u8, Error> {
         match self.element_type {
-            ElementType::U8(a) => Some(a),
-            _ => None,
+            ElementType::U8(a) => Ok(a),
+            _ => Err(Error::TLVTypeMismatch),
         }
     }
 
-    pub fn get_u16(&self) -> Option<u16> {
+    pub fn get_u16(&self) -> Result<u16, Error> {
         match self.element_type {
-            ElementType::U16(a) => Some(a),
-            _ => None,
+            ElementType::U16(a) => Ok(a),
+            _ => Err(Error::TLVTypeMismatch),
         }
     }
 
-    pub fn get_u32(&self) -> Option<u32> {
+    pub fn get_u32(&self) -> Result<u32, Error> {
         match self.element_type {
-            ElementType::U32(a) => Some(a),
-            _ => None,
+            ElementType::U32(a) => Ok(a),
+            _ => Err(Error::TLVTypeMismatch),
         }
     }
 
-    pub fn get_u64(&self) -> Option<u64> {
+    pub fn get_u64(&self) -> Result<u64, Error> {
         match self.element_type {
-            ElementType::U64(a) => Some(a),
-            _ => None,
+            ElementType::U64(a) => Ok(a),
+            _ => Err(Error::TLVTypeMismatch),
         }
     }
 
-    pub fn get_slice(&self) -> Option<&'a [u8]> {
+    pub fn get_slice(&self) -> Result<&'a [u8], Error> {
         match self.element_type {
-            ElementType::Str8l(s) => Some(s),
-            _ => None,
+            ElementType::Str8l(s) => Ok(s),
+            _ => Err(Error::TLVTypeMismatch),
         }
     }
 
-    pub fn get_bool(&self) -> Option<bool> {
+    pub fn get_bool(&self) -> Result<bool, Error> {
         match self.element_type {
-            ElementType::False => Some(false),
-            ElementType::True => Some(true),
-            _ => None,
+            ElementType::False => Ok(false),
+            ElementType::True => Ok(true),
+            _ => Err(Error::TLVTypeMismatch),
         }
     }
 
-    pub fn confirm_struct(&self) -> Option<TLVElement<'a>> {
+    pub fn confirm_struct(&self) -> Result<TLVElement<'a>, Error> {
         match self.element_type {
-            ElementType::Struct(_) => Some(*self),
-            _ => None,
+            ElementType::Struct(_) => Ok(*self),
+            _ => Err(Error::TLVTypeMismatch),
         }
     }
 
-    pub fn confirm_array(&self) -> Option<TLVElement<'a>> {
+    pub fn confirm_array(&self) -> Result<TLVElement<'a>, Error> {
         match self.element_type {
-            ElementType::Array(_) => Some(*self),
-            _ => None,
+            ElementType::Array(_) => Ok(*self),
+            _ => Err(Error::TLVTypeMismatch),
         }
     }
 
-    pub fn confirm_list(&self) -> Option<TLVElement<'a>> {
+    pub fn confirm_list(&self) -> Result<TLVElement<'a>, Error> {
         match self.element_type {
-            ElementType::List(_) => Some(*self),
-            _ => None,
+            ElementType::List(_) => Ok(*self),
+            _ => Err(Error::TLVTypeMismatch),
         }
     }
 
-    pub fn find_element(&self, tag: u32) -> Option<TLVElement<'a>> {
-        let mut iter = self.into_iter()?;
+    pub fn find_tag(&self, tag: u32) -> Result<TLVElement<'a>, Error> {
+        let mut iter = self.into_iter().ok_or(Error::TLVTypeMismatch)?;
         let match_tag: TagType = TagType::Context(tag as u8);
         loop {
             match iter.next() {
                 Some(a) => {
                     if match_tag == a.tag_type {
-                        return Some(a);
+                        return Ok(a);
                     }
                 }
-                None => return None,
+                None => return Err(Error::NoTagFound),
             }
         }
     }
@@ -549,15 +551,20 @@ impl<'a> TLVContainerIterator<'a> {
     }
 }
 
-pub fn get_root_node_struct(b: &[u8]) -> Option<TLVElement> {
+pub fn get_root_node_struct(b: &[u8]) -> Result<TLVElement, Error> {
     return TLVList::new(b, b.len())
         .into_iter()
-        .next()?
+        .next()
+        .ok_or(Error::InvalidData)?
         .confirm_struct();
 }
 
-pub fn get_root_node_list(b: &[u8]) -> Option<TLVElement> {
-    return TLVList::new(b, b.len()).into_iter().next()?.confirm_list();
+pub fn get_root_node_list(b: &[u8]) -> Result<TLVElement, Error> {
+    return TLVList::new(b, b.len())
+        .into_iter()
+        .next()
+        .ok_or(Error::InvalidData)?
+        .confirm_list();
 }
 
 pub fn print_tlv_list(b: &[u8]) {
@@ -726,25 +733,25 @@ mod tests {
         let root = get_root_node_struct(&b).unwrap();
 
         assert_eq!(
-            root.find_element(0),
-            Some(TLVElement {
+            root.find_tag(0).unwrap(),
+            TLVElement {
                 tag_type: TagType::Context(0),
                 element_type: ElementType::U8(2),
-            })
+            }
         );
         assert_eq!(
-            root.find_element(2),
-            Some(TLVElement {
+            root.find_tag(2).unwrap(),
+            TLVElement {
                 tag_type: TagType::Context(2),
                 element_type: ElementType::U32(135246),
-            })
+            }
         );
         assert_eq!(
-            root.find_element(3),
-            Some(TLVElement {
+            root.find_tag(3).unwrap(),
+            TLVElement {
                 tag_type: TagType::Context(3),
                 element_type: ElementType::Str8l(&[0x73, 0x6d, 0x61, 0x72]),
-            })
+            }
         );
     }
 
@@ -790,7 +797,7 @@ mod tests {
         let root = get_root_node_struct(&b).unwrap();
 
         let mut cmd_list_iter = root
-            .find_element(0)
+            .find_tag(0)
             .unwrap()
             .confirm_array()
             .unwrap()
@@ -801,38 +808,33 @@ mod tests {
         // This is an array of CommandDataIB, but we'll only use the first element
         let cmd_data_ib = cmd_list_iter.next().unwrap();
 
-        let cmd_path = cmd_data_ib.find_element(0).unwrap().confirm_list().unwrap();
+        let cmd_path = cmd_data_ib.find_tag(0).unwrap().confirm_list().unwrap();
         assert_eq!(
-            cmd_path.find_element(0),
-            Some(TLVElement {
+            cmd_path.find_tag(0).unwrap(),
+            TLVElement {
                 tag_type: TagType::Context(0),
                 element_type: ElementType::U8(2),
-            })
+            }
         );
         assert_eq!(
-            cmd_path.find_element(2),
-            Some(TLVElement {
+            cmd_path.find_tag(2).unwrap(),
+            TLVElement {
                 tag_type: TagType::Context(2),
                 element_type: ElementType::U8(6),
-            })
+            }
         );
         assert_eq!(
-            cmd_path.find_element(3),
-            Some(TLVElement {
+            cmd_path.find_tag(3).unwrap(),
+            TLVElement {
                 tag_type: TagType::Context(3),
                 element_type: ElementType::U8(1),
-            })
+            }
         );
-        assert_eq!(cmd_path.find_element(1), None);
+        assert_eq!(cmd_path.find_tag(1), Err(Error::NoTagFound));
 
         // This is the variable of the invoke command
         assert_eq!(
-            cmd_data_ib
-                .find_element(1)
-                .unwrap()
-                .into_iter()
-                .unwrap()
-                .next(),
+            cmd_data_ib.find_tag(1).unwrap().into_iter().unwrap().next(),
             None
         );
     }
@@ -843,7 +845,7 @@ mod tests {
 
         let mut sub_root_iter = get_root_node_struct(&b)
             .unwrap()
-            .find_element(0)
+            .find_tag(0)
             .unwrap()
             .into_iter()
             .unwrap();

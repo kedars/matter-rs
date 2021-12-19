@@ -157,37 +157,17 @@ impl PAKE {
 
 #[allow(non_snake_case)]
 fn extract_pasepake_1_or_3_params(buf: &[u8]) -> Result<&[u8], Error> {
-    let root = get_root_node_struct(buf).ok_or(Error::InvalidData)?;
-    let pA = root
-        .find_element(1)
-        .ok_or(Error::Invalid)?
-        .get_slice()
-        .ok_or(Error::Invalid)?;
+    let root = get_root_node_struct(buf)?;
+    let pA = root.find_tag(1)?.get_slice()?;
     Ok(pA)
 }
 
 fn extract_pbkdfreq_params(buf: &[u8]) -> Result<(&[u8], u16, u16, bool), Error> {
-    let root = get_root_node_struct(buf).ok_or(Error::InvalidData)?;
-    let initiator_random = root
-        .find_element(1)
-        .ok_or(Error::Invalid)?
-        .get_slice()
-        .ok_or(Error::InvalidData)?;
-    let initiator_sessid = root
-        .find_element(2)
-        .ok_or(Error::Invalid)?
-        .get_u8()
-        .ok_or(Error::Invalid)?;
-    let passcode_id = root
-        .find_element(3)
-        .ok_or(Error::Invalid)?
-        .get_u8()
-        .ok_or(Error::Invalid)?;
-    let has_params = root
-        .find_element(4)
-        .ok_or(Error::Invalid)?
-        .get_bool()
-        .ok_or(Error::Invalid)?;
+    let root = get_root_node_struct(buf)?;
+    let initiator_random = root.find_tag(1)?.get_slice()?;
+    let initiator_sessid = root.find_tag(2)?.get_u8()?;
+    let passcode_id = root.find_tag(3)?.get_u8()?;
+    let has_params = root.find_tag(4)?.get_bool()?;
     Ok((
         initiator_random,
         initiator_sessid as u16,

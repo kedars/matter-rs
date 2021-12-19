@@ -76,17 +76,16 @@ impl CmdPathIb {
     fn from_tlv(cmd_path: &TLVElement) -> Result<Self, Error> {
         Ok(Self {
             endpoint: cmd_path
-                .find_element(0)
+                .find_tag(0)
                 .and_then(|x| x.get_u8())
+                .ok()
                 .map(|e| e as u16),
             cluster: cmd_path
-                .find_element(1)
+                .find_tag(1)
                 .and_then(|x| x.get_u8())
+                .ok()
                 .map(|c| c as u32),
-            command: cmd_path
-                .find_element(2)
-                .and_then(|x| x.get_u8())
-                .ok_or(Error::NoCommand)? as u16,
+            command: cmd_path.find_tag(2)?.get_u8()? as u16,
         })
     }
 }
@@ -133,13 +132,11 @@ impl InteractionModel {
         proto_tx.proto_opcode = OpCode::InvokeResponse as u8;
 
         let mut tlvwriter = TLVWriter::new(&mut proto_tx.write_buf);
-        let root = get_root_node_struct(proto_rx.buf).ok_or(Error::InvalidData)?;
+        let root = get_root_node_struct(proto_rx.buf)?;
         // Spec says tag should be 2, but CHIP Tool sends the tag as 0
         let mut cmd_list_iter = root
-            .find_element(INVOKE_REQ_CTX_TAG_INVOKE_REQUESTS)
-            .ok_or(Error::InvalidData)?
-            .confirm_array()
-            .ok_or(Error::InvalidData)?
+            .find_tag(INVOKE_REQ_CTX_TAG_INVOKE_REQUESTS)?
+            .confirm_array()?
             .into_iter()
             .ok_or(Error::InvalidData)?;
 
@@ -150,14 +147,8 @@ impl InteractionModel {
         tlvwriter.put_start_array(TagType::Context(1))?;
         while let Some(cmd_data_ib) = cmd_list_iter.next() {
             // CommandDataIB has CommandPath(0) + Data(1)
-            let cmd_path_ib = CmdPathIb::from_tlv(
-                &cmd_data_ib
-                    .find_element(0)
-                    .ok_or(Error::InvalidData)?
-                    .confirm_list()
-                    .ok_or(Error::InvalidData)?,
-            )?;
-            let data = cmd_data_ib.find_element(1).ok_or(Error::InvalidData)?;
+            let cmd_path_ib = CmdPathIb::from_tlv(&cmd_data_ib.find_tag(0)?.confirm_list()?)?;
+            let data = cmd_data_ib.find_tag(1)?;
 
             self.consumer
                 .consume_invoke_cmd(&cmd_path_ib, data, trans, &mut tlvwriter)

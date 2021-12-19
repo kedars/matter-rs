@@ -16,18 +16,8 @@ fn handle_command_armfailsafe(
 ) -> Result<(), Error> {
     info!("Handling ARM Fail Safe");
     // These data types don't match the spec
-    let expiry_len = cmd_req
-        .data
-        .find_element(0)
-        .ok_or(Error::Invalid)?
-        .get_u8()
-        .ok_or(Error::InvalidData)?;
-    let bread_crumb = cmd_req
-        .data
-        .find_element(1)
-        .ok_or(Error::Invalid)?
-        .get_u8()
-        .ok_or(Error::InvalidData)?;
+    let expiry_len = cmd_req.data.find_tag(0)?.get_u8()?;
+    let bread_crumb = cmd_req.data.find_tag(1)?.get_u8()?;
 
     info!(
         "Received expiry len: {} breadcrumb: {:x}",

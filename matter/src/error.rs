@@ -1,13 +1,13 @@
 use std::{fmt, sync::PoisonError};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Error {
     AttributeNotFound,
     ClusterNotFound,
     CommandNotFound,
     EndpointNotFound,
-    Crypto(ccm::aead::Error),
-    OpenSSL(openssl::error::ErrorStack),
+    Crypto,
+    OpenSSL,
     NoCommand,
     NoEndpoint,
     NoExchange,
@@ -16,6 +16,7 @@ pub enum Error {
     NoSpace,
     NoSpaceAckTable,
     NoSpaceRetransTable,
+    NoTagFound,
     NotFound,
     StdIoError,
     Invalid,
@@ -26,6 +27,7 @@ pub enum Error {
     InvalidPeerAddr,
     InvalidState,
     RwLock,
+    TLVTypeMismatch,
     TruncatedPacket,
 }
 
@@ -37,8 +39,8 @@ impl From<std::io::Error> for Error {
 }
 
 impl From<ccm::aead::Error> for Error {
-    fn from(e: ccm::aead::Error) -> Self {
-        Self::Crypto(e)
+    fn from(_e: ccm::aead::Error) -> Self {
+        Self::Crypto
     }
 }
 
@@ -49,8 +51,8 @@ impl<T> From<PoisonError<T>> for Error {
 }
 
 impl From<openssl::error::ErrorStack> for Error {
-    fn from(e: openssl::error::ErrorStack) -> Self {
-        Self::OpenSSL(e)
+    fn from(_e: openssl::error::ErrorStack) -> Self {
+        Self::OpenSSL
     }
 }
 
