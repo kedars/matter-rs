@@ -1,6 +1,6 @@
 // Node Operational Credentials Cluster
 use crate::data_model::objects::*;
-use crate::interaction_model::command::{self, CommandReq, InvokeResponse};
+use crate::interaction_model::command::{self, CommandReq, InvokeRespIb};
 use crate::interaction_model::CmdPathIb;
 use crate::pki::pki::{self, KeyPair};
 use crate::tlv_common::TagType;
@@ -65,7 +65,7 @@ fn handle_command_csrrequest(
 
     let noc_keypair = pki::KeyPair::new()?;
 
-    let invoke_resp = InvokeResponse::Command(CMD_PATH_CSRRESPONSE, |t| {
+    let invoke_resp = InvokeRespIb::Command(CMD_PATH_CSRRESPONSE, |t| {
         add_nocsrelement(&noc_keypair, csr_nonce, t)?;
         t.put_str8(TagType::Context(1), b"ThisistheAttestationSignature")
     });
@@ -81,7 +81,7 @@ fn handle_command_addtrustedrootcert(
     let root_cert = cmd_req.data.find_tag(0)?.get_slice()?;
     info!("Received Trusted Cert:{:?}", root_cert);
 
-    let invoke_resp = InvokeResponse::Status(cmd_req.to_cmd_path_ib(), 0, 0, command::dummy);
+    let invoke_resp = InvokeRespIb::Status(cmd_req.to_cmd_path_ib(), 0, 0, command::dummy);
     cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)
 }
 
@@ -119,7 +119,7 @@ fn handle_command_addnoc(_cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Re
         e
     });
 
-    let invoke_resp = InvokeResponse::Command(CMD_PATH_NOCRESPONSE, |t| {
+    let invoke_resp = InvokeRespIb::Command(CMD_PATH_NOCRESPONSE, |t| {
         // Status
         t.put_u8(TagType::Context(0), 0)?;
         // Fabric Index  - hard-coded for now

@@ -1,5 +1,5 @@
 use crate::data_model::objects::*;
-use crate::interaction_model::command::InvokeResponse;
+use crate::interaction_model::command::InvokeRespIb;
 use crate::interaction_model::CmdPathIb;
 use crate::tlv_common::TagType;
 use crate::{error::*, interaction_model::command::CommandReq};
@@ -38,7 +38,7 @@ fn handle_command_armfailsafe(
         expiry_len, bread_crumb
     );
 
-    let invoke_resp = InvokeResponse::Command(CMD_PATH_ARMFAILSAFE_RESPONSE, |t| {
+    let invoke_resp = InvokeRespIb::Command(CMD_PATH_ARMFAILSAFE_RESPONSE, |t| {
         t.put_u8(TagType::Context(0), 0)?;
         t.put_utf8(TagType::Context(1), b"")
     });
@@ -56,7 +56,7 @@ fn handle_command_setregulatoryconfig(
     let country_code = cmd_req.data.find_tag(1)?.get_slice()?;
     info!("Received country code: {:?}", country_code);
 
-    let invoke_resp = InvokeResponse::Command(CMD_PATH_SETREGULATORY_RESPONSE, |t| {
+    let invoke_resp = InvokeRespIb::Command(CMD_PATH_SETREGULATORY_RESPONSE, |t| {
         t.put_u8(TagType::Context(0), 0)?;
         t.put_utf8(TagType::Context(1), b"")
     });

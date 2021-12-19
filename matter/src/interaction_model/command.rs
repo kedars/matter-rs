@@ -14,7 +14,7 @@ use log::error;
 use log::info;
 
 #[derive(Debug, Clone, Copy)]
-pub enum InvokeResponse<F>
+pub enum InvokeRespIb<F>
 where
     F: Fn(&mut TLVWriter) -> Result<(), Error>,
 {
@@ -27,22 +27,18 @@ pub fn dummy(_t: &mut TLVWriter) -> Result<(), Error> {
     Ok(())
 }
 
-impl<F: Fn(&mut TLVWriter) -> Result<(), Error>> ToTLV for InvokeResponse<F> {
-    fn to_tlv(
-        self: &InvokeResponse<F>,
-        tw: &mut TLVWriter,
-        tag_type: TagType,
-    ) -> Result<(), Error> {
+impl<F: Fn(&mut TLVWriter) -> Result<(), Error>> ToTLV for InvokeRespIb<F> {
+    fn to_tlv(self: &InvokeRespIb<F>, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
         tw.put_start_struct(tag_type)?;
         match self {
-            InvokeResponse::Command(cmd_path, data_cb) => {
+            InvokeRespIb::Command(cmd_path, data_cb) => {
                 tw.put_start_struct(TagType::Context(0))?;
                 tw.put_object(TagType::Context(0), cmd_path)?;
                 tw.put_start_struct(TagType::Context(1))?;
                 data_cb(tw)?;
                 tw.put_end_container()?;
             }
-            InvokeResponse::Status(cmd_path, status, cluster_status, _) => {
+            InvokeRespIb::Status(cmd_path, status, cluster_status, _) => {
                 tw.put_start_struct(TagType::Context(1))?;
                 tw.put_object(TagType::Context(0), cmd_path)?;
                 put_status_ib(tw, TagType::Context(1), *status, *cluster_status)?;
