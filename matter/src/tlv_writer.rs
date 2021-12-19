@@ -130,7 +130,7 @@ impl<'a, 'b> TLVWriter<'a, 'b> {
     }
 }
 pub trait ToTLV {
-    fn to_tlv(&self, tlvwriter: &mut TLVWriter, tag: TagType) -> Result<(), Error>;
+    fn to_tlv(&self, tw: &mut TLVWriter, tag: TagType) -> Result<(), Error>;
 }
 
 #[cfg(test)]
@@ -144,17 +144,17 @@ mod tests {
         let mut buf: [u8; 20] = [0; 20];
         let buf_len = buf.len();
         let mut writebuf = WriteBuf::new(&mut buf, buf_len);
-        let mut tlvwriter = TLVWriter::new(&mut writebuf);
+        let mut tw = TLVWriter::new(&mut writebuf);
 
-        tlvwriter.put_start_struct(TagType::Anonymous).unwrap();
-        tlvwriter.put_u8(TagType::Anonymous, 12).unwrap();
-        tlvwriter.put_u8(TagType::Context(1), 13).unwrap();
-        tlvwriter.put_u16(TagType::Anonymous, 12).unwrap();
-        tlvwriter.put_u16(TagType::Context(2), 13).unwrap();
-        tlvwriter.put_start_array(TagType::Context(3)).unwrap();
-        tlvwriter.put_bool(TagType::Anonymous, true).unwrap();
-        tlvwriter.put_end_container().unwrap();
-        tlvwriter.put_end_container().unwrap();
+        tw.put_start_struct(TagType::Anonymous).unwrap();
+        tw.put_u8(TagType::Anonymous, 12).unwrap();
+        tw.put_u8(TagType::Context(1), 13).unwrap();
+        tw.put_u16(TagType::Anonymous, 12).unwrap();
+        tw.put_u16(TagType::Context(2), 13).unwrap();
+        tw.put_start_array(TagType::Context(3)).unwrap();
+        tw.put_bool(TagType::Anonymous, true).unwrap();
+        tw.put_end_container().unwrap();
+        tw.put_end_container().unwrap();
         assert_eq!(
             buf,
             [21, 4, 12, 36, 1, 13, 5, 12, 0, 37, 2, 13, 0, 54, 3, 9, 24, 24, 0, 0]
@@ -166,15 +166,15 @@ mod tests {
         let mut buf: [u8; 6] = [0; 6];
         let buf_len = buf.len();
         let mut writebuf = WriteBuf::new(&mut buf, buf_len);
-        let mut tlvwriter = TLVWriter::new(&mut writebuf);
+        let mut tw = TLVWriter::new(&mut writebuf);
 
-        tlvwriter.put_u8(TagType::Anonymous, 12).unwrap();
-        tlvwriter.put_u8(TagType::Context(1), 13).unwrap();
-        match tlvwriter.put_u16(TagType::Anonymous, 12) {
+        tw.put_u8(TagType::Anonymous, 12).unwrap();
+        tw.put_u8(TagType::Context(1), 13).unwrap();
+        match tw.put_u16(TagType::Anonymous, 12) {
             Ok(_) => panic!("This should have returned error"),
             _ => (),
         }
-        match tlvwriter.put_u16(TagType::Context(2), 13) {
+        match tw.put_u16(TagType::Context(2), 13) {
             Ok(_) => panic!("This should have returned error"),
             _ => (),
         }
@@ -186,16 +186,13 @@ mod tests {
         let mut buf: [u8; 20] = [0; 20];
         let buf_len = buf.len();
         let mut writebuf = WriteBuf::new(&mut buf, buf_len);
-        let mut tlvwriter = TLVWriter::new(&mut writebuf);
+        let mut tw = TLVWriter::new(&mut writebuf);
 
-        tlvwriter.put_u8(TagType::Context(1), 13).unwrap();
-        tlvwriter
-            .put_str8(TagType::Anonymous, &[10, 11, 12, 13, 14])
+        tw.put_u8(TagType::Context(1), 13).unwrap();
+        tw.put_str8(TagType::Anonymous, &[10, 11, 12, 13, 14])
             .unwrap();
-        tlvwriter.put_u16(TagType::Context(2), 13).unwrap();
-        tlvwriter
-            .put_str8(TagType::Context(3), &[20, 21, 22])
-            .unwrap();
+        tw.put_u16(TagType::Context(2), 13).unwrap();
+        tw.put_str8(TagType::Context(3), &[20, 21, 22]).unwrap();
         assert_eq!(
             buf,
             [36, 1, 13, 16, 5, 10, 11, 12, 13, 14, 37, 2, 13, 0, 48, 3, 3, 20, 21, 22]

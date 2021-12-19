@@ -104,11 +104,11 @@ impl PAKE {
         spake2.start_verifier(self.passwd, ITERATION_COUNT, &self.salt)?;
         spake2.handle_pA(pA, &mut pB, &mut cB)?;
 
-        let mut tlvwriter = TLVWriter::new(&mut proto_tx.write_buf);
-        tlvwriter.put_start_struct(TagType::Anonymous)?;
-        tlvwriter.put_str8(TagType::Context(1), &pB)?;
-        tlvwriter.put_str8(TagType::Context(2), &cB)?;
-        tlvwriter.put_end_container()?;
+        let mut tw = TLVWriter::new(&mut proto_tx.write_buf);
+        tw.put_start_struct(TagType::Anonymous)?;
+        tw.put_str8(TagType::Context(1), &pB)?;
+        tw.put_str8(TagType::Context(2), &cB)?;
+        tw.put_end_container()?;
 
         proto_rx.exchange.set_exchange_data(spake2_boxed);
         Ok(())
@@ -133,21 +133,21 @@ impl PAKE {
         spake2p.set_app_data(initiator_sessid as u32);
 
         // Generate response
-        let mut tlvwriter = TLVWriter::new(&mut proto_tx.write_buf);
-        tlvwriter.put_start_struct(TagType::Anonymous)?;
-        tlvwriter.put_str8(TagType::Context(1), initiator_random)?;
-        tlvwriter.put_str8(TagType::Context(2), &our_random)?;
-        tlvwriter.put_u16(
+        let mut tw = TLVWriter::new(&mut proto_tx.write_buf);
+        tw.put_start_struct(TagType::Anonymous)?;
+        tw.put_str8(TagType::Context(1), initiator_random)?;
+        tw.put_str8(TagType::Context(2), &our_random)?;
+        tw.put_u16(
             TagType::Context(3),
             proto_rx.session.get_child_local_sess_id(),
         )?;
         if !has_params {
-            tlvwriter.put_start_struct(TagType::Context(4))?;
-            tlvwriter.put_u32(TagType::Context(1), ITERATION_COUNT)?;
-            tlvwriter.put_str8(TagType::Context(2), &self.salt)?;
-            tlvwriter.put_end_container()?;
+            tw.put_start_struct(TagType::Context(4))?;
+            tw.put_u32(TagType::Context(1), ITERATION_COUNT)?;
+            tw.put_str8(TagType::Context(2), &self.salt)?;
+            tw.put_end_container()?;
         }
-        tlvwriter.put_end_container()?;
+        tw.put_end_container()?;
 
         spake2p.set_context(proto_rx.buf, proto_tx.write_buf.as_slice());
         proto_rx.exchange.set_exchange_data(spake2p);

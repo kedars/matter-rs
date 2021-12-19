@@ -30,26 +30,26 @@ pub fn dummy(_t: &mut TLVWriter) -> Result<(), Error> {
 impl<F: Fn(&mut TLVWriter) -> Result<(), Error>> ToTLV for InvokeResponse<F> {
     fn to_tlv(
         self: &InvokeResponse<F>,
-        tlvwriter: &mut TLVWriter,
+        tw: &mut TLVWriter,
         tag_type: TagType,
     ) -> Result<(), Error> {
-        tlvwriter.put_start_struct(tag_type)?;
+        tw.put_start_struct(tag_type)?;
         match self {
             InvokeResponse::Command(cmd_path, data_cb) => {
-                tlvwriter.put_start_struct(TagType::Context(0))?;
-                tlvwriter.put_object(TagType::Context(0), cmd_path)?;
-                tlvwriter.put_start_struct(TagType::Context(1))?;
-                data_cb(tlvwriter)?;
-                tlvwriter.put_end_container()?;
+                tw.put_start_struct(TagType::Context(0))?;
+                tw.put_object(TagType::Context(0), cmd_path)?;
+                tw.put_start_struct(TagType::Context(1))?;
+                data_cb(tw)?;
+                tw.put_end_container()?;
             }
             InvokeResponse::Status(cmd_path, status, cluster_status, _) => {
-                tlvwriter.put_start_struct(TagType::Context(1))?;
-                tlvwriter.put_object(TagType::Context(0), cmd_path)?;
-                put_status_ib(tlvwriter, TagType::Context(1), *status, *cluster_status)?;
+                tw.put_start_struct(TagType::Context(1))?;
+                tw.put_object(TagType::Context(0), cmd_path)?;
+                put_status_ib(tw, TagType::Context(1), *status, *cluster_status)?;
             }
         }
-        tlvwriter.put_end_container()?;
-        tlvwriter.put_end_container()
+        tw.put_end_container()?;
+        tw.put_end_container()
     }
 }
 
@@ -91,30 +91,30 @@ impl CmdPathIb {
 }
 
 impl ToTLV for CmdPathIb {
-    fn to_tlv(&self, tlvwriter: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
-        tlvwriter.put_start_list(tag_type)?;
+    fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
+        tw.put_start_list(tag_type)?;
         if let Some(endpoint) = self.endpoint {
-            tlvwriter.put_u16(TagType::Context(0), endpoint)?;
+            tw.put_u16(TagType::Context(0), endpoint)?;
         }
         if let Some(cluster) = self.cluster {
-            tlvwriter.put_u32(TagType::Context(1), cluster)?;
+            tw.put_u32(TagType::Context(1), cluster)?;
         }
-        tlvwriter.put_u16(TagType::Context(2), self.command)?;
+        tw.put_u16(TagType::Context(2), self.command)?;
 
-        tlvwriter.put_end_container()
+        tw.put_end_container()
     }
 }
 
 fn put_status_ib(
-    tlvwriter: &mut TLVWriter,
+    tw: &mut TLVWriter,
     tag_type: TagType,
     status: u32,
     cluster_status: u32,
 ) -> Result<(), Error> {
-    tlvwriter.put_start_struct(tag_type)?;
-    tlvwriter.put_u32(TagType::Context(0), status)?;
-    tlvwriter.put_u32(TagType::Context(1), cluster_status)?;
-    tlvwriter.put_end_container()
+    tw.put_start_struct(tag_type)?;
+    tw.put_u32(TagType::Context(0), status)?;
+    tw.put_u32(TagType::Context(1), cluster_status)?;
+    tw.put_end_container()
 }
 
 const _INVOKE_REQ_CTX_TAG_SUPPRESS_RESPONSE: u32 = 0;
@@ -131,7 +131,7 @@ impl InteractionModel {
         info!("In Invoke Req");
         proto_tx.proto_opcode = OpCode::InvokeResponse as u8;
 
-        let mut tlvwriter = TLVWriter::new(&mut proto_tx.write_buf);
+        let mut tw = TLVWriter::new(&mut proto_tx.write_buf);
         let root = get_root_node_struct(proto_rx.buf)?;
         // Spec says tag should be 2, but CHIP Tool sends the tag as 0
         let mut cmd_list_iter = root
@@ -140,26 +140,26 @@ impl InteractionModel {
             .into_iter()
             .ok_or(Error::InvalidData)?;
 
-        tlvwriter.put_start_struct(TagType::Anonymous)?;
+        tw.put_start_struct(TagType::Anonymous)?;
         // Suppress Response
-        tlvwriter.put_bool(TagType::Context(0), false)?;
+        tw.put_bool(TagType::Context(0), false)?;
         // Array of InvokeResponse IBs
-        tlvwriter.put_start_array(TagType::Context(1))?;
+        tw.put_start_array(TagType::Context(1))?;
         while let Some(cmd_data_ib) = cmd_list_iter.next() {
             // CommandDataIB has CommandPath(0) + Data(1)
             let cmd_path_ib = CmdPathIb::from_tlv(&cmd_data_ib.find_tag(0)?.confirm_list()?)?;
             let data = cmd_data_ib.find_tag(1)?;
 
             self.consumer
-                .consume_invoke_cmd(&cmd_path_ib, data, trans, &mut tlvwriter)
+                .consume_invoke_cmd(&cmd_path_ib, data, trans, &mut tw)
                 .map_err(|e| {
                     error!("Error in handling command: {:?}", e);
                     tlv::print_tlv_list(proto_rx.buf);
                     e
                 })?;
         }
-        tlvwriter.put_end_container()?;
-        tlvwriter.put_end_container()?;
+        tw.put_end_container()?;
+        tw.put_end_container()?;
         Ok(ResponseRequired::Yes)
     }
 }
