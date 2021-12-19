@@ -1,4 +1,4 @@
-name: Basic-Tests
+name: Test-Linux
 
 on:
   push:
