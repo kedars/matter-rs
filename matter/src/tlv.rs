@@ -381,7 +381,7 @@ impl<'a> fmt::Display for TLVElement<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.tag_type {
             TagType::Anonymous => (),
-            TagType::Context(tag) => write!(f, "{}:", tag)?,
+            TagType::Context(tag) => write!(f, "{}: ", tag)?,
             _ => write!(f, "Other Context Tag")?,
         }
         match self.element_type {
@@ -585,10 +585,50 @@ pub fn get_root_node_list(b: &[u8]) -> Result<TLVElement, Error> {
 pub fn print_tlv_list(b: &[u8]) {
     let tlvlist = TLVList::new(b, b.len());
 
+    const MAX_DEPTH: usize = 6;
     info!("TLV list:");
+    let space_buf = "                    ";
+    let space: [&str; MAX_DEPTH] = [
+        &space_buf[0..0],
+        &space_buf[0..4],
+        &space_buf[0..8],
+        &space_buf[0..12],
+        &space_buf[0..16],
+        &space_buf[0..20],
+    ];
+    let mut stack: [char; MAX_DEPTH] = [' '; MAX_DEPTH];
+    let mut index = 0_usize;
     let mut iter = tlvlist.into_iter();
     while let Some(a) = iter.next() {
-        info!("{}", a)
+        match a.element_type {
+            ElementType::Struct(_) => {
+                if index < MAX_DEPTH {
+                    info!("{}{}", space[index], a);
+                    stack[index] = '}';
+                    index += 1;
+                } else {
+                    error!("Too Deep");
+                }
+            }
+            ElementType::Array(_) | ElementType::List(_) => {
+                if index < MAX_DEPTH {
+                    info!("{}{}", space[index], a);
+                    stack[index] = ']';
+                    index += 1;
+                } else {
+                    error!("Too Deep");
+                }
+            }
+            ElementType::EndCnt => {
+                if index > 0 {
+                    index -= 1;
+                    info!("{}{}", space[index], stack[index]);
+                } else {
+                    error!("Incorrect TLV List");
+                }
+            }
+            _ => info!("{}{}", space[index], a),
+        }
     }
     info!("---------");
 }
