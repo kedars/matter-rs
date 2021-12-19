@@ -38,7 +38,7 @@ pub enum ElementType<'a> {
     True,
     F32(f32),
     F64(f64),
-    Utf8l,
+    Utf8l(&'a [u8]),
     Utf16l,
     Utf32l,
     Utf64l,
@@ -150,7 +150,22 @@ static VALUE_EXTRACTOR: [ExtractValue; MAX_VALUE_INDEX] = [
     // F64  11
     { |_t| (0, ElementType::Last) },
     // Utf8l 12
-    { |_t| (0, ElementType::Last) },
+    {
+        |t| {
+            // The current byte is the string size
+            let size: usize = t.buf[t.current] as usize;
+            // We'll consume the current byte (len) + the entire string
+            if size + 1 > t.left {
+                // Return Error
+                return (size, ElementType::Last);
+            }
+            (
+                // return the additional size only
+                size,
+                ElementType::Utf8l(&t.buf[(t.current + 1)..(t.current + 1 + size)]),
+            )
+        }
+    },
     // Utf16l  13
     { |_t| (0, ElementType::Last) },
     // Utf32l 14
@@ -308,7 +323,7 @@ impl<'a> TLVElement<'a> {
 
     pub fn get_slice(&self) -> Result<&'a [u8], Error> {
         match self.element_type {
-            ElementType::Str8l(s) => Ok(s),
+            ElementType::Str8l(s) | ElementType::Utf8l(s) => Ok(s),
             _ => Err(Error::TLVTypeMismatch),
         }
     }
@@ -376,7 +391,7 @@ impl<'a> fmt::Display for TLVElement<'a> {
             ElementType::EndCnt => write!(f, ">"),
             ElementType::True => write!(f, "True"),
             ElementType::False => write!(f, "False"),
-            ElementType::Str8l(a) => {
+            ElementType::Str8l(a) | ElementType::Utf8l(a) => {
                 if let Ok(s) = std::str::from_utf8(a) {
                     write!(f, "len[{}]\"{}\"", s.len(), s)
                 } else {

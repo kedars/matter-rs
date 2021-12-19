@@ -22,6 +22,18 @@ const CMD_ADDNOC_ID: u16 = 0x06;
 const CMD_NOCRESPONSE_ID: u16 = 0x08;
 const CMD_ADDTRUSTEDROOTCERT_ID: u16 = 0x0b;
 
+const CMD_PATH_CSRRESPONSE: CmdPathIb = CmdPathIb {
+    endpoint: Some(0),
+    cluster: Some(CLUSTER_OPERATIONAL_CREDENTIALS_ID),
+    command: CMD_CSRRESPONSE_ID,
+};
+
+const CMD_PATH_NOCRESPONSE: CmdPathIb = CmdPathIb {
+    endpoint: Some(0),
+    cluster: Some(CLUSTER_OPERATIONAL_CREDENTIALS_ID),
+    command: CMD_NOCRESPONSE_ID,
+};
+
 fn add_nocsrelement(
     noc_keypair: &KeyPair,
     csr_nonce: &[u8],
@@ -53,17 +65,10 @@ fn handle_command_csrrequest(
 
     let noc_keypair = pki::KeyPair::new()?;
 
-    let invoke_resp = InvokeResponse::Command(
-        CmdPathIb {
-            endpoint: Some(0),
-            cluster: Some(CLUSTER_OPERATIONAL_CREDENTIALS_ID),
-            command: CMD_CSRRESPONSE_ID,
-        },
-        |t| {
-            add_nocsrelement(&noc_keypair, csr_nonce, t)?;
-            t.put_str8(TagType::Context(1), b"ThisistheAttestationSignature")
-        },
-    );
+    let invoke_resp = InvokeResponse::Command(CMD_PATH_CSRRESPONSE, |t| {
+        add_nocsrelement(&noc_keypair, csr_nonce, t)?;
+        t.put_str8(TagType::Context(1), b"ThisistheAttestationSignature")
+    });
     cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)
 }
 
@@ -114,21 +119,14 @@ fn handle_command_addnoc(_cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Re
         e
     });
 
-    let invoke_resp = InvokeResponse::Command(
-        CmdPathIb {
-            endpoint: Some(0),
-            cluster: Some(CLUSTER_OPERATIONAL_CREDENTIALS_ID),
-            command: CMD_NOCRESPONSE_ID,
-        },
-        |t| {
-            // Status
-            t.put_u8(TagType::Context(0), 0)?;
-            // Fabric Index  - hard-coded for now
-            t.put_u8(TagType::Context(1), 0)?;
-            // Debug string
-            t.put_str8(TagType::Context(2), b"")
-        },
-    );
+    let invoke_resp = InvokeResponse::Command(CMD_PATH_NOCRESPONSE, |t| {
+        // Status
+        t.put_u8(TagType::Context(0), 0)?;
+        // Fabric Index  - hard-coded for now
+        t.put_u8(TagType::Context(1), 0)?;
+        // Debug string
+        t.put_str8(TagType::Context(2), b"")
+    });
     cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)
 }
 
