@@ -1,3 +1,2 @@
-matter/target
-matter/Cargo.lock
-examples/onoff_light/target
+target
+Cargo.lock
