@@ -139,7 +139,7 @@ pub fn print_dn_list(t: TLVElement) -> Result<(), Error> {
     while let Some(t) = iter.next() {
         if let TagType::Context(tag) = t.get_tag() {
             match tag {
-                17 => println!("    Chip Node Id = {:x?}", t.get_u64()?),
+                17 => println!("    Chip Node Id = {:x?}", t.get_u32()?),
                 18 => println!("    Chip Firmware Signing Id = {:?}", t.get_u8()?),
                 19 => println!("    Chip ICA Id = {:?}", t.get_u8()?),
                 20 => println!("    Chip Root CA Id = {:?}", t.get_u8()?),

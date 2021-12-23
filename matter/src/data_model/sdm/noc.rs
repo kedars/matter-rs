@@ -144,7 +144,9 @@ fn handle_command_attrequest(cluster: &mut Cluster, cmd_req: &mut CommandReq) ->
         add_attestation_element(&noc.dev_att, att_nonce, t)?;
         t.put_str8(TagType::Context(1), b"ThisistheAttestationSignature")
     });
-    cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)
+    cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)?;
+    cmd_req.trans.complete();
+    Ok(())
 }
 
 fn handle_command_certchainrequest(
@@ -188,6 +190,7 @@ fn handle_command_certchainrequest(
         t.put_str16(TagType::Context(0), buf)
     });
     cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)?;
+    cmd_req.trans.complete();
     Ok(())
 }
 
@@ -206,7 +209,9 @@ fn handle_command_csrrequest(
         add_nocsrelement(&noc_keypair, csr_nonce, t)?;
         t.put_str8(TagType::Context(1), b"ThisistheAttestationSignature")
     });
-    cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)
+    cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)?;
+    cmd_req.trans.complete();
+    Ok(())
 }
 
 fn handle_command_addtrustedrootcert(
@@ -219,7 +224,9 @@ fn handle_command_addtrustedrootcert(
     info!("Received Trusted Cert:{:?}", root_cert);
 
     let invoke_resp = InvokeRespIb::Status(cmd_req.to_cmd_path_ib(), 0, 0, command::dummy);
-    cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)
+    cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)?;
+    cmd_req.trans.complete();
+    Ok(())
 }
 
 fn handle_command_addnoc(_cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Result<(), Error> {
@@ -245,9 +252,11 @@ fn handle_command_addnoc(_cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Re
         // Fabric Index  - hard-coded for now
         t.put_u8(TagType::Context(1), 0)?;
         // Debug string
-        t.put_str8(TagType::Context(2), b"")
+        t.put_utf8(TagType::Context(2), b"")
     });
-    cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)
+    cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)?;
+    cmd_req.trans.complete();
+    Ok(())
 }
 
 fn command_attrequest_new() -> Result<Box<Command>, Error> {
