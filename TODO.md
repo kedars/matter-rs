@@ -23,4 +23,8 @@
   - Allow some way to pass in the 'passcode' and 'salt'
   - In case of error in any of the legs, return StatusReport
   - Provide a way to delete the exchange
-  - SPAKE2+: the check with I (abort if h*X == I), as indicated by the RFC is pending
+  - SPAKE2+: the check with I (abort if `h*X == I`), as indicated by the RFC is pending
+
+* Implement the ARM Fail Safe and Regulatory Config properly. Currently we just ack them to proceed further
+* Generate proper signature for CSRRequest and AttestationRequest commands
+* Store the received Root-CA and NOC somewhere for later use
