@@ -91,9 +91,21 @@ impl<'a, 'b> TLVWriter<'a, 'b> {
         self.buf.copy_from_slice(data)
     }
 
+    pub fn put_str16(&mut self, tag_type: TagType, data: &[u8]) -> Result<(), Error> {
+        self.put_control_tag(tag_type, WriteElementType::Str16l)?;
+        self.buf.le_u16(data.len() as u16)?;
+        self.buf.copy_from_slice(data)
+    }
+
     pub fn put_utf8(&mut self, tag_type: TagType, data: &[u8]) -> Result<(), Error> {
         self.put_control_tag(tag_type, WriteElementType::Utf8l)?;
         self.buf.le_u8(data.len() as u8)?;
+        self.buf.copy_from_slice(data)
+    }
+
+    pub fn put_utf16(&mut self, tag_type: TagType, data: &[u8]) -> Result<(), Error> {
+        self.put_control_tag(tag_type, WriteElementType::Utf16l)?;
+        self.buf.le_u16(data.len() as u16)?;
         self.buf.copy_from_slice(data)
     }
 
