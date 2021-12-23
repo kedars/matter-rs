@@ -1,5 +1,5 @@
 use crate::{error::*, interaction_model::command::CommandReq};
-use std::fmt;
+use std::{any::Any, fmt};
 
 /* This file needs some major revamp.
  * - instead of allocating all over the heap, we should use some kind of slab/block allocator
@@ -73,6 +73,7 @@ pub struct Cluster {
     id: u32,
     attributes: [Option<Box<Attribute>>; ATTRS_PER_CLUSTER],
     commands: [Option<Box<Command>>; CMDS_PER_CLUSTER],
+    data: Option<Box<dyn Any>>,
 }
 
 impl Cluster {
@@ -80,6 +81,18 @@ impl Cluster {
         let mut a = Box::new(Cluster::default());
         a.id = id;
         Ok(a)
+    }
+
+    pub fn set_data(&mut self, data: Box<dyn Any>) {
+        self.data = Some(data);
+    }
+
+    pub fn get_data(&mut self) -> Option<&mut Box<dyn Any>> {
+        self.data.as_mut()
+    }
+
+    pub fn clear_data(&mut self) {
+        self.data = None;
     }
 
     pub fn add_attribute(&mut self, attr: Box<Attribute>) -> Result<(), Error> {
