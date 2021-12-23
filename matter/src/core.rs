@@ -1,6 +1,9 @@
 use crate::{
-    data_model::core::DataModel, error::*, interaction_model::InteractionModel,
-    secure_channel::core::SecureChannel, transport,
+    data_model::{core::DataModel, sdm::dev_att::DevAttDataFetcher},
+    error::*,
+    interaction_model::InteractionModel,
+    secure_channel::core::SecureChannel,
+    transport,
 };
 use std::sync::Arc;
 
@@ -10,8 +13,8 @@ pub struct Matter {
 }
 
 impl Matter {
-    pub fn new() -> Result<Matter, Error> {
-        let data_model = Arc::new(DataModel::new()?);
+    pub fn new(dev_att: Box<dyn DevAttDataFetcher>) -> Result<Matter, Error> {
+        let data_model = Arc::new(DataModel::new(dev_att)?);
         let interaction_model = Box::new(InteractionModel::new(data_model.clone()));
         let secure_channel = Box::new(SecureChannel::new());
         let mut matter = Matter {

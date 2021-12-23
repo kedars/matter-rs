@@ -1,6 +1,7 @@
 use super::cluster_basic_information::*;
 use super::cluster_on_off::*;
 use super::objects::*;
+use super::sdm::dev_att::DevAttDataFetcher;
 use super::sdm::general_commissioning::cluster_general_commissioning_new;
 use super::sdm::noc::cluster_operational_credentials_new;
 use crate::error::*;
@@ -8,7 +9,10 @@ use std::sync::RwLockWriteGuard;
 
 type WriteNode<'a> = RwLockWriteGuard<'a, Box<Node>>;
 
-pub fn device_type_add_root_node(node: &mut WriteNode) -> Result<u32, Error> {
+pub fn device_type_add_root_node(
+    node: &mut WriteNode,
+    dev_att: Box<dyn DevAttDataFetcher>,
+) -> Result<u32, Error> {
     // Add the root endpoint
     let endpoint = node.add_endpoint()?;
     if endpoint != 0 {
@@ -17,7 +21,7 @@ pub fn device_type_add_root_node(node: &mut WriteNode) -> Result<u32, Error> {
     };
     // Add the mandatory clusters
     node.add_cluster(0, cluster_basic_information_new()?)?;
-    node.add_cluster(0, cluster_operational_credentials_new()?)?;
+    node.add_cluster(0, cluster_operational_credentials_new(dev_att)?)?;
     node.add_cluster(0, cluster_general_commissioning_new()?)?;
     Ok(endpoint)
 }

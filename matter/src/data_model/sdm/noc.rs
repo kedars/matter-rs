@@ -1,5 +1,6 @@
 // Node Operational Credentials Cluster
 use crate::data_model::objects::*;
+use crate::data_model::sdm::dev_att;
 use crate::interaction_model::command::{self, CommandReq, InvokeRespIb};
 use crate::interaction_model::CmdPathIb;
 use crate::pki::pki::{self, KeyPair};
@@ -9,6 +10,18 @@ use crate::utils::writebuf::WriteBuf;
 use crate::{cert, error::*};
 use log::{error, info};
 
+use super::dev_att::DevAttDataFetcher;
+
+pub struct NOC {
+    dev_att: Box<dyn DevAttDataFetcher>,
+}
+
+impl NOC {
+    pub fn new(dev_att: Box<dyn DevAttDataFetcher>) -> Self {
+        Self { dev_att }
+    }
+}
+
 // Some placeholder value for now
 const MAX_CSR_LEN: usize = 300;
 // As defined in the Matter Spec
@@ -16,6 +29,8 @@ const RESP_MAX: usize = 900;
 
 const CLUSTER_OPERATIONAL_CREDENTIALS_ID: u32 = 0x003E;
 
+const CMD_CERTCHAINREQUEST_ID: u16 = 0x02;
+const CMD_CERTCHAINRESPONSE_ID: u16 = 0x03;
 const CMD_CSRREQUEST_ID: u16 = 0x04;
 const CMD_CSRRESPONSE_ID: u16 = 0x05;
 const CMD_ADDNOC_ID: u16 = 0x06;
@@ -32,6 +47,12 @@ const CMD_PATH_NOCRESPONSE: CmdPathIb = CmdPathIb {
     endpoint: Some(0),
     cluster: Some(CLUSTER_OPERATIONAL_CREDENTIALS_ID),
     command: CMD_NOCRESPONSE_ID,
+};
+
+const CMD_PATH_CERTCHAINRESPONSE: CmdPathIb = CmdPathIb {
+    endpoint: Some(0),
+    cluster: Some(CLUSTER_OPERATIONAL_CREDENTIALS_ID),
+    command: CMD_CERTCHAINRESPONSE_ID,
 };
 
 fn add_nocsrelement(
@@ -51,6 +72,67 @@ fn add_nocsrelement(
     writer.put_end_container()?;
 
     resp.put_str8(TagType::Context(0), write_buf.as_slice())?;
+    Ok(())
+}
+
+fn get_addnoc_params<'a, 'b, 'c>(
+    cmd_req: &mut CommandReq<'a, 'b, 'c>,
+) -> Result<(&'a [u8], &'a [u8], &'a [u8], u32, u16), Error> {
+    let noc_value = cmd_req.data.find_tag(0)?.get_slice()?;
+    let icac_value = cmd_req.data.find_tag(1)?.get_slice()?;
+    let ipk_value = cmd_req.data.find_tag(2)?.get_slice()?;
+    let case_admin_node_id = cmd_req.data.find_tag(3)?.get_u32()?;
+    let vendor_id = cmd_req.data.find_tag(4)?.get_u16()?;
+    Ok((
+        noc_value,
+        icac_value,
+        ipk_value,
+        case_admin_node_id,
+        vendor_id,
+    ))
+}
+
+fn handle_command_certchainrequest(
+    cluster: &mut Cluster,
+    cmd_req: &mut CommandReq,
+) -> Result<(), Error> {
+    info!("Handling CertChainRequest");
+
+    info!("Received data: {}", cmd_req.data);
+    let cert_type = cmd_req
+        .data
+        .confirm_struct()?
+        .into_iter()
+        .ok_or(Error::InvalidData)?
+        .next()
+        .ok_or(Error::InvalidData)?
+        .get_u8()?;
+
+    const CERT_TYPE_DAC: u8 = 1;
+    const CERT_TYPE_PAI: u8 = 2;
+    info!("Received Cert Type:{:?}", cert_type);
+    let cert_type = match cert_type {
+        CERT_TYPE_DAC => dev_att::DataType::DAC,
+        CERT_TYPE_PAI => dev_att::DataType::PAI,
+        _ => {
+            return Err(Error::InvalidData);
+        }
+    };
+
+    let noc = cluster
+        .get_data()
+        .ok_or(Error::InvalidState)?
+        .downcast_mut::<NOC>()
+        .ok_or(Error::InvalidState)?;
+
+    let mut buf: [u8; RESP_MAX] = [0; RESP_MAX];
+    let len = noc.dev_att.get_devatt_data(cert_type, &mut buf)?;
+    let buf = &buf[0..len];
+
+    let invoke_resp = InvokeRespIb::Command(CMD_PATH_CERTCHAINRESPONSE, |t| {
+        t.put_str16(TagType::Context(0), buf)
+    });
+    cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)?;
     Ok(())
 }
 
@@ -85,23 +167,6 @@ fn handle_command_addtrustedrootcert(
     cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)
 }
 
-fn get_addnoc_params<'a, 'b, 'c>(
-    cmd_req: &mut CommandReq<'a, 'b, 'c>,
-) -> Result<(&'a [u8], &'a [u8], &'a [u8], u32, u16), Error> {
-    let noc_value = cmd_req.data.find_tag(0)?.get_slice()?;
-    let icac_value = cmd_req.data.find_tag(1)?.get_slice()?;
-    let ipk_value = cmd_req.data.find_tag(2)?.get_slice()?;
-    let case_admin_node_id = cmd_req.data.find_tag(3)?.get_u32()?;
-    let vendor_id = cmd_req.data.find_tag(4)?.get_u16()?;
-    Ok((
-        noc_value,
-        icac_value,
-        ipk_value,
-        case_admin_node_id,
-        vendor_id,
-    ))
-}
-
 fn handle_command_addnoc(_cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Result<(), Error> {
     info!("Handling AddNOC");
     let (noc_value, icac_value, _ipk_value, _case_admin_node_id, _vendor_id) =
@@ -130,6 +195,10 @@ fn handle_command_addnoc(_cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Re
     cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)
 }
 
+fn command_certchainrequest_new() -> Result<Box<Command>, Error> {
+    Command::new(CMD_CERTCHAINREQUEST_ID, handle_command_certchainrequest)
+}
+
 fn command_csrrequest_new() -> Result<Box<Command>, Error> {
     Command::new(CMD_CSRREQUEST_ID, handle_command_csrrequest)
 }
@@ -142,10 +211,16 @@ fn command_addnoc_new() -> Result<Box<Command>, Error> {
     Command::new(CMD_ADDNOC_ID, handle_command_addnoc)
 }
 
-pub fn cluster_operational_credentials_new() -> Result<Box<Cluster>, Error> {
+pub fn cluster_operational_credentials_new(
+    dev_att: Box<dyn DevAttDataFetcher>,
+) -> Result<Box<Cluster>, Error> {
     let mut cluster = Cluster::new(CLUSTER_OPERATIONAL_CREDENTIALS_ID)?;
+    cluster.add_command(command_certchainrequest_new()?)?;
     cluster.add_command(command_csrrequest_new()?)?;
     cluster.add_command(command_addtrustedrootcert_new()?)?;
     cluster.add_command(command_addnoc_new()?)?;
+
+    let noc = Box::new(NOC::new(dev_att));
+    cluster.set_data(noc);
     Ok(cluster)
 }

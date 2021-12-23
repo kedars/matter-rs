@@ -1,4 +1,4 @@
-use super::{device_types::device_type_add_root_node, objects::*};
+use super::{device_types::device_type_add_root_node, objects::*, sdm::dev_att::DevAttDataFetcher};
 use crate::{
     error::*,
     interaction_model::{command::CommandReq, CmdPathIb, InteractionConsumer, Transaction},
@@ -13,13 +13,13 @@ pub struct DataModel {
 }
 
 impl DataModel {
-    pub fn new() -> Result<Self, Error> {
+    pub fn new(dev_att: Box<dyn DevAttDataFetcher>) -> Result<Self, Error> {
         let dm = DataModel {
             node: RwLock::new(Node::new()?),
         };
         {
             let mut node = dm.node.write()?;
-            device_type_add_root_node(&mut node)?;
+            device_type_add_root_node(&mut node, dev_att)?;
         }
         Ok(dm)
     }
