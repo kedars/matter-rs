@@ -9,7 +9,7 @@ use std::{any::Any, fmt};
 pub const ENDPTS_PER_ACC: usize = 3;
 pub const CLUSTERS_PER_ENDPT: usize = 4;
 pub const ATTRS_PER_CLUSTER: usize = 4;
-pub const CMDS_PER_CLUSTER: usize = 4;
+pub const CMDS_PER_CLUSTER: usize = 8;
 
 #[derive(Debug)]
 pub enum AttrValue {

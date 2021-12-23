@@ -1,4 +1,4 @@
-use std::{fmt, sync::PoisonError};
+use std::{fmt, sync::PoisonError, time::SystemTimeError};
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
@@ -19,6 +19,7 @@ pub enum Error {
     NoTagFound,
     NotFound,
     StdIoError,
+    SysTimeFail,
     Invalid,
     InvalidAAD,
     InvalidData,
@@ -53,6 +54,12 @@ impl<T> From<PoisonError<T>> for Error {
 impl From<openssl::error::ErrorStack> for Error {
     fn from(_e: openssl::error::ErrorStack) -> Self {
         Self::OpenSSL
+    }
+}
+
+impl From<SystemTimeError> for Error {
+    fn from(_e: SystemTimeError) -> Self {
+        Self::SysTimeFail
     }
 }
 
