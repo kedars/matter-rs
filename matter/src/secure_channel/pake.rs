@@ -49,11 +49,10 @@ impl PAKE {
         proto_rx: &mut ProtoRx,
         proto_tx: &mut ProtoTx,
     ) -> Result<(), Error> {
-        let mut spake2_boxed = proto_rx
+        let spake2 = proto_rx
             .exchange
-            .get_and_clear_exchange_data()
-            .ok_or(Error::InvalidState)?;
-        let spake2 = spake2_boxed
+            .get_exchange_data()
+            .ok_or(Error::InvalidState)?
             .downcast_mut::<Spake2P>()
             .ok_or(Error::InvalidState)?;
 
@@ -80,6 +79,7 @@ impl PAKE {
         }
 
         create_sc_status_report(proto_tx, status_code)?;
+        proto_rx.exchange.clear_exchange_data();
         proto_rx.exchange.close();
         Ok(())
     }
@@ -90,11 +90,10 @@ impl PAKE {
         proto_rx: &mut ProtoRx,
         proto_tx: &mut ProtoTx,
     ) -> Result<(), Error> {
-        let mut spake2_boxed = proto_rx
+        let spake2 = proto_rx
             .exchange
-            .get_and_clear_exchange_data()
-            .ok_or(Error::InvalidState)?;
-        let spake2 = spake2_boxed
+            .get_exchange_data()
+            .ok_or(Error::InvalidState)?
             .downcast_mut::<Spake2P>()
             .ok_or(Error::InvalidState)?;
 
@@ -110,7 +109,6 @@ impl PAKE {
         tw.put_str8(TagType::Context(2), &cB)?;
         tw.put_end_container()?;
 
-        proto_rx.exchange.set_exchange_data(spake2_boxed);
         Ok(())
     }
 
