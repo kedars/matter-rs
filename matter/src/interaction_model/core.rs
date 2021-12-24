@@ -50,6 +50,12 @@ impl Transaction {
     }
 }
 
+impl Default for Transaction {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InteractionModel {
     pub fn new(consumer: Arc<dyn InteractionConsumer>) -> InteractionModel {
         InteractionModel { consumer }

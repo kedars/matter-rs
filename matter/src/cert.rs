@@ -84,26 +84,26 @@ pub fn print_key_usage(t: TLVElement) -> Result<(), Error> {
         print!("{} decipherOnly", comma);
         comma = ",";
     }
-    println!("");
+    println!();
     Ok(())
 }
 
 pub fn print_extended_key_usage(t: TLVElement) -> Result<(), Error> {
     println!("    X509v3 Extended Key Usage:");
-    let mut iter = t.confirm_array()?.iter().ok_or(Error::Invalid)?;
+    let iter = t.confirm_array()?.iter().ok_or(Error::Invalid)?;
     let mut comma = "        ";
-    while let Some(t) = iter.next() {
+    for t in iter {
         print!("{}{}", comma, t.get_u8()?);
         comma = ",";
     }
-    println!("");
+    println!();
     Ok(())
 }
 
 pub fn print_basic_constraints(t: TLVElement) -> Result<(), Error> {
     println!("    X509v3 Basic Constraints:");
-    let mut iter = t.confirm_struct()?.iter().ok_or(Error::Invalid)?;
-    while let Some(t) = iter.next() {
+    let iter = t.confirm_struct()?.iter().ok_or(Error::Invalid)?;
+    for t in iter {
         if let TagType::Context(tag) = t.get_tag() {
             match tag {
                 1 => println!("        CA = {:?}", t.get_bool()?),
@@ -117,8 +117,8 @@ pub fn print_basic_constraints(t: TLVElement) -> Result<(), Error> {
 
 pub fn print_extensions(t: TLVElement) -> Result<(), Error> {
     println!("X509v3 extensions:");
-    let mut iter = t.confirm_list()?.iter().ok_or(Error::Invalid)?;
-    while let Some(t) = iter.next() {
+    let iter = t.confirm_list()?.iter().ok_or(Error::Invalid)?;
+    for t in iter {
         if let TagType::Context(tag) = t.get_tag() {
             match tag {
                 1 => print_basic_constraints(t)?,
@@ -135,8 +135,8 @@ pub fn print_extensions(t: TLVElement) -> Result<(), Error> {
 }
 
 pub fn print_dn_list(t: TLVElement) -> Result<(), Error> {
-    let mut iter = t.confirm_list()?.iter().ok_or(Error::Invalid)?;
-    while let Some(t) = iter.next() {
+    let iter = t.confirm_list()?.iter().ok_or(Error::Invalid)?;
+    for t in iter {
         if let TagType::Context(tag) = t.get_tag() {
             match tag {
                 17 => println!("    Chip Node Id = {:x?}", t.get_u32()?),
@@ -154,9 +154,9 @@ pub fn print_dn_list(t: TLVElement) -> Result<(), Error> {
 }
 
 pub fn print_cert(buf: &[u8]) -> Result<(), Error> {
-    let mut iter = tlv::get_root_node_struct(buf)?.iter().unwrap();
+    let iter = tlv::get_root_node_struct(buf)?.iter().unwrap();
 
-    while let Some(t) = iter.next() {
+    for t in iter {
         if let TagType::Context(tag) = t.get_tag() {
             match tag {
                 1 => println!("Serial Number: {:x?}", t.get_slice()?),

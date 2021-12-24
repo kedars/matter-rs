@@ -226,6 +226,12 @@ impl Session {
     }
 }
 
+impl Default for SessionMgr {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl fmt::Display for Session {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(

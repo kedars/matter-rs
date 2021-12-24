@@ -119,7 +119,7 @@ impl Cluster {
         let cmd = self
             .commands
             .iter()
-            .find(|x| x.as_ref().map_or(false, |c| c.id == cmd_req.command.into()))
+            .find(|x| x.as_ref().map_or(false, |c| c.id == cmd_req.command))
             .ok_or(Error::CommandNotFound)?
             .as_ref()
             .ok_or(Error::CommandNotFound)?;

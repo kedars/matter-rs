@@ -53,7 +53,7 @@ impl<'a, 'b> TLVWriter<'a, 'b> {
         val_type: WriteElementType,
     ) -> Result<(), Error> {
         let (tag_id, tag_val) = match tag_type {
-            TagType::Anonymous => (0 as u8, 0),
+            TagType::Anonymous => (0_u8, 0),
             TagType::Context(v) => (1, v as u64),
             TagType::CommonPrf16(v) => (2, v as u64),
             TagType::CommonPrf32(v) => (3, v as u64),

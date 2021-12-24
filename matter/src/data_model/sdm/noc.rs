@@ -235,13 +235,13 @@ fn handle_command_addnoc(_cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Re
         get_addnoc_params(cmd_req)?;
 
     info!("Received NOC as:");
-    cert::print_cert(&noc_value).map_err(|e| {
+    cert::print_cert(noc_value).map_err(|e| {
         error!("Error parsing NOC");
         e
     })?;
 
     info!("Received ICAC as:");
-    let _ = cert::print_cert(&icac_value).map_err(|e| {
+    let _ = cert::print_cert(icac_value).map_err(|e| {
         error!("Error parsing ICAC");
         e
     });

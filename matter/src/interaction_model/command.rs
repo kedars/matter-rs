@@ -130,7 +130,7 @@ impl InteractionModel {
         let mut tw = TLVWriter::new(&mut proto_tx.write_buf);
         let root = get_root_node_struct(proto_rx.buf)?;
         // Spec says tag should be 2, but CHIP Tool sends the tag as 0
-        let mut cmd_list_iter = root
+        let cmd_list_iter = root
             .find_tag(INVOKE_REQ_CTX_TAG_INVOKE_REQUESTS)?
             .confirm_array()?
             .iter()
@@ -141,7 +141,7 @@ impl InteractionModel {
         tw.put_bool(TagType::Context(0), false)?;
         // Array of InvokeResponse IBs
         tw.put_start_array(TagType::Context(1))?;
-        while let Some(cmd_data_ib) = cmd_list_iter.next() {
+        for cmd_data_ib in cmd_list_iter {
             // CommandDataIB has CommandPath(0) + Data(1)
             let cmd_path_ib = CmdPathIb::from_tlv(&cmd_data_ib.find_tag(0)?.confirm_list()?)?;
             let data = cmd_data_ib.find_tag(1)?;

@@ -48,7 +48,7 @@ impl InteractionConsumer for DataModel {
         {
             let mut node = self.node.write()?;
             node.get_endpoint(cmd_req.endpoint.into())?
-                .get_cluster(cmd_req.cluster.into())?
+                .get_cluster(cmd_req.cluster)?
                 .handle_command(&mut cmd_req)?;
         }
 

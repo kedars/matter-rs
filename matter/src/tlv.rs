@@ -367,18 +367,15 @@ impl<'a> TLVElement<'a> {
     }
 
     pub fn find_tag(&self, tag: u32) -> Result<TLVElement<'a>, Error> {
-        let mut iter = self.iter().ok_or(Error::TLVTypeMismatch)?;
         let match_tag: TagType = TagType::Context(tag as u8);
-        loop {
-            match iter.next() {
-                Some(a) => {
-                    if match_tag == a.tag_type {
-                        return Ok(a);
-                    }
-                }
-                None => return Err(Error::NoTagFound),
+
+        let iter = self.iter().ok_or(Error::TLVTypeMismatch)?;
+        for a in iter {
+            if match_tag == a.tag_type {
+                return Ok(a);
             }
         }
+        return Err(Error::NoTagFound);
     }
 
     pub fn get_tag(&self) -> TagType {
@@ -609,8 +606,8 @@ pub fn print_tlv_list(b: &[u8]) {
     ];
     let mut stack: [char; MAX_DEPTH] = [' '; MAX_DEPTH];
     let mut index = 0_usize;
-    let mut iter = tlvlist.iter();
-    while let Some(a) = iter.next() {
+    let iter = tlvlist.iter();
+    for a in iter {
         match a.element_type {
             ElementType::Struct(_) => {
                 if index < MAX_DEPTH {
