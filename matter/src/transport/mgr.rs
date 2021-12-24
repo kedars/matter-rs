@@ -1,6 +1,5 @@
 use heapless::LinearMap;
 use log::{debug, error, info, trace};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use crate::error::*;
 use crate::proto_demux;
@@ -30,30 +29,13 @@ pub struct Mgr {
 
 impl Mgr {
     pub fn new() -> Result<Mgr, Error> {
-        let mut mgr = Mgr {
+        Ok(Mgr {
             transport: udp::UdpListener::new()?,
             sess_mgr: session::SessionMgr::new(),
             proto_demux: proto_demux::ProtoDemux::new(),
             exch_mgr: exchange::ExchangeMgr::new(),
             rel_mgr: mrp::ReliableMessage::new(),
-        };
-
-        // Create a fake entry as hard-coded in the 'bypass mode' in chip-tool
-        let test_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 5541);
-        let i2r_key = [
-            0x44, 0xd4, 0x3c, 0x91, 0xd2, 0x27, 0xf3, 0xba, 0x08, 0x24, 0xc5, 0xd8, 0x7c, 0xb8,
-            0x1b, 0x33,
-        ];
-        let r2i_key = [
-            0xac, 0xc1, 0x8f, 0x06, 0xc7, 0xbc, 0x9b, 0xe8, 0x24, 0x6a, 0x67, 0x8c, 0xb1, 0xf8,
-            0xba, 0x3d,
-        ];
-
-        let (_, session) = mgr.sess_mgr.add(test_addr).unwrap();
-        session.activate(&i2r_key, &r2i_key, 0).unwrap();
-        session.cheat_set_zero_local_sess_id();
-
-        Ok(mgr)
+        })
     }
 
     // Allows registration of different protocols with the Transport/Protocol Demux

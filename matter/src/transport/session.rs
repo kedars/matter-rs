@@ -131,11 +131,6 @@ impl Session {
         self.peer_addr
     }
 
-    // This is required for the bypass case
-    pub fn cheat_set_zero_local_sess_id(&mut self) {
-        self.local_sess_id = 0;
-    }
-
     pub fn is_encrypted(&self) -> bool {
         self.mode == SessionMode::Encrypted
     }
@@ -158,24 +153,6 @@ impl Session {
             SessionMode::Encrypted => Some(&self.enc_key),
             SessionMode::PlainText => None,
         }
-    }
-
-    pub fn activate(
-        &mut self,
-        dec_key: &[u8],
-        enc_key: &[u8],
-        peer_sess_id: u16,
-    ) -> Result<(), Error> {
-        self.set_local_sess_id();
-        self.peer_sess_id = peer_sess_id;
-        if enc_key.len() == self.enc_key.len() {
-            self.enc_key.copy_from_slice(enc_key);
-        }
-        if dec_key.len() == self.dec_key.len() {
-            self.dec_key.copy_from_slice(dec_key);
-        }
-        self.mode = SessionMode::Encrypted;
-        Ok(())
     }
 
     pub fn recv(
