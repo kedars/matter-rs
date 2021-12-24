@@ -90,7 +90,7 @@ pub fn print_key_usage(t: TLVElement) -> Result<(), Error> {
 
 pub fn print_extended_key_usage(t: TLVElement) -> Result<(), Error> {
     println!("    X509v3 Extended Key Usage:");
-    let mut iter = t.confirm_array()?.into_iter().ok_or(Error::Invalid)?;
+    let mut iter = t.confirm_array()?.iter().ok_or(Error::Invalid)?;
     let mut comma = "        ";
     while let Some(t) = iter.next() {
         print!("{}{}", comma, t.get_u8()?);
@@ -102,7 +102,7 @@ pub fn print_extended_key_usage(t: TLVElement) -> Result<(), Error> {
 
 pub fn print_basic_constraints(t: TLVElement) -> Result<(), Error> {
     println!("    X509v3 Basic Constraints:");
-    let mut iter = t.confirm_struct()?.into_iter().ok_or(Error::Invalid)?;
+    let mut iter = t.confirm_struct()?.iter().ok_or(Error::Invalid)?;
     while let Some(t) = iter.next() {
         if let TagType::Context(tag) = t.get_tag() {
             match tag {
@@ -117,7 +117,7 @@ pub fn print_basic_constraints(t: TLVElement) -> Result<(), Error> {
 
 pub fn print_extensions(t: TLVElement) -> Result<(), Error> {
     println!("X509v3 extensions:");
-    let mut iter = t.confirm_list()?.into_iter().ok_or(Error::Invalid)?;
+    let mut iter = t.confirm_list()?.iter().ok_or(Error::Invalid)?;
     while let Some(t) = iter.next() {
         if let TagType::Context(tag) = t.get_tag() {
             match tag {
@@ -135,7 +135,7 @@ pub fn print_extensions(t: TLVElement) -> Result<(), Error> {
 }
 
 pub fn print_dn_list(t: TLVElement) -> Result<(), Error> {
-    let mut iter = t.confirm_list()?.into_iter().ok_or(Error::Invalid)?;
+    let mut iter = t.confirm_list()?.iter().ok_or(Error::Invalid)?;
     while let Some(t) = iter.next() {
         if let TagType::Context(tag) = t.get_tag() {
             match tag {
@@ -154,7 +154,7 @@ pub fn print_dn_list(t: TLVElement) -> Result<(), Error> {
 }
 
 pub fn print_cert(buf: &[u8]) -> Result<(), Error> {
-    let mut iter = tlv::get_root_node_struct(buf)?.into_iter().unwrap();
+    let mut iter = tlv::get_root_node_struct(buf)?.iter().unwrap();
 
     while let Some(t) = iter.next() {
         if let TagType::Context(tag) = t.get_tag() {

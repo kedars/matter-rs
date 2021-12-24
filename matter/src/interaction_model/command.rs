@@ -133,7 +133,7 @@ impl InteractionModel {
         let mut cmd_list_iter = root
             .find_tag(INVOKE_REQ_CTX_TAG_INVOKE_REQUESTS)?
             .confirm_array()?
-            .into_iter()
+            .iter()
             .ok_or(Error::InvalidData)?;
 
         tw.put_start_struct(TagType::Anonymous)?;

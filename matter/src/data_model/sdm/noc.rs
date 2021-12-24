@@ -159,7 +159,7 @@ fn handle_command_certchainrequest(
     let cert_type = cmd_req
         .data
         .confirm_struct()?
-        .into_iter()
+        .iter()
         .ok_or(Error::InvalidData)?
         .next()
         .ok_or(Error::InvalidData)?

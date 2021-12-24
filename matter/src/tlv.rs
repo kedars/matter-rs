@@ -285,7 +285,7 @@ pub struct TLVElement<'a> {
 }
 
 impl<'a> TLVElement<'a> {
-    pub fn into_iter(&self) -> Option<TLVContainerIterator<'a>> {
+    pub fn iter(&self) -> Option<TLVContainerIterator<'a>> {
         let ptr = match self.element_type {
             ElementType::Struct(a) | ElementType::Array(a) | ElementType::List(a) => a,
             _ => return None,
@@ -367,7 +367,7 @@ impl<'a> TLVElement<'a> {
     }
 
     pub fn find_tag(&self, tag: u32) -> Result<TLVElement<'a>, Error> {
-        let mut iter = self.into_iter().ok_or(Error::TLVTypeMismatch)?;
+        let mut iter = self.iter().ok_or(Error::TLVTypeMismatch)?;
         let match_tag: TagType = TagType::Context(tag as u8);
         loop {
             match iter.next() {
@@ -461,9 +461,10 @@ impl<'a> TLVListIterator<'a> {
     }
 }
 
-impl<'a> TLVListIterator<'a> {
+impl<'a> Iterator for TLVListIterator<'a> {
+    type Item = TLVElement<'a>;
     /* Code for going to the next Element */
-    pub fn next(&mut self) -> Option<TLVElement<'a>> {
+    fn next(&mut self) -> Option<TLVElement<'a>> {
         if self.left < 1 {
             return None;
         }
@@ -487,7 +488,7 @@ impl<'a> TLVListIterator<'a> {
 }
 
 impl<'a> TLVList<'a> {
-    pub fn into_iter(&self) -> TLVListIterator<'a> {
+    pub fn iter(&self) -> TLVListIterator<'a> {
         TLVListIterator {
             current: 0,
             left: self.len,
@@ -546,9 +547,10 @@ impl<'a> TLVContainerIterator<'a> {
     }
 }
 
-impl<'a> TLVContainerIterator<'a> {
+impl<'a> Iterator for TLVContainerIterator<'a> {
+    type Item = TLVElement<'a>;
     /* Code for going to the next Element */
-    pub fn next(&mut self) -> Option<TLVElement<'a>> {
+    fn next(&mut self) -> Option<TLVElement<'a>> {
         // This iterator may be consumed, but the underlying might not. This protects it from such occurrences
         if self.iterator_consumed {
             return None;
@@ -577,7 +579,7 @@ impl<'a> TLVContainerIterator<'a> {
 
 pub fn get_root_node_struct(b: &[u8]) -> Result<TLVElement, Error> {
     return TLVList::new(b, b.len())
-        .into_iter()
+        .iter()
         .next()
         .ok_or(Error::InvalidData)?
         .confirm_struct();
@@ -585,7 +587,7 @@ pub fn get_root_node_struct(b: &[u8]) -> Result<TLVElement, Error> {
 
 pub fn get_root_node_list(b: &[u8]) -> Result<TLVElement, Error> {
     return TLVList::new(b, b.len())
-        .into_iter()
+        .iter()
         .next()
         .ok_or(Error::InvalidData)?
         .confirm_list();
@@ -607,7 +609,7 @@ pub fn print_tlv_list(b: &[u8]) {
     ];
     let mut stack: [char; MAX_DEPTH] = [' '; MAX_DEPTH];
     let mut index = 0_usize;
-    let mut iter = tlvlist.into_iter();
+    let mut iter = tlvlist.iter();
     while let Some(a) = iter.next() {
         match a.element_type {
             ElementType::Struct(_) => {
@@ -651,7 +653,7 @@ mod tests {
         // The 0x36 is an array with a tag, but we leave out the tag field
         let b = [0x15, 0x36];
         let tlvlist = TLVList::new(&b, b.len());
-        let mut tlv_iter = tlvlist.into_iter();
+        let mut tlv_iter = tlvlist.iter();
         // Skip the 0x15
         tlv_iter.next();
         assert_eq!(tlv_iter.next(), None);
@@ -662,7 +664,7 @@ mod tests {
         // The 0x24 is a a tagged integer, here we leave out the integer value
         let b = [0x15, 0x1f, 0x0];
         let tlvlist = TLVList::new(&b, b.len());
-        let mut tlv_iter = tlvlist.into_iter();
+        let mut tlv_iter = tlvlist.iter();
         // Skip the 0x15
         tlv_iter.next();
         assert_eq!(tlv_iter.next(), None);
@@ -673,7 +675,7 @@ mod tests {
         // The 0x24 is a a tagged integer, here we leave out the integer value
         let b = [0x15, 0x24, 0x0];
         let tlvlist = TLVList::new(&b, b.len());
-        let mut tlv_iter = tlvlist.into_iter();
+        let mut tlv_iter = tlvlist.iter();
         // Skip the 0x15
         tlv_iter.next();
         assert_eq!(tlv_iter.next(), None);
@@ -684,7 +686,7 @@ mod tests {
         // This is a tagged string, with tag 0 and length 0xb, but we only have 4 bytes in the string
         let b = [0x15, 0x30, 0x00, 0x0b, 0x73, 0x6d, 0x61, 0x72];
         let tlvlist = TLVList::new(&b, b.len());
-        let mut tlv_iter = tlvlist.into_iter();
+        let mut tlv_iter = tlvlist.iter();
         // Skip the 0x15
         tlv_iter.next();
         assert_eq!(tlv_iter.next(), None);
@@ -695,7 +697,7 @@ mod tests {
         // The 0x36 is an array with a tag, here tag is 0
         let b = [0x15, 0x36, 0x0];
         let tlvlist = TLVList::new(&b, b.len());
-        let mut tlv_iter = tlvlist.into_iter();
+        let mut tlv_iter = tlvlist.iter();
         // Skip the 0x15
         tlv_iter.next();
         assert_eq!(
@@ -716,7 +718,7 @@ mod tests {
         // The 0x24 is a a tagged integer, here the integer is 2
         let b = [0x15, 0x24, 0x1, 0x2];
         let tlvlist = TLVList::new(&b, b.len());
-        let mut tlv_iter = tlvlist.into_iter();
+        let mut tlv_iter = tlvlist.iter();
         // Skip the 0x15
         tlv_iter.next();
         assert_eq!(
@@ -733,7 +735,7 @@ mod tests {
         // This is a tagged string, with tag 0 and length 4, and we have 4 bytes in the string
         let b = [0x15, 0x30, 0x5, 0x04, 0x73, 0x6d, 0x61, 0x72];
         let tlvlist = TLVList::new(&b, b.len());
-        let mut tlv_iter = tlvlist.into_iter();
+        let mut tlv_iter = tlvlist.iter();
         // Skip the 0x15
         tlv_iter.next();
         assert_eq!(
@@ -784,7 +786,7 @@ mod tests {
             0x82, 0x19, 0x26, 0x2, 0x3e, 0x0, 0x0, 0x0,
         ];
         let tlvlist = TLVList::new(&b, b.len());
-        let mut tlv_iter = tlvlist.into_iter();
+        let mut tlv_iter = tlvlist.iter();
         // Skip the 0x15
         tlv_iter.next();
         assert_eq!(
@@ -844,10 +846,10 @@ mod tests {
         // The 0x24 is a a tagged integer, here the integer is 2
         let b = [0x15, 0x24, 0x1, 0x2];
         let tlvlist = TLVList::new(&b, b.len());
-        let mut tlv_iter = tlvlist.into_iter();
+        let mut tlv_iter = tlvlist.iter();
         // Skip the 0x15
         tlv_iter.next();
-        assert_eq!(tlv_iter.next().unwrap().into_iter(), None);
+        assert_eq!(tlv_iter.next().unwrap().iter(), None);
     }
 
     #[test]
@@ -857,7 +859,7 @@ mod tests {
             0x15, 0x24, 0x0, 0x2, 0x26, 0x2, 0x4e, 0x10, 0x02, 0x00, 0x30, 0x3, 0x04, 0x73, 0x6d,
             0x61, 0x72,
         ];
-        let mut root_iter = get_root_node_struct(&b).unwrap().into_iter().unwrap();
+        let mut root_iter = get_root_node_struct(&b).unwrap().iter().unwrap();
         assert_eq!(
             root_iter.next(),
             Some(TLVElement {
@@ -920,7 +922,7 @@ mod tests {
             0x17, 0x24, 0x0, 0x2, 0x26, 0x2, 0x4e, 0x10, 0x02, 0x00, 0x30, 0x3, 0x04, 0x73, 0x6d,
             0x61, 0x72,
         ];
-        let mut root_iter = get_root_node_list(&b).unwrap().into_iter().unwrap();
+        let mut root_iter = get_root_node_list(&b).unwrap().iter().unwrap();
         assert_eq!(
             root_iter.next(),
             Some(TLVElement {
@@ -959,7 +961,7 @@ mod tests {
             .unwrap()
             .confirm_array()
             .unwrap()
-            .into_iter()
+            .iter()
             .unwrap();
         println!("Command list iterator: {:?}", cmd_list_iter);
 
@@ -992,7 +994,7 @@ mod tests {
 
         // This is the variable of the invoke command
         assert_eq!(
-            cmd_data_ib.find_tag(1).unwrap().into_iter().unwrap().next(),
+            cmd_data_ib.find_tag(1).unwrap().iter().unwrap().next(),
             None
         );
     }
@@ -1005,7 +1007,7 @@ mod tests {
             .unwrap()
             .find_tag(0)
             .unwrap()
-            .into_iter()
+            .iter()
             .unwrap();
         assert_eq!(
             sub_root_iter.next(),
@@ -1050,7 +1052,7 @@ mod tests {
             (TagType::Anonymous, ElementType::EndCnt),
         ];
 
-        let mut list_iter = TLVList::new(&b, b.len()).into_iter();
+        let mut list_iter = TLVList::new(&b, b.len()).iter();
         let mut index = 0;
         loop {
             let element = list_iter.next();
