@@ -2,16 +2,17 @@ use std::any::Any;
 
 use std::sync::Arc;
 
-use crate::{error::Error, tlv::TLVElement, tlv_writer::TLVWriter};
+use crate::{error::Error, tlv::TLVElement, tlv_writer::TLVWriter, transport::session::Session};
 
 #[derive(PartialEq)]
 pub enum TransactionState {
     Ongoing,
     Complete,
 }
-pub struct Transaction {
+pub struct Transaction<'a> {
     pub state: TransactionState,
     pub data: Option<Box<dyn Any>>,
+    pub session: &'a mut Session,
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -89,8 +89,8 @@ impl Exchange {
         self.data = None;
     }
 
-    pub fn get_exchange_data(&mut self) -> Option<&mut Box<dyn Any>> {
-        self.data.as_mut()
+    pub fn get_exchange_data<T: Any>(&mut self) -> Option<&mut T> {
+        self.data.as_mut()?.downcast_mut::<T>()
     }
 
     pub fn send(&self, proto_hdr: &mut ProtoHdr) -> Result<(), Error> {

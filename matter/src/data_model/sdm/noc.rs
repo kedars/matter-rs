@@ -111,8 +111,8 @@ fn add_nocsrelement(
     Ok(())
 }
 
-fn get_addnoc_params<'a, 'b, 'c>(
-    cmd_req: &mut CommandReq<'a, 'b, 'c>,
+fn get_addnoc_params<'a, 'b, 'c, 'd>(
+    cmd_req: &mut CommandReq<'a, 'b, 'c, 'd>,
 ) -> Result<(&'a [u8], &'a [u8], &'a [u8], u32, u16), Error> {
     let noc_value = cmd_req.data.find_tag(0)?.get_slice()?;
     let icac_value = cmd_req.data.find_tag(1)?.get_slice()?;
@@ -134,11 +134,7 @@ fn handle_command_attrequest(cluster: &mut Cluster, cmd_req: &mut CommandReq) ->
     let att_nonce = cmd_req.data.find_tag(0)?.get_slice()?;
     info!("Received Attestation Nonce:{:?}", att_nonce);
 
-    let noc = cluster
-        .get_data()
-        .ok_or(Error::InvalidState)?
-        .downcast_mut::<NOC>()
-        .ok_or(Error::InvalidState)?;
+    let noc = cluster.get_data::<NOC>().ok_or(Error::InvalidState)?;
 
     let invoke_resp = InvokeRespIb::Command(CMD_PATH_ATTRESPONSE, |t| {
         add_attestation_element(&noc.dev_att, att_nonce, t)?;
@@ -176,11 +172,7 @@ fn handle_command_certchainrequest(
         }
     };
 
-    let noc = cluster
-        .get_data()
-        .ok_or(Error::InvalidState)?
-        .downcast_mut::<NOC>()
-        .ok_or(Error::InvalidState)?;
+    let noc = cluster.get_data::<NOC>().ok_or(Error::InvalidState)?;
 
     let mut buf: [u8; RESP_MAX] = [0; RESP_MAX];
     let len = noc.dev_att.get_devatt_data(cert_type, &mut buf)?;
@@ -210,6 +202,7 @@ fn handle_command_csrrequest(
         t.put_str8(TagType::Context(1), b"ThisistheAttestationSignature")
     });
     cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)?;
+    cmd_req.trans.session.set_data(Box::new(noc_keypair));
     cmd_req.trans.complete();
     Ok(())
 }
@@ -230,6 +223,12 @@ fn handle_command_addtrustedrootcert(
 }
 
 fn handle_command_addnoc(_cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Result<(), Error> {
+    let _noc_keypair = cmd_req
+        .trans
+        .session
+        .get_data::<KeyPair>()
+        .ok_or(Error::InvalidState)?;
+
     info!("{}", "Handling AddNOC".cyan());
     let (noc_value, icac_value, _ipk_value, _case_admin_node_id, _vendor_id) =
         get_addnoc_params(cmd_req)?;

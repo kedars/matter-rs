@@ -51,9 +51,7 @@ impl PAKE {
     ) -> Result<(), Error> {
         let spake2 = proto_rx
             .exchange
-            .get_exchange_data()
-            .ok_or(Error::InvalidState)?
-            .downcast_mut::<Spake2P>()
+            .get_exchange_data::<Spake2P>()
             .ok_or(Error::InvalidState)?;
 
         let cA = extract_pasepake_1_or_3_params(proto_rx.buf)?;
@@ -92,9 +90,7 @@ impl PAKE {
     ) -> Result<(), Error> {
         let spake2 = proto_rx
             .exchange
-            .get_exchange_data()
-            .ok_or(Error::InvalidState)?
-            .downcast_mut::<Spake2P>()
+            .get_exchange_data::<Spake2P>()
             .ok_or(Error::InvalidState)?;
 
         let pA = extract_pasepake_1_or_3_params(proto_rx.buf)?;

@@ -122,8 +122,8 @@ impl Session {
         self.data = None;
     }
 
-    pub fn get_data(&mut self) -> Option<&mut Box<dyn Any>> {
-        self.data.as_mut()
+    pub fn get_data<T: Any>(&mut self) -> Option<&mut T> {
+        self.data.as_mut()?.downcast_mut::<T>()
     }
 
     pub fn get_local_sess_id(&self) -> u16 {

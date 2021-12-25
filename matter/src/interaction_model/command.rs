@@ -3,8 +3,8 @@ use super::CmdPathIb;
 use super::InteractionModel;
 use super::Transaction;
 use crate::error::*;
+use crate::proto_demux::ProtoTx;
 use crate::proto_demux::ResponseRequired;
-use crate::proto_demux::{ProtoRx, ProtoTx};
 use crate::tlv;
 use crate::tlv::*;
 use crate::tlv_common::TagType;
@@ -49,16 +49,16 @@ impl<F: Fn(&mut TLVWriter) -> Result<(), Error>> ToTLV for InvokeRespIb<F> {
     }
 }
 
-pub struct CommandReq<'a, 'b, 'c> {
+pub struct CommandReq<'a, 'b, 'c, 'd> {
     pub endpoint: u16,
     pub cluster: u32,
     pub command: u16,
     pub data: TLVElement<'a>,
     pub resp: &'a mut TLVWriter<'b, 'c>,
-    pub trans: &'a mut Transaction,
+    pub trans: &'a mut Transaction<'d>,
 }
 
-impl<'a, 'b, 'c> CommandReq<'a, 'b, 'c> {
+impl<'a, 'b, 'c, 'd> CommandReq<'a, 'b, 'c, 'd> {
     pub fn to_cmd_path_ib(&self) -> CmdPathIb {
         CmdPathIb {
             endpoint: Some(self.endpoint),
@@ -121,14 +121,14 @@ impl InteractionModel {
     pub fn handle_invoke_req(
         &mut self,
         trans: &mut Transaction,
-        proto_rx: &mut ProtoRx,
+        rx_buf: &[u8],
         proto_tx: &mut ProtoTx,
     ) -> Result<ResponseRequired, Error> {
         info!("In Invoke Req");
         proto_tx.proto_opcode = OpCode::InvokeResponse as u8;
 
         let mut tw = TLVWriter::new(&mut proto_tx.write_buf);
-        let root = get_root_node_struct(proto_rx.buf)?;
+        let root = get_root_node_struct(rx_buf)?;
         // Spec says tag should be 2, but CHIP Tool sends the tag as 0
         let cmd_list_iter = root
             .find_tag(INVOKE_REQ_CTX_TAG_INVOKE_REQUESTS)?
@@ -150,7 +150,7 @@ impl InteractionModel {
                 .consume_invoke_cmd(&cmd_path_ib, data, trans, &mut tw)
                 .map_err(|e| {
                     error!("Error in handling command: {:?}", e);
-                    tlv::print_tlv_list(proto_rx.buf);
+                    tlv::print_tlv_list(rx_buf);
                     e
                 })?;
         }

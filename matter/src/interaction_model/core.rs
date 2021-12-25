@@ -2,6 +2,7 @@ use crate::error::*;
 use crate::proto_demux;
 use crate::proto_demux::ResponseRequired;
 use crate::proto_demux::{ProtoRx, ProtoTx};
+use crate::transport::session::Session;
 use log::error;
 use num;
 use num_derive::FromPrimitive;
@@ -33,11 +34,12 @@ pub enum OpCode {
     TimedRequest = 10,
 }
 
-impl Transaction {
-    pub fn new() -> Self {
+impl<'a> Transaction<'a> {
+    pub fn new(session: &'a mut Session) -> Self {
         Self {
             state: TransactionState::Ongoing,
             data: None,
+            session,
         }
     }
 
@@ -47,12 +49,6 @@ impl Transaction {
 
     pub fn is_complete(&self) -> bool {
         self.state == TransactionState::Complete
-    }
-}
-
-impl Default for Transaction {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -68,13 +64,13 @@ impl proto_demux::HandleProto for InteractionModel {
         proto_rx: &mut ProtoRx,
         proto_tx: &mut ProtoTx,
     ) -> Result<ResponseRequired, Error> {
-        let mut trans = Transaction::new();
+        let mut trans = Transaction::new(proto_rx.session);
         let proto_opcode: OpCode =
             num::FromPrimitive::from_u8(proto_rx.proto_opcode).ok_or(Error::Invalid)?;
         proto_tx.proto_id = PROTO_ID_INTERACTION_MODEL;
 
         let result = match proto_opcode {
-            OpCode::InvokeRequest => self.handle_invoke_req(&mut trans, proto_rx, proto_tx)?,
+            OpCode::InvokeRequest => self.handle_invoke_req(&mut trans, proto_rx.buf, proto_tx)?,
             _ => {
                 error!("Opcode Not Handled: {:?}", proto_opcode);
                 return Err(Error::InvalidOpcode);
