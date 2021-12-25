@@ -1,5 +1,5 @@
 use core::fmt;
-use std::net::SocketAddr;
+use std::{any::Any, net::SocketAddr};
 
 use crate::{
     error::*,
@@ -53,6 +53,7 @@ pub struct Session {
     child_local_sess_id: u16,
     msg_ctr: u32,
     mode: SessionMode,
+    data: Option<Box<dyn Any>>,
 }
 
 #[derive(Debug)]
@@ -89,6 +90,7 @@ impl Session {
             local_sess_id: 0,
             msg_ctr: 1,
             mode: SessionMode::PlainText,
+            data: None,
         }
     }
 
@@ -104,11 +106,24 @@ impl Session {
             child_local_sess_id: 0,
             msg_ctr: 1,
             mode: SessionMode::Encrypted,
+            data: None,
         };
 
         self.child_local_sess_id = 0;
 
         session
+    }
+
+    pub fn set_data(&mut self, data: Box<dyn Any>) {
+        self.data = Some(data);
+    }
+
+    pub fn clear_data(&mut self) {
+        self.data = None;
+    }
+
+    pub fn get_data(&mut self) -> Option<&mut Box<dyn Any>> {
+        self.data.as_mut()
     }
 
     pub fn get_local_sess_id(&self) -> u16 {
