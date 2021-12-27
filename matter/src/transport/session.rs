@@ -126,6 +126,15 @@ impl Session {
         self.data.as_mut()?.downcast_mut::<T>()
     }
 
+    pub fn take_data<T: Any>(&mut self) -> Option<Box<T>> {
+        let a = self.data.take()?;
+        if let Ok(t) = a.downcast::<T>() {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
     pub fn get_local_sess_id(&self) -> u16 {
         self.local_sess_id
     }
