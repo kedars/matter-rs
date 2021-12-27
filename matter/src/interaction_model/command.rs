@@ -13,6 +13,14 @@ use crate::tlv_writer::ToTLV;
 use log::error;
 use log::info;
 
+#[macro_export]
+macro_rules! cmd_enter {
+    ($e:expr) => {
+        use colored::Colorize;
+        info! {"{} {}", "Handling Command".cyan(), $e.cyan()}
+    };
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum InvokeRespIb<F>
 where

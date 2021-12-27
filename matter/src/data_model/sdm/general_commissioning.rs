@@ -1,9 +1,9 @@
+use crate::cmd_enter;
 use crate::data_model::objects::*;
 use crate::interaction_model::command::InvokeRespIb;
 use crate::interaction_model::CmdPathIb;
 use crate::tlv_common::TagType;
 use crate::{error::*, interaction_model::command::CommandReq};
-use colored::Colorize;
 use log::info;
 
 const CLUSTER_GENERAL_COMMISSIONING_ID: u32 = 0x0030;
@@ -29,7 +29,7 @@ fn handle_command_armfailsafe(
     _cluster: &mut Cluster,
     cmd_req: &mut CommandReq,
 ) -> Result<(), Error> {
-    info!("{}", "Handling ARM Fail Safe".cyan());
+    cmd_enter!("ARM Fail Safe");
     // These data types don't match the spec
     let expiry_len = cmd_req.data.find_tag(0)?.get_u8()?;
     let bread_crumb = cmd_req.data.find_tag(1)?.get_u8()?;
@@ -52,7 +52,7 @@ fn handle_command_setregulatoryconfig(
     _cluster: &mut Cluster,
     cmd_req: &mut CommandReq,
 ) -> Result<(), Error> {
-    info!("{}", "Handling Set Regulatory Config".cyan());
+    cmd_enter!("Set Regulatory Config");
     // These data types don't match the spec
     let country_code = cmd_req.data.find_tag(1)?.get_slice()?;
     info!("Received country code: {:?}", country_code);

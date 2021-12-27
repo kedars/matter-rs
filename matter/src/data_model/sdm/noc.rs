@@ -12,8 +12,7 @@ use crate::pki::pki::{self, KeyPair};
 use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
 use crate::utils::writebuf::WriteBuf;
-use crate::{cert, error::*};
-use colored::Colorize;
+use crate::{cert, cmd_enter, error::*};
 use log::{error, info};
 
 use super::dev_att::DevAttDataFetcher;
@@ -158,7 +157,7 @@ fn get_addnoc_params<'a, 'b, 'c, 'd>(
 }
 
 fn handle_command_attrequest(cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Result<(), Error> {
-    info!("{}", "Handling AttestationRequest".cyan());
+    cmd_enter!("AttestationRequest");
 
     let att_nonce = cmd_req.data.find_tag(0)?.get_slice()?;
     info!("Received Attestation Nonce:{:?}", att_nonce);
@@ -178,7 +177,7 @@ fn handle_command_certchainrequest(
     cluster: &mut Cluster,
     cmd_req: &mut CommandReq,
 ) -> Result<(), Error> {
-    info!("{}", "Handling CertChainRequest".cyan());
+    cmd_enter!("CertChainRequest");
 
     info!("Received data: {}", cmd_req.data);
     let cert_type = cmd_req
@@ -219,7 +218,7 @@ fn handle_command_csrrequest(
     _cluster: &mut Cluster,
     cmd_req: &mut CommandReq,
 ) -> Result<(), Error> {
-    info!("{}", "Handling CSRRequest".cyan());
+    cmd_enter!("CSRRequest");
 
     let csr_nonce = cmd_req.data.find_tag(0)?.get_slice()?;
     info!("Received CSR Nonce:{:?}", csr_nonce);
@@ -244,6 +243,7 @@ fn handle_command_addtrustedrootcert(
     _cluster: &mut Cluster,
     cmd_req: &mut CommandReq,
 ) -> Result<(), Error> {
+    cmd_enter!("AddTrustedRootCert");
     let noc_data = cmd_req
         .trans
         .session
@@ -257,7 +257,6 @@ fn handle_command_addtrustedrootcert(
         return Err(Error::InvalidState);
     }
     noc_data.state = NocDataState::RootCAAdded;
-    info!("{}", "Handling AddTrustedRootCert".cyan());
 
     let root_cert = cmd_req.data.find_tag(0)?.get_slice()?;
     info!("Received Trusted Cert:{:?}", root_cert);
@@ -270,6 +269,7 @@ fn handle_command_addtrustedrootcert(
 }
 
 fn handle_command_addnoc(cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Result<(), Error> {
+    cmd_enter!("AddNOC");
     let noc_data = cmd_req
         .trans
         .session
@@ -282,7 +282,6 @@ fn handle_command_addnoc(cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Res
         return Err(Error::InvalidState);
     }
 
-    info!("{}", "Handling AddNOC".cyan());
     let (noc_value, icac_value, ipk_value, _case_admin_node_id, _vendor_id) =
         get_addnoc_params(cmd_req)?;
 
