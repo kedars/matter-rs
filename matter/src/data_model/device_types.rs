@@ -5,6 +5,8 @@ use super::sdm::dev_att::DevAttDataFetcher;
 use super::sdm::general_commissioning::cluster_general_commissioning_new;
 use super::sdm::noc::cluster_operational_credentials_new;
 use crate::error::*;
+use crate::fabric::FabricMgr;
+use std::sync::Arc;
 use std::sync::RwLockWriteGuard;
 
 type WriteNode<'a> = RwLockWriteGuard<'a, Box<Node>>;
@@ -12,6 +14,7 @@ type WriteNode<'a> = RwLockWriteGuard<'a, Box<Node>>;
 pub fn device_type_add_root_node(
     node: &mut WriteNode,
     dev_att: Box<dyn DevAttDataFetcher>,
+    fabric_mgr: Arc<FabricMgr>,
 ) -> Result<u32, Error> {
     // Add the root endpoint
     let endpoint = node.add_endpoint()?;
@@ -21,7 +24,7 @@ pub fn device_type_add_root_node(
     };
     // Add the mandatory clusters
     node.add_cluster(0, cluster_basic_information_new()?)?;
-    node.add_cluster(0, cluster_operational_credentials_new(dev_att)?)?;
+    node.add_cluster(0, cluster_operational_credentials_new(dev_att, fabric_mgr)?)?;
     node.add_cluster(0, cluster_general_commissioning_new()?)?;
     Ok(endpoint)
 }

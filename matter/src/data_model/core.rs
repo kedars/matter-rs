@@ -1,25 +1,29 @@
 use super::{device_types::device_type_add_root_node, objects::*, sdm::dev_att::DevAttDataFetcher};
 use crate::{
     error::*,
+    fabric::FabricMgr,
     interaction_model::{command::CommandReq, CmdPathIb, InteractionConsumer, Transaction},
     tlv::TLVElement,
     tlv_writer::TLVWriter,
 };
 use log::info;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 pub struct DataModel {
     pub node: RwLock<Box<Node>>,
 }
 
 impl DataModel {
-    pub fn new(dev_att: Box<dyn DevAttDataFetcher>) -> Result<Self, Error> {
+    pub fn new(
+        dev_att: Box<dyn DevAttDataFetcher>,
+        fabric_mgr: Arc<FabricMgr>,
+    ) -> Result<Self, Error> {
         let dm = DataModel {
             node: RwLock::new(Node::new()?),
         };
         {
             let mut node = dm.node.write()?;
-            device_type_add_root_node(&mut node, dev_att)?;
+            device_type_add_root_node(&mut node, dev_att, fabric_mgr)?;
         }
         Ok(dm)
     }

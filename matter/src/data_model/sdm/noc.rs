@@ -1,8 +1,11 @@
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::cert::Cert;
 // Node Operational Credentials Cluster
 use crate::data_model::objects::*;
 use crate::data_model::sdm::dev_att;
+use crate::fabric::{Fabric, FabricMgr};
 use crate::interaction_model::command::{self, CommandReq, InvokeRespIb};
 use crate::interaction_model::CmdPathIb;
 use crate::pki::pki::{self, KeyPair};
@@ -17,11 +20,15 @@ use super::dev_att::DevAttDataFetcher;
 
 pub struct NOC {
     dev_att: Box<dyn DevAttDataFetcher>,
+    fabric_mgr: Arc<FabricMgr>,
 }
 
 impl NOC {
-    pub fn new(dev_att: Box<dyn DevAttDataFetcher>) -> Self {
-        Self { dev_att }
+    pub fn new(dev_att: Box<dyn DevAttDataFetcher>, fabric_mgr: Arc<FabricMgr>) -> Self {
+        Self {
+            dev_att,
+            fabric_mgr,
+        }
     }
 }
 
@@ -67,6 +74,28 @@ const CMD_PATH_ATTRESPONSE: CmdPathIb = CmdPathIb {
     cluster: Some(CLUSTER_OPERATIONAL_CREDENTIALS_ID),
     command: CMD_ATTRESPONSE_ID,
 };
+
+#[derive(PartialEq)]
+enum NocDataState {
+    KeyPairGenerated,
+    RootCAAdded,
+}
+
+struct NocData {
+    pub key_pair: KeyPair,
+    pub root_ca: Cert,
+    pub state: NocDataState,
+}
+
+impl NocData {
+    pub fn new(key_pair: KeyPair) -> Self {
+        Self {
+            key_pair,
+            root_ca: Cert::default(),
+            state: NocDataState::KeyPairGenerated,
+        }
+    }
+}
 
 fn add_attestation_element(
     dev_att: &Box<dyn DevAttDataFetcher>,
@@ -201,8 +230,12 @@ fn handle_command_csrrequest(
         add_nocsrelement(&noc_keypair, csr_nonce, t)?;
         t.put_str8(TagType::Context(1), b"ThisistheAttestationSignature")
     });
+
     cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)?;
-    cmd_req.trans.session.set_data(Box::new(noc_keypair));
+    let noc_data = Box::new(NocData::new(noc_keypair));
+    // Store this in the session data instead of cluster data, so it gets cleared
+    // if the session goes away for some reason
+    cmd_req.trans.session.set_data(noc_data);
     cmd_req.trans.complete();
     Ok(())
 }
@@ -211,26 +244,46 @@ fn handle_command_addtrustedrootcert(
     _cluster: &mut Cluster,
     cmd_req: &mut CommandReq,
 ) -> Result<(), Error> {
+    let noc_data = cmd_req
+        .trans
+        .session
+        .get_data::<NocData>()
+        .ok_or(Error::InvalidState)?;
+
+    if noc_data.state != NocDataState::KeyPairGenerated {
+        // This handling will be incorrect once the RootCA is changed later on, but in that there will be an accessing Fabric
+        // which doesn't exist at the time of PASE
+        error!("Added RootCA without KeyPair generated");
+        return Err(Error::InvalidState);
+    }
+    noc_data.state = NocDataState::RootCAAdded;
     info!("{}", "Handling AddTrustedRootCert".cyan());
 
     let root_cert = cmd_req.data.find_tag(0)?.get_slice()?;
     info!("Received Trusted Cert:{:?}", root_cert);
 
+    noc_data.root_ca = Cert::new(root_cert);
     let invoke_resp = InvokeRespIb::Status(cmd_req.to_cmd_path_ib(), 0, 0, command::dummy);
     cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)?;
     cmd_req.trans.complete();
     Ok(())
 }
 
-fn handle_command_addnoc(_cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Result<(), Error> {
-    let _noc_keypair = cmd_req
+fn handle_command_addnoc(cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Result<(), Error> {
+    let noc_data = cmd_req
         .trans
         .session
-        .get_data::<KeyPair>()
+        .take_data::<NocData>()
         .ok_or(Error::InvalidState)?;
+    if noc_data.state != NocDataState::RootCAAdded {
+        // This handling will be incorrect once the RootCA is changed later on, but in that there will be an accessing Fabric
+        // which doesn't exist at the time of PASE
+        error!("AddNOC received with RootCA Added State");
+        return Err(Error::InvalidState);
+    }
 
     info!("{}", "Handling AddNOC".cyan());
-    let (noc_value, icac_value, _ipk_value, _case_admin_node_id, _vendor_id) =
+    let (noc_value, icac_value, ipk_value, _case_admin_node_id, _vendor_id) =
         get_addnoc_params(cmd_req)?;
 
     info!("Received NOC as:");
@@ -245,11 +298,23 @@ fn handle_command_addnoc(_cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Re
         e
     });
 
+    let fabric = Fabric::new(
+        noc_data.key_pair,
+        noc_data.root_ca,
+        Cert::new(icac_value),
+        Cert::new(noc_value),
+        Cert::new(ipk_value),
+    )?;
+    let fab_idx = cluster
+        .get_data::<NOC>()
+        .ok_or(Error::InvalidState)?
+        .fabric_mgr
+        .add(fabric)?;
     let invoke_resp = InvokeRespIb::Command(CMD_PATH_NOCRESPONSE, |t| {
         // Status
         t.put_u8(TagType::Context(0), 0)?;
         // Fabric Index  - hard-coded for now
-        t.put_u8(TagType::Context(1), 0)?;
+        t.put_u8(TagType::Context(1), fab_idx)?;
         // Debug string
         t.put_utf8(TagType::Context(2), b"")
     });
@@ -280,6 +345,7 @@ fn command_addnoc_new() -> Result<Box<Command>, Error> {
 
 pub fn cluster_operational_credentials_new(
     dev_att: Box<dyn DevAttDataFetcher>,
+    fabric_mgr: Arc<FabricMgr>,
 ) -> Result<Box<Cluster>, Error> {
     let mut cluster = Cluster::new(CLUSTER_OPERATIONAL_CREDENTIALS_ID)?;
     cluster.add_command(command_attrequest_new()?)?;
@@ -288,7 +354,7 @@ pub fn cluster_operational_credentials_new(
     cluster.add_command(command_addtrustedrootcert_new()?)?;
     cluster.add_command(command_addnoc_new()?)?;
 
-    let noc = Box::new(NOC::new(dev_att));
+    let noc = Box::new(NOC::new(dev_att, fabric_mgr));
     cluster.set_data(noc);
     Ok(cluster)
 }
