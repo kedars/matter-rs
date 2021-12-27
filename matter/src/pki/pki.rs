@@ -3,6 +3,7 @@ use crate::error::Error;
 use super::crypto;
 use super::crypto::CryptoPKI;
 
+use super::crypto_dummy::CryptoPKIDummy;
 #[cfg(feature = "crypto_openssl")]
 use super::crypto_openssl::CryptoPKIOpenSSL;
 
@@ -46,6 +47,12 @@ impl KeyPair {
     pub fn new() -> Result<Self, Error> {
         Ok(Self {
             pki: crypto_pki_new()?,
+        })
+    }
+
+    pub fn dummy() -> Result<Self, Error> {
+        Ok(Self {
+            pki: Box::new(CryptoPKIDummy::new()?),
         })
     }
 
