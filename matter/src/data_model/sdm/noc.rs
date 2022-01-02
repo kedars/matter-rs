@@ -125,8 +125,7 @@ fn add_nocsrelement(
     resp: &mut TLVWriter,
 ) -> Result<(), Error> {
     let mut csr: [u8; MAX_CSR_LEN] = [0; MAX_CSR_LEN];
-    let len = noc_keypair.get_csr(&mut csr)?;
-    let csr = &csr[0..len];
+    let csr = noc_keypair.get_csr(&mut csr)?;
     let mut buf: [u8; RESP_MAX] = [0; RESP_MAX];
     let mut write_buf = WriteBuf::new(&mut buf, RESP_MAX);
     let mut writer = TLVWriter::new(&mut write_buf);

@@ -130,14 +130,11 @@ impl CryptoSpake2 for CryptoOpenSSL {
             &self.group,
             &mut self.bn_ctx,
         )?;
-        let pB_internal = self
-            .pB
-            .to_bytes(
-                &self.group,
-                PointConversionForm::UNCOMPRESSED,
-                &mut self.bn_ctx,
-            )
-            .unwrap();
+        let pB_internal = self.pB.to_bytes(
+            &self.group,
+            PointConversionForm::UNCOMPRESSED,
+            &mut self.bn_ctx,
+        )?;
         let pB_internal = pB_internal.as_slice();
         if pB_internal.len() != pB.len() {
             error!("pB length mismatch");

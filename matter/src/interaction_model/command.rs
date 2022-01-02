@@ -5,7 +5,6 @@ use super::Transaction;
 use crate::error::*;
 use crate::proto_demux::ProtoTx;
 use crate::proto_demux::ResponseRequired;
-use crate::tlv;
 use crate::tlv::*;
 use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
@@ -158,7 +157,7 @@ impl InteractionModel {
                 .consume_invoke_cmd(&cmd_path_ib, data, trans, &mut tw)
                 .map_err(|e| {
                     error!("Error in handling command: {:?}", e);
-                    tlv::print_tlv_list(rx_buf);
+                    print_tlv_list(rx_buf);
                     e
                 })?;
         }

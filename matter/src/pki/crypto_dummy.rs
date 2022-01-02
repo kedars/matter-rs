@@ -13,7 +13,7 @@ impl CryptoPKIDummy {
 }
 
 impl CryptoPKI for CryptoPKIDummy {
-    fn get_csr(&self, _out_csr: &mut [u8]) -> Result<usize, Error> {
+    fn get_csr<'a>(&self, _out_csr: &'a mut [u8]) -> Result<&'a [u8], Error> {
         error!("This API should never get called");
         Err(Error::Invalid)
     }

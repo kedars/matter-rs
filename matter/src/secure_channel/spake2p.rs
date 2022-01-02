@@ -10,6 +10,9 @@ use crate::error::Error;
 #[cfg(feature = "crypto_openssl")]
 use super::crypto_openssl::CryptoOpenSSL;
 
+#[cfg(feature = "crypto_mbedtls")]
+use super::crypto_mbedtls::CryptoMbedTLS;
+
 use super::{common::SCStatusCodes, crypto::CryptoSpake2};
 
 // This file handle Spake2+ specific instructions. In itself, this file is
@@ -55,6 +58,11 @@ const CRYPTO_W_SIZE_BYTES: usize = CRYPTO_GROUP_SIZE_BYTES + 8;
 #[cfg(feature = "crypto_openssl")]
 fn crypto_spake2_new() -> Result<Box<dyn CryptoSpake2>, Error> {
     Ok(Box::new(CryptoOpenSSL::new()?))
+}
+
+#[cfg(feature = "crypto_mbedtls")]
+fn crypto_spake2_new() -> Result<Box<dyn CryptoSpake2>, Error> {
+    Ok(Box::new(CryptoMbedTLS::new()?))
 }
 
 impl Default for Spake2P {

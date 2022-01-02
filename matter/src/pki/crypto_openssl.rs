@@ -22,7 +22,7 @@ impl CryptoPKIOpenSSL {
 }
 
 impl CryptoPKI for CryptoPKIOpenSSL {
-    fn get_csr(&self, out_csr: &mut [u8]) -> Result<usize, Error> {
+    fn get_csr<'a>(&self, out_csr: &'a mut [u8]) -> Result<&'a [u8], Error> {
         let mut builder = X509ReqBuilder::new()?;
         builder.set_version(0)?;
 
@@ -41,7 +41,7 @@ impl CryptoPKI for CryptoPKIOpenSSL {
         if csr.len() < out_csr.len() {
             let a = &mut out_csr[0..csr.len()];
             a.copy_from_slice(csr);
-            Ok(csr.len())
+            Ok(a)
         } else {
             Err(Error::NoSpace)
         }

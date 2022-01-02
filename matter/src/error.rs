@@ -1,5 +1,7 @@
 use std::{fmt, sync::PoisonError, time::SystemTimeError};
 
+use log::error;
+
 #[derive(Debug, PartialEq)]
 pub enum Error {
     AttributeNotFound,
@@ -7,7 +9,7 @@ pub enum Error {
     CommandNotFound,
     EndpointNotFound,
     Crypto,
-    OpenSSL,
+    TLSStack,
     NoCommand,
     NoEndpoint,
     NoExchange,
@@ -53,9 +55,19 @@ impl<T> From<PoisonError<T>> for Error {
     }
 }
 
+#[cfg(feature = "crypto_openssl")]
 impl From<openssl::error::ErrorStack> for Error {
-    fn from(_e: openssl::error::ErrorStack) -> Self {
-        Self::OpenSSL
+    fn from(e: openssl::error::ErrorStack) -> Self {
+        error!("Error in TLS: {}", e);
+        Self::TLSStack
+    }
+}
+
+#[cfg(feature = "crypto_mbedtls")]
+impl From<mbedtls::Error> for Error {
+    fn from(e: mbedtls::Error) -> Self {
+        error!("Error in TLS: {}", e);
+        Self::TLSStack
     }
 }
 

@@ -4,6 +4,8 @@ use super::crypto;
 use super::crypto::CryptoPKI;
 
 use super::crypto_dummy::CryptoPKIDummy;
+#[cfg(feature = "crypto_mbedtls")]
+use super::crypto_mbedtls::CryptoPKIMbedTLS;
 #[cfg(feature = "crypto_openssl")]
 use super::crypto_openssl::CryptoPKIOpenSSL;
 
@@ -12,6 +14,10 @@ fn crypto_pki_new() -> Result<Box<dyn CryptoPKI>, Error> {
     Ok(Box::new(CryptoPKIOpenSSL::new()?))
 }
 
+#[cfg(feature = "crypto_mbedtls")]
+fn crypto_pki_new() -> Result<Box<dyn CryptoPKI>, Error> {
+    Ok(Box::new(CryptoPKIMbedTLS::new()?))
+}
 /*
 Input -> CSR Nonce
  Output ->
@@ -56,7 +62,7 @@ impl KeyPair {
         })
     }
 
-    pub fn get_csr(&self, csr: &mut [u8]) -> Result<usize, Error> {
+    pub fn get_csr<'a>(&self, csr: &'a mut [u8]) -> Result<&'a [u8], Error> {
         self.pki.get_csr(csr)
     }
 }
