@@ -122,8 +122,6 @@ impl CryptoSpake2 for CryptoMbedTLS {
         let mut ctr_drbg = CtrDrbg::new(Arc::new(OsEntropy::new()), None)?;
         self.xy = Pk::generate_ec(&mut ctr_drbg, EcGroupId::SecP256R1)?.ec_private()?;
 
-        //        self.xy = self.order.sub(100 as i64)?;
-
         let P = self.group.generator()?;
         self.pB = EcPoint::muladd(&mut self.group, &P, &self.xy, &self.N, &self.w0)?;
 

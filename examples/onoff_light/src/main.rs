@@ -1,4 +1,4 @@
-use onoff_light::dev_att;
+mod dev_att;
 use matter::core;
 use matter::data_model::device_types::device_type_add_on_off_light;
 
