@@ -1,6 +1,13 @@
-use std::sync::RwLock;
+use std::{fmt, sync::RwLock};
+
+use byteorder::{BigEndian, ByteOrder};
+use hkdf::Hkdf;
+use log::info;
+use sha2::Sha256;
 
 use crate::{cert::Cert, crypto::pki::KeyPair, error::Error};
+
+const COMPRESSED_FABRIC_ID_LEN: usize = 8;
 
 #[allow(dead_code)]
 pub struct Fabric {
@@ -11,6 +18,7 @@ pub struct Fabric {
     icac: Cert,
     noc: Cert,
     ipk: Cert,
+    compressed_id: [u8; COMPRESSED_FABRIC_ID_LEN],
 }
 
 impl Fabric {
@@ -23,7 +31,8 @@ impl Fabric {
     ) -> Result<Self, Error> {
         let node_id = noc.get_node_id()?;
         let fabric_id = noc.get_fabric_id()?;
-        Ok(Self {
+
+        let mut f = Self {
             node_id,
             fabric_id,
             key_pair,
@@ -31,7 +40,21 @@ impl Fabric {
             icac,
             noc,
             ipk,
-        })
+            compressed_id: [0; COMPRESSED_FABRIC_ID_LEN],
+        };
+        Fabric::get_compressed_id(f.root_ca.get_pubkey()?, fabric_id, &mut f.compressed_id)?;
+        let mut mdns_service_name = String::with_capacity(33);
+        for c in f.compressed_id {
+            mdns_service_name.push_str(&format!("{:X}", c));
+        }
+        mdns_service_name.push_str("-");
+        let mut node_id_be: [u8; 8] = [0; 8];
+        BigEndian::write_u64(&mut node_id_be, node_id);
+        for c in node_id_be {
+            mdns_service_name.push_str(&format!("{:02X}", c));
+        }
+        info!("MDNS Service Name: {}", mdns_service_name);
+        Ok(f)
     }
 
     pub fn dummy() -> Result<Self, Error> {
@@ -43,7 +66,21 @@ impl Fabric {
             icac: Cert::default(),
             noc: Cert::default(),
             ipk: Cert::default(),
+            compressed_id: [0; COMPRESSED_FABRIC_ID_LEN],
         })
+    }
+
+    fn get_compressed_id(root_pubkey: &[u8], fabric_id: u64, out: &mut [u8]) -> Result<(), Error> {
+        let root_pubkey = &root_pubkey[1..];
+        let mut fabric_id_be: [u8; 8] = [0; 8];
+        BigEndian::write_u64(&mut fabric_id_be, fabric_id);
+        const COMPRESSED_FABRIC_ID_INFO: [u8; 16] = [
+            0x43, 0x6f, 0x6d, 0x70, 0x72, 0x65, 0x73, 0x73, 0x65, 0x64, 0x46, 0x61, 0x62, 0x72,
+            0x69, 0x63,
+        ];
+        let h = Hkdf::<Sha256>::new(Some(&fabric_id_be), root_pubkey);
+        h.expand(&COMPRESSED_FABRIC_ID_INFO, out)
+            .map_err(|_| Error::NoSpace)
     }
 }
 
