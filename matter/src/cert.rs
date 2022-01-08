@@ -202,6 +202,13 @@ impl Cert {
             .get_u8()
             .map(|e| e as u64)
     }
+
+    pub fn get_pubkey(&self) -> Result<&[u8], Error> {
+        tlv::get_root_node_struct(self.0.as_slice())?
+            .find_tag(CertTags::EcPubKey as u32)
+            .map_err(|_e| Error::Invalid)?
+            .get_slice()
+    }
 }
 
 impl Default for Cert {
@@ -240,7 +247,7 @@ pub fn print_cert(buf: &[u8]) -> Result<(), Error> {
                     "Elliptic Curve: {:?}",
                     get_ec_curve_id(t.get_u8()?).ok_or(Error::Invalid)?
                 ),
-                CertTags::EcPubKey => println!("Public-Key: {:?}", t.get_slice()?),
+                CertTags::EcPubKey => println!("Public-Key: {:x?}", t.get_slice()?),
                 CertTags::Extensions => print_extensions(t)?,
                 CertTags::Signature => println!("Signature: {:x?}", t.get_slice()?),
             }

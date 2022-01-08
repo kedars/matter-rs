@@ -1,6 +1,6 @@
 use std::sync::RwLock;
 
-use crate::{cert::Cert, error::Error, pki::pki::KeyPair};
+use crate::{cert::Cert, crypto::pki::KeyPair, error::Error};
 
 #[allow(dead_code)]
 pub struct Fabric {

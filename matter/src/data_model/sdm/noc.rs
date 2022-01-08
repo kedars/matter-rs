@@ -3,12 +3,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::cert::Cert;
 // Node Operational Credentials Cluster
+use crate::crypto::pki::KeyPair;
 use crate::data_model::objects::*;
 use crate::data_model::sdm::dev_att;
 use crate::fabric::{Fabric, FabricMgr};
 use crate::interaction_model::command::{self, CommandReq, InvokeRespIb};
 use crate::interaction_model::CmdPathIb;
-use crate::pki::pki::{self, KeyPair};
 use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
 use crate::utils::writebuf::WriteBuf;
@@ -222,7 +222,7 @@ fn handle_command_csrrequest(
     let csr_nonce = cmd_req.data.find_tag(0)?.get_slice()?;
     info!("Received CSR Nonce:{:?}", csr_nonce);
 
-    let noc_keypair = pki::KeyPair::new()?;
+    let noc_keypair = KeyPair::new()?;
 
     let invoke_resp = InvokeRespIb::Command(CMD_PATH_CSRRESPONSE, |t| {
         add_nocsrelement(&noc_keypair, csr_nonce, t)?;
@@ -258,7 +258,7 @@ fn handle_command_addtrustedrootcert(
     noc_data.state = NocDataState::RootCAAdded;
 
     let root_cert = cmd_req.data.find_tag(0)?.get_slice()?;
-    info!("Received Trusted Cert:{:?}", root_cert);
+    info!("Received Trusted Cert:{:x?}", root_cert);
 
     noc_data.root_ca = Cert::new(root_cert);
     let invoke_resp = InvokeRespIb::Status(cmd_req.to_cmd_path_ib(), 0, 0, command::dummy);

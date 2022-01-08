@@ -7,15 +7,14 @@ use mbedtls::{
     x509,
 };
 
+use super::CryptoKeyPair;
 use crate::error::Error;
 
-use super::crypto::CryptoPKI;
-
-pub struct CryptoPKIMbedTLS {
+pub struct KeyPairInner {
     key: Pk,
 }
 
-impl CryptoPKIMbedTLS {
+impl KeyPairInner {
     pub fn new() -> Result<Self, Error> {
         let mut ctr_drbg = CtrDrbg::new(Arc::new(OsEntropy::new()), None)?;
         Ok(Self {
@@ -24,7 +23,7 @@ impl CryptoPKIMbedTLS {
     }
 }
 
-impl CryptoPKI for CryptoPKIMbedTLS {
+impl CryptoKeyPair for KeyPairInner {
     fn get_csr<'a>(&self, out_csr: &'a mut [u8]) -> Result<&'a [u8], Error> {
         let tmp_priv = self.key.ec_private()?;
         let mut tmp_key =

@@ -1,6 +1,5 @@
 use crate::error::Error;
 
-use super::crypto::CryptoPKI;
 use openssl::asn1::Asn1Type;
 use openssl::ec::{EcGroup, EcKey};
 use openssl::hash::MessageDigest;
@@ -9,11 +8,13 @@ use openssl::pkey;
 use openssl::pkey::PKey;
 use openssl::x509::{X509NameBuilder, X509ReqBuilder};
 
-pub struct CryptoPKIOpenSSL {
+use super::CryptoKeyPair;
+
+pub struct KeyPairInner {
     key: EcKey<pkey::Private>,
 }
 
-impl CryptoPKIOpenSSL {
+impl KeyPairInner {
     pub fn new() -> Result<Self, Error> {
         let group = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1)?;
         let key = EcKey::generate(&group)?;
@@ -21,7 +22,7 @@ impl CryptoPKIOpenSSL {
     }
 }
 
-impl CryptoPKI for CryptoPKIOpenSSL {
+impl CryptoKeyPair for KeyPairInner {
     fn get_csr<'a>(&self, out_csr: &'a mut [u8]) -> Result<&'a [u8], Error> {
         let mut builder = X509ReqBuilder::new()?;
         builder.set_version(0)?;
@@ -46,4 +47,8 @@ impl CryptoPKI for CryptoPKIOpenSSL {
             Err(Error::NoSpace)
         }
     }
+}
+
+pub fn pubkey_from_der<'a>(der: &'a [u8]) -> Result<&'a [u8], Error> {
+    Err(Error::Invalid)
 }
