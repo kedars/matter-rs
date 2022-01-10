@@ -10,14 +10,11 @@ use crate::transport::mrp;
 use crate::transport::plain_hdr;
 use crate::transport::proto_hdr;
 use crate::transport::session;
-use crate::transport::udp;
+use crate::transport::udp::{self, MAX_RX_BUF_SIZE};
 use crate::utils::parsebuf::ParseBuf;
 use colored::*;
 
 use super::session::Session;
-
-// Currently matches with the one in connectedhomeip repo
-const MAX_RX_BUF_SIZE: usize = 1583;
 
 pub struct Mgr {
     transport: udp::UdpListener,

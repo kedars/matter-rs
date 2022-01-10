@@ -1,4 +1,4 @@
-use std::{fmt, sync::RwLock};
+use std::sync::RwLock;
 
 use byteorder::{BigEndian, ByteOrder};
 use hkdf::Hkdf;
@@ -45,7 +45,7 @@ impl Fabric {
         Fabric::get_compressed_id(f.root_ca.get_pubkey()?, fabric_id, &mut f.compressed_id)?;
         let mut mdns_service_name = String::with_capacity(33);
         for c in f.compressed_id {
-            mdns_service_name.push_str(&format!("{:X}", c));
+            mdns_service_name.push_str(&format!("{:02X}", c));
         }
         mdns_service_name.push_str("-");
         let mut node_id_be: [u8; 8] = [0; 8];
