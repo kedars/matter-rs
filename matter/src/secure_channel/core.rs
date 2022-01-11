@@ -1,4 +1,7 @@
+use std::sync::Arc;
+
 use crate::error::*;
+use crate::fabric::FabricMgr;
 use crate::proto_demux;
 use crate::proto_demux::ResponseRequired;
 use crate::proto_demux::{ProtoRx, ProtoTx};
@@ -6,22 +9,22 @@ use crate::secure_channel::{common::*, pake::PAKE};
 use log::{error, info};
 use num;
 
+use super::case::Case;
+
 /* Handle messages related to the Secure Channel
  */
 
 pub struct SecureChannel {
+    case: Case,
     pake: PAKE,
 }
 
-impl Default for SecureChannel {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl SecureChannel {
-    pub fn new() -> SecureChannel {
-        SecureChannel { pake: PAKE::new() }
+    pub fn new(fabric_mgr: Arc<FabricMgr>) -> SecureChannel {
+        SecureChannel {
+            pake: PAKE::new(),
+            case: Case::new(fabric_mgr),
+        }
     }
 
     fn mrpstandaloneack_handler(
@@ -64,6 +67,16 @@ impl SecureChannel {
         self.pake.handle_pasepake3(proto_rx, proto_tx)?;
         Ok(ResponseRequired::Yes)
     }
+
+    fn casesigma1_handler(
+        &mut self,
+        proto_rx: &mut ProtoRx,
+        proto_tx: &mut ProtoTx,
+    ) -> Result<ResponseRequired, Error> {
+        info!("In CASE Sigma1 Handler");
+        self.case.handle_casesigma1(proto_rx, proto_tx)?;
+        Ok(ResponseRequired::Yes)
+    }
 }
 
 impl proto_demux::HandleProto for SecureChannel {
@@ -80,6 +93,7 @@ impl proto_demux::HandleProto for SecureChannel {
             OpCode::PBKDFParamRequest => self.pbkdfparamreq_handler(proto_rx, proto_tx),
             OpCode::PASEPake1 => self.pasepake1_handler(proto_rx, proto_tx),
             OpCode::PASEPake3 => self.pasepake3_handler(proto_rx, proto_tx),
+            OpCode::CASESigma1 => self.casesigma1_handler(proto_rx, proto_tx),
             _ => {
                 error!("OpCode Not Handled: {:?}", proto_opcode);
                 Err(Error::InvalidOpcode)

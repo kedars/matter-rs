@@ -1,7 +1,8 @@
 use std::sync::RwLock;
 
-use byteorder::{BigEndian, ByteOrder};
+use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use hkdf::Hkdf;
+use hmac::{Hmac, Mac, NewMac};
 use log::info;
 use sha2::Sha256;
 
@@ -82,6 +83,28 @@ impl Fabric {
         h.expand(&COMPRESSED_FABRIC_ID_INFO, out)
             .map_err(|_| Error::NoSpace)
     }
+
+    pub fn match_dest_id(&self, random: &[u8], target: &[u8]) -> Result<(), Error> {
+        // TODO: Currently chip-tool expect ipk as all zeroes
+        let ipk: [u8; 16] = [0; 16];
+        let mut mac = Hmac::<Sha256>::new_from_slice(&ipk).map_err(|_x| Error::InvalidKeyLength)?;
+        mac.update(random);
+        mac.update(self.root_ca.get_pubkey()?);
+
+        let mut buf: [u8; 8] = [0; 8];
+        LittleEndian::write_u64(&mut buf, self.fabric_id);
+        mac.update(&buf);
+
+        LittleEndian::write_u64(&mut buf, self.node_id);
+        mac.update(&buf);
+
+        let id = mac.finalize().into_bytes();
+        if id.as_slice() == target {
+            Ok(())
+        } else {
+            Err(Error::NotFound)
+        }
+    }
 }
 
 const MAX_SUPPORTED_FABRICS: usize = 3;
@@ -111,5 +134,17 @@ impl FabricMgr {
             .ok_or(Error::NoSpace)?;
         mgr.fabrics[index] = Some(f);
         Ok(index as u8)
+    }
+
+    pub fn match_dest_id(&self, random: &[u8], target: &[u8]) -> Result<usize, Error> {
+        let mgr = self.0.read()?;
+        for i in 0..MAX_SUPPORTED_FABRICS {
+            if let Some(fabric) = &mgr.fabrics[i] {
+                if fabric.match_dest_id(random, target).is_ok() {
+                    return Ok(i);
+                }
+            }
+        }
+        Err(Error::NotFound)
     }
 }

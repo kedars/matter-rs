@@ -1,3 +1,4 @@
+pub mod case;
 pub mod common;
 #[cfg(feature = "crypto_mbedtls")]
 pub mod crypto_mbedtls;
