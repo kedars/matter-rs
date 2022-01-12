@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
+use hkdf::Hkdf;
 use log::info;
 use owning_ref::RwLockReadGuardRef;
 use rand::prelude::*;
+use sha2::{Digest, Sha256};
 
 use crate::{
     crypto::{CryptoKeyPair, KeyPair},
@@ -25,12 +27,14 @@ enum State {
 pub struct CaseSession {
     state: State,
     initiator_sessid: u16,
+    pub tt_hash: Sha256,
 }
 impl CaseSession {
     pub fn new(initiator_sessid: u16) -> Result<Self, Error> {
         Ok(Self {
             state: State::Sigma1Rx,
             initiator_sessid,
+            tt_hash: Sha256::new(),
         })
     }
 }
@@ -71,7 +75,9 @@ impl Case {
         }
         let local_fabric = local_fabric?;
         info!("Destination ID matched to fabric index {}", local_fabric);
-        let case_session = Box::new(CaseSession::new(initiator_sessid as u16)?);
+
+        let mut case_session = Box::new(CaseSession::new(initiator_sessid as u16)?);
+        case_session.tt_hash.update(proto_rx.buf);
 
         // Create an ephemeral Key Pair
         let key_pair = KeyPair::new()?;
@@ -84,6 +90,9 @@ impl Case {
         let len = key_pair.derive_secret(peer_pub_key, &mut secret)?;
         let secret = &secret[..len];
         println!("Derived secret: {:x?} len: {}", secret, len);
+
+        let mut our_random: [u8; 32] = [0; 32];
+        rand::thread_rng().fill_bytes(&mut our_random);
 
         // Derive the Encrypted Part
         let mut encrypted: [u8; 40] = [0; 40];
@@ -101,11 +110,19 @@ impl Case {
 
             Case::get_sigma2_signature(&fabric, our_pub_key, peer_pub_key, &mut signature)?;
 
+            // TODO: Fix IPK
+            let dummy_ipk: [u8; 16] = [0; 16];
+            let mut sigma2_key: [u8; 16] = [0; 16];
+            Case::get_sigma2_key(
+                &dummy_ipk,
+                &our_random,
+                our_pub_key,
+                &case_session.tt_hash,
+                secret,
+                &mut sigma2_key,
+            )?;
             Case::get_sigma2_encryption(&fabric, &mut encrypted)?;
         }
-
-        let mut our_random: [u8; 32] = [0; 32];
-        rand::thread_rng().fill_bytes(&mut our_random);
 
         // Generate our Response Body
         let mut tw = TLVWriter::new(&mut proto_tx.write_buf);
@@ -122,6 +139,36 @@ impl Case {
         Ok(())
     }
 
+    fn get_sigma2_key(
+        ipk: &[u8],
+        our_random: &[u8],
+        our_pub_key: &[u8],
+        tt_hash: &Sha256,
+        shared_secret: &[u8],
+        key: &mut [u8],
+    ) -> Result<(), Error> {
+        const S2K_INFO: [u8; 6] = [0x53, 0x69, 0x67, 0x6d, 0x61, 0x32];
+        if key.len() < 16 {
+            return Err(Error::NoSpace);
+        }
+        let mut salt = Vec::<u8>::with_capacity(256);
+        salt.extend_from_slice(ipk);
+        salt.extend_from_slice(our_random);
+        salt.extend_from_slice(our_pub_key);
+
+        let tt_hash = tt_hash.clone();
+        let tt_hash = tt_hash.finalize();
+        let tt_hash = tt_hash.as_slice();
+        salt.extend_from_slice(tt_hash);
+        println!("Sigma2Key: salt: {:x?}, len: {}", salt, salt.len());
+
+        let h = Hkdf::<Sha256>::new(Some(salt.as_slice()), shared_secret);
+        h.expand(&S2K_INFO, key).map_err(|_x| Error::NoSpace)?;
+        println!("Sigma2Key: key: {:x?}", key);
+
+        Ok(())
+    }
+
     fn get_sigma2_encryption(
         fabric: &RwLockReadGuardRef<FabricMgrInner, Option<Fabric>>,
         out: &mut [u8],
@@ -131,6 +178,9 @@ impl Case {
             0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a,
             0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a,
         ];
+        // We are guaranteed this unwrap will work
+        let fabric = fabric.as_ref().as_ref().unwrap();
+
         out.copy_from_slice(&value);
         Ok(value.len())
     }
