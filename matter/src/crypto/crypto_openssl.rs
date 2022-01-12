@@ -5,7 +5,8 @@ use openssl::asn1::Asn1Type;
 use openssl::bn::BigNumContext;
 use openssl::derive::Deriver;
 use openssl::ec::{EcGroup, EcKey, EcPoint, PointConversionForm};
-use openssl::hash::MessageDigest;
+use openssl::ecdsa::EcdsaSig;
+use openssl::hash::{Hasher, MessageDigest};
 use openssl::nid::Nid;
 use openssl::pkey;
 use openssl::pkey::PKey;
@@ -50,8 +51,7 @@ impl CryptoKeyPair for KeyPair {
 
         let mut deriver = Deriver::new(&self_pkey)?;
         deriver.set_peer(&peer_pkey)?;
-        deriver.derive(secret)?;
-        Ok(0)
+        Ok(deriver.derive(secret)?)
     }
 
     fn get_csr<'a>(&self, out_csr: &'a mut [u8]) -> Result<&'a [u8], Error> {
@@ -77,6 +77,28 @@ impl CryptoKeyPair for KeyPair {
         } else {
             Err(Error::NoSpace)
         }
+    }
+
+    fn sign_msg(&self, msg: &[u8], signature: &mut [u8]) -> Result<usize, Error> {
+        // First get the SHA256 of the message
+        let mut h = Hasher::new(MessageDigest::sha256())?;
+        h.update(msg)?;
+        let msg = h.finish()?;
+
+        if signature.len() < 64 {
+            return Err(Error::NoSpace);
+        }
+        safemem::write_bytes(signature, 0);
+
+        let sig = EcdsaSig::sign(&msg, &self.key)?;
+        let r = sig.r().to_vec();
+        println!("r: {:x?}", r);
+        signature[0..r.len()].copy_from_slice(r.as_slice());
+        let s = sig.s().to_vec();
+        println!("s: {:x?}", s);
+        signature[32..(32 + s.len())].copy_from_slice(s.as_slice());
+        println!("Signature: {:x?}", signature);
+        Ok(0)
     }
 }
 

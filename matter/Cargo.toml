@@ -33,6 +33,8 @@ subtle = "2.4.1"
 colored = "2.0.0"
 smol = "1.2.5"
 futures-lite = "1.12.0"
+owning_ref = "0.4.1"
+safemem = "0.3.3"
 
 [[example]]
 name = "onoff_light"

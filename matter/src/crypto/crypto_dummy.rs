@@ -21,7 +21,11 @@ impl CryptoKeyPair for KeyPairDummy {
         error!("This API should never get called");
         Err(Error::Invalid)
     }
-    fn derive_secret(self, _peer_pub_key: &[u8], secret: &mut [u8]) -> Result<usize, Error> {
+    fn derive_secret(self, _peer_pub_key: &[u8], _secret: &mut [u8]) -> Result<usize, Error> {
+        error!("This API should never get called");
+        Err(Error::Invalid)
+    }
+    fn sign_msg(&self, _msg: &[u8], _signature: &mut [u8]) -> Result<usize, Error> {
         error!("This API should never get called");
         Err(Error::Invalid)
     }

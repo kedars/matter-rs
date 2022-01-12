@@ -4,6 +4,7 @@ use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use hkdf::Hkdf;
 use hmac::{Hmac, Mac, NewMac};
 use log::info;
+use owning_ref::RwLockReadGuardRef;
 use sha2::Sha256;
 
 use crate::{
@@ -21,8 +22,8 @@ pub struct Fabric {
     fabric_id: u64,
     key_pair: Box<dyn CryptoKeyPair>,
     root_ca: Cert,
-    icac: Cert,
-    noc: Cert,
+    pub icac: Cert,
+    pub noc: Cert,
     ipk: Cert,
     compressed_id: [u8; COMPRESSED_FABRIC_ID_LEN],
 }
@@ -91,8 +92,9 @@ impl Fabric {
 
     pub fn match_dest_id(&self, random: &[u8], target: &[u8]) -> Result<(), Error> {
         // TODO: Currently chip-tool expect ipk as all zeroes
-        let ipk: [u8; 16] = [0; 16];
-        let mut mac = Hmac::<Sha256>::new_from_slice(&ipk).map_err(|_x| Error::InvalidKeyLength)?;
+        let dummy_ipk: [u8; 16] = [0; 16];
+        let mut mac =
+            Hmac::<Sha256>::new_from_slice(&dummy_ipk).map_err(|_x| Error::InvalidKeyLength)?;
         mac.update(random);
         mac.update(self.root_ca.get_pubkey()?);
 
@@ -110,11 +112,15 @@ impl Fabric {
             Err(Error::NotFound)
         }
     }
+
+    pub fn sign_msg(&self, msg: &[u8], signature: &mut [u8]) -> Result<usize, Error> {
+        self.key_pair.sign_msg(msg, signature)
+    }
 }
 
 const MAX_SUPPORTED_FABRICS: usize = 3;
 #[derive(Default)]
-struct FabricMgrInner {
+pub struct FabricMgrInner {
     // The outside world expects Fabric Index to be one more than the actual one
     // since 0 is not allowed. Need to handle this cleanly somehow
     pub fabrics: [Option<Fabric>; MAX_SUPPORTED_FABRICS],
@@ -151,5 +157,12 @@ impl FabricMgr {
             }
         }
         Err(Error::NotFound)
+    }
+
+    pub fn get_fabric<'ret, 'me: 'ret>(
+        &'me self,
+        idx: usize,
+    ) -> Result<RwLockReadGuardRef<'ret, FabricMgrInner, Option<Fabric>>, Error> {
+        Ok(RwLockReadGuardRef::new(self.0.read()?).map(|fm| &fm.fabrics[idx]))
     }
 }

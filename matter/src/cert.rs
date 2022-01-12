@@ -209,6 +209,10 @@ impl Cert {
             .map_err(|_e| Error::Invalid)?
             .get_slice()
     }
+
+    pub fn as_slice(&self) -> Result<&[u8], Error> {
+        Ok(self.0.as_slice())
+    }
 }
 
 impl Default for Cert {

@@ -74,6 +74,7 @@ impl SecureChannel {
         proto_tx: &mut ProtoTx,
     ) -> Result<ResponseRequired, Error> {
         info!("In CASE Sigma1 Handler");
+        proto_tx.proto_opcode = OpCode::CASESigma2 as u8;
         self.case.handle_casesigma1(proto_rx, proto_tx)?;
         Ok(ResponseRequired::Yes)
     }
