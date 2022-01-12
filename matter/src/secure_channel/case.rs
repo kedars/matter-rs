@@ -3,7 +3,7 @@ use std::sync::Arc;
 use log::info;
 
 use crate::{
-    crypto::pki::KeyPair,
+    crypto::{CryptoKeyPair, KeyPair},
     error::Error,
     fabric::FabricMgr,
     proto_demux::{ProtoRx, ProtoTx},
@@ -19,13 +19,13 @@ enum State {
 
 pub struct CaseSession {
     state: State,
-    key_pair: KeyPair,
+    initiator_sessid: u16,
 }
 impl CaseSession {
-    pub fn new() -> Result<Self, Error> {
+    pub fn new(initiator_sessid: u16) -> Result<Self, Error> {
         Ok(Self {
             state: State::Sigma1Rx,
-            key_pair: KeyPair::new()?,
+            initiator_sessid,
         })
     }
 }
@@ -57,6 +57,12 @@ impl Case {
         }
         let local_fabric = local_fabric?;
         info!("Destination ID matched to fabric index {}", local_fabric);
+        let session = Box::new(CaseSession::new(initiator_sessid as u16)?);
+
+        let key_pair = KeyPair::new()?;
+        let mut our_pub_key: [u8; 66] = [0; 66];
+        key_pair.get_public_key(&mut our_pub_key)?;
+        proto_rx.exchange.set_exchange_data(session);
         Ok(())
     }
 

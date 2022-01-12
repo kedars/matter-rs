@@ -6,7 +6,12 @@ use hmac::{Hmac, Mac, NewMac};
 use log::info;
 use sha2::Sha256;
 
-use crate::{cert::Cert, crypto::pki::KeyPair, error::Error};
+use crate::{
+    cert::Cert,
+    crypto::KeyPair,
+    crypto::{crypto_dummy::KeyPairDummy, CryptoKeyPair},
+    error::Error,
+};
 
 const COMPRESSED_FABRIC_ID_LEN: usize = 8;
 
@@ -14,7 +19,7 @@ const COMPRESSED_FABRIC_ID_LEN: usize = 8;
 pub struct Fabric {
     node_id: u64,
     fabric_id: u64,
-    key_pair: KeyPair,
+    key_pair: Box<dyn CryptoKeyPair>,
     root_ca: Cert,
     icac: Cert,
     noc: Cert,
@@ -36,7 +41,7 @@ impl Fabric {
         let mut f = Self {
             node_id,
             fabric_id,
-            key_pair,
+            key_pair: Box::new(key_pair),
             root_ca,
             icac,
             noc,
@@ -62,7 +67,7 @@ impl Fabric {
         Ok(Self {
             node_id: 0,
             fabric_id: 0,
-            key_pair: KeyPair::dummy()?,
+            key_pair: Box::new(KeyPairDummy::new()?),
             root_ca: Cert::default(),
             icac: Cert::default(),
             noc: Cert::default(),

@@ -3,7 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::cert::Cert;
 // Node Operational Credentials Cluster
-use crate::crypto::pki::KeyPair;
+use crate::crypto::{CryptoKeyPair, KeyPair};
 use crate::data_model::objects::*;
 use crate::data_model::sdm::dev_att;
 use crate::fabric::{Fabric, FabricMgr};
