@@ -1,7 +1,14 @@
 use std::sync::Arc;
 
+use aes::Aes128;
+use ccm::aead::{generic_array::GenericArray, AeadInPlace, NewAead};
+use ccm::{
+    consts::{U13, U16},
+    Ccm,
+};
+
 use hkdf::Hkdf;
-use log::info;
+use log::trace;
 use owning_ref::RwLockReadGuardRef;
 use rand::prelude::*;
 use sha2::{Digest, Sha256};
@@ -74,7 +81,7 @@ impl Case {
             return Ok(());
         }
         let local_fabric = local_fabric?;
-        info!("Destination ID matched to fabric index {}", local_fabric);
+        trace!("Destination ID matched to fabric index {}", local_fabric);
 
         let mut case_session = Box::new(CaseSession::new(initiator_sessid as u16)?);
         case_session.tt_hash.update(proto_rx.buf);
@@ -89,15 +96,17 @@ impl Case {
         let mut secret: [u8; 32] = [0; 32];
         let len = key_pair.derive_secret(peer_pub_key, &mut secret)?;
         let secret = &secret[..len];
-        println!("Derived secret: {:x?} len: {}", secret, len);
+        //        println!("Derived secret: {:x?} len: {}", secret, len);
 
         let mut our_random: [u8; 32] = [0; 32];
         rand::thread_rng().fill_bytes(&mut our_random);
 
         // Derive the Encrypted Part
-        let mut encrypted: [u8; 40] = [0; 40];
-        {
-            let mut signature: [u8; 64] = [0; 64];
+        const MAX_ENCRYPTED_SIZE: usize = 800;
+
+        let mut encrypted: [u8; MAX_ENCRYPTED_SIZE] = [0; MAX_ENCRYPTED_SIZE];
+        let encrypted_len = {
+            let mut signature: [u8; 160] = [0; 160];
             let fabric = self.fabric_mgr.get_fabric(local_fabric)?;
             if fabric.is_none() {
                 common::create_sc_status_report(
@@ -108,7 +117,9 @@ impl Case {
                 return Ok(());
             }
 
-            Case::get_sigma2_signature(&fabric, our_pub_key, peer_pub_key, &mut signature)?;
+            let sign_len =
+                Case::get_sigma2_signature(&fabric, our_pub_key, peer_pub_key, &mut signature)?;
+            let signature = &signature[..sign_len];
 
             // TODO: Fix IPK
             let dummy_ipk: [u8; 16] = [0; 16];
@@ -121,8 +132,10 @@ impl Case {
                 secret,
                 &mut sigma2_key,
             )?;
-            Case::get_sigma2_encryption(&fabric, &mut encrypted)?;
-        }
+
+            Case::get_sigma2_encryption(&fabric, &sigma2_key, signature, &mut encrypted)?
+        };
+        let encrypted = &encrypted[0..encrypted_len];
 
         // Generate our Response Body
         let mut tw = TLVWriter::new(&mut proto_tx.write_buf);
@@ -133,7 +146,7 @@ impl Case {
             proto_rx.session.get_child_local_sess_id(),
         )?;
         tw.put_str8(TagType::Context(3), our_pub_key)?;
-        tw.put_str8(TagType::Context(4), &encrypted)?;
+        tw.put_str16(TagType::Context(4), encrypted)?;
         tw.put_end_container()?;
         proto_rx.exchange.set_exchange_data(case_session);
         Ok(())
@@ -160,29 +173,47 @@ impl Case {
         let tt_hash = tt_hash.finalize();
         let tt_hash = tt_hash.as_slice();
         salt.extend_from_slice(tt_hash);
-        println!("Sigma2Key: salt: {:x?}, len: {}", salt, salt.len());
+        //        println!("Sigma2Key: salt: {:x?}, len: {}", salt, salt.len());
 
         let h = Hkdf::<Sha256>::new(Some(salt.as_slice()), shared_secret);
         h.expand(&S2K_INFO, key).map_err(|_x| Error::NoSpace)?;
-        println!("Sigma2Key: key: {:x?}", key);
+        //        println!("Sigma2Key: key: {:x?}", key);
 
         Ok(())
     }
 
     fn get_sigma2_encryption(
         fabric: &RwLockReadGuardRef<FabricMgrInner, Option<Fabric>>,
+        key: &[u8],
+        signature: &[u8],
         out: &mut [u8],
     ) -> Result<usize, Error> {
-        let value = [
-            0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a,
-            0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a,
-            0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a,
-        ];
+        let mut resumption_id: [u8; 16] = [0; 16];
+        rand::thread_rng().fill_bytes(&mut resumption_id);
+
         // We are guaranteed this unwrap will work
         let fabric = fabric.as_ref().as_ref().unwrap();
+        let mut write_buf = WriteBuf::new(out, out.len());
+        let mut tw = TLVWriter::new(&mut write_buf);
+        tw.put_start_struct(TagType::Anonymous)?;
+        tw.put_str8(TagType::Context(1), fabric.noc.as_slice()?)?;
+        tw.put_str8(TagType::Context(2), fabric.icac.as_slice()?)?;
+        tw.put_str8(TagType::Context(3), signature)?;
+        tw.put_str8(TagType::Context(4), &resumption_id)?;
+        tw.put_end_container()?;
+        //        println!("TBE is {:x?}", write_buf.as_slice());
+        let nonce: [u8; 13] = [
+            0x4e, 0x43, 0x41, 0x53, 0x45, 0x5f, 0x53, 0x69, 0x67, 0x6d, 0x61, 0x32, 0x4e,
+        ];
+        let nonce = GenericArray::from_slice(&nonce);
+        let cipher_text = write_buf.as_mut_slice();
 
-        out.copy_from_slice(&value);
-        Ok(value.len())
+        type AesCcm = Ccm<Aes128, U16, U13>;
+        let cipher = AesCcm::new(GenericArray::from_slice(key));
+        let tag = cipher.encrypt_in_place_detached(nonce, &[], cipher_text)?;
+        write_buf.append(tag.as_slice())?;
+
+        Ok(write_buf.as_slice().len())
     }
 
     fn get_sigma2_signature(

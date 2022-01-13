@@ -98,7 +98,7 @@ impl CryptoKeyPair for KeyPair {
         println!("s: {:x?}", s);
         signature[32..(32 + s.len())].copy_from_slice(s.as_slice());
         println!("Signature: {:x?}", signature);
-        Ok(0)
+        Ok(64)
     }
 }
 
