@@ -21,7 +21,7 @@ pub struct Fabric {
     node_id: u64,
     fabric_id: u64,
     key_pair: Box<dyn CryptoKeyPair>,
-    root_ca: Cert,
+    pub root_ca: Cert,
     pub icac: Cert,
     pub noc: Cert,
     ipk: Cert,
@@ -115,6 +115,14 @@ impl Fabric {
 
     pub fn sign_msg(&self, msg: &[u8], signature: &mut [u8]) -> Result<usize, Error> {
         self.key_pair.sign_msg(msg, signature)
+    }
+
+    pub fn get_node_id(&self) -> u64 {
+        self.node_id
+    }
+
+    pub fn get_fabric_id(&self) -> u64 {
+        self.fabric_id
     }
 }
 

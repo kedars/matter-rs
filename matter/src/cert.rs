@@ -137,19 +137,28 @@ pub fn print_basic_constraints(t: TLVElement) -> Result<(), Error> {
     Ok(())
 }
 
+#[derive(FromPrimitive)]
+pub enum ExtTags {
+    BasicConstraints = 1,
+    KeyUsage = 2,
+    ExtKeyUsage = 3,
+    SubjectKeyId = 4,
+    AuthKeyId = 5,
+    FutureExt = 6,
+}
 pub fn print_extensions(t: TLVElement) -> Result<(), Error> {
     println!("X509v3 extensions:");
     let iter = t.confirm_list()?.iter().ok_or(Error::Invalid)?;
     for t in iter {
         if let TagType::Context(tag) = t.get_tag() {
+            let tag = num::FromPrimitive::from_u8(tag).ok_or(Error::InvalidData)?;
             match tag {
-                1 => print_basic_constraints(t)?,
-                2 => print_key_usage(t)?,
-                3 => print_extended_key_usage(t)?,
-                4 => println!("    Subject Key Id: {:x?}", t.get_slice()?),
-                5 => println!("    Authority Key Id: {:x?}", t.get_slice()?),
-                6 => println!("    Future Extensions: {:x?}", t.get_slice()?),
-                _ => println!("Unsupported Tag"),
+                ExtTags::BasicConstraints => print_basic_constraints(t)?,
+                ExtTags::KeyUsage => print_key_usage(t)?,
+                ExtTags::ExtKeyUsage => print_extended_key_usage(t)?,
+                ExtTags::SubjectKeyId => println!("    Subject Key Id: {:x?}", t.get_slice()?),
+                ExtTags::AuthKeyId => println!("    Authority Key Id: {:x?}", t.get_slice()?),
+                ExtTags::FutureExt => println!("    Future Extensions: {:x?}", t.get_slice()?),
             }
         }
     }
@@ -208,6 +217,37 @@ impl Cert {
             .find_tag(CertTags::EcPubKey as u32)
             .map_err(|_e| Error::Invalid)?
             .get_slice()
+    }
+
+    pub fn get_subject_key_id(&self) -> Result<&[u8], Error> {
+        tlv::get_root_node_struct(self.0.as_slice())?
+            .find_tag(CertTags::Extensions as u32)
+            .map_err(|_e| Error::Invalid)?
+            .confirm_list()?
+            .find_tag(ExtTags::SubjectKeyId as u32)
+            .map_err(|_e| Error::Invalid)?
+            .get_slice()
+    }
+
+    pub fn is_authority(&self, their: &Cert) -> Result<bool, Error> {
+        let our_auth = tlv::get_root_node_struct(self.0.as_slice())?
+            .find_tag(CertTags::Extensions as u32)
+            .map_err(|_e| Error::Invalid)?
+            .confirm_list()?
+            .find_tag(ExtTags::AuthKeyId as u32)
+            .map_err(|_e| Error::Invalid)?
+            .get_slice()?;
+
+        let their_subject = their.get_subject_key_id()?;
+        println!(
+            "Our auth: {:x?} their subject: {:x?}",
+            our_auth, their_subject
+        );
+        if our_auth == their_subject {
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     pub fn as_slice(&self) -> Result<&[u8], Error> {

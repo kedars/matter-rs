@@ -78,6 +78,16 @@ impl SecureChannel {
         self.case.handle_casesigma1(proto_rx, proto_tx)?;
         Ok(ResponseRequired::Yes)
     }
+
+    fn casesigma3_handler(
+        &mut self,
+        proto_rx: &mut ProtoRx,
+        proto_tx: &mut ProtoTx,
+    ) -> Result<ResponseRequired, Error> {
+        info!("In CASE Sigma3 Handler");
+        self.case.handle_casesigma3(proto_rx, proto_tx)?;
+        Ok(ResponseRequired::Yes)
+    }
 }
 
 impl proto_demux::HandleProto for SecureChannel {
@@ -95,6 +105,7 @@ impl proto_demux::HandleProto for SecureChannel {
             OpCode::PASEPake1 => self.pasepake1_handler(proto_rx, proto_tx),
             OpCode::PASEPake3 => self.pasepake3_handler(proto_rx, proto_tx),
             OpCode::CASESigma1 => self.casesigma1_handler(proto_rx, proto_tx),
+            OpCode::CASESigma3 => self.casesigma3_handler(proto_rx, proto_tx),
             _ => {
                 error!("OpCode Not Handled: {:?}", proto_opcode);
                 Err(Error::InvalidOpcode)
