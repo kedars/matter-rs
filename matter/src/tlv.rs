@@ -332,7 +332,10 @@ impl<'a> TLVElement<'a> {
 
     pub fn get_slice(&self) -> Result<&'a [u8], Error> {
         match self.element_type {
-            ElementType::Str8l(s) | ElementType::Utf8l(s) => Ok(s),
+            ElementType::Str8l(s)
+            | ElementType::Utf8l(s)
+            | ElementType::Str16l(s)
+            | ElementType::Utf16l(s) => Ok(s),
             _ => Err(Error::TLVTypeMismatch),
         }
     }
@@ -397,7 +400,10 @@ impl<'a> fmt::Display for TLVElement<'a> {
             ElementType::EndCnt => write!(f, ">"),
             ElementType::True => write!(f, "True"),
             ElementType::False => write!(f, "False"),
-            ElementType::Str8l(a) | ElementType::Utf8l(a) => {
+            ElementType::Str8l(a)
+            | ElementType::Utf8l(a)
+            | ElementType::Str16l(a)
+            | ElementType::Utf16l(a) => {
                 if let Ok(s) = std::str::from_utf8(a) {
                     write!(f, "len[{}]\"{}\"", s.len(), s)
                 } else {
