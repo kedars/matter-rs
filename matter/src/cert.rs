@@ -20,13 +20,6 @@ pub enum CertTags {
     Signature = 11,
 }
 
-const MC_TAG_DN_NODE_ID: u8 = 17;
-const MC_TAG_DN_FW_SIGN_ID: u8 = 18;
-const MC_TAG_DN_ICA_ID: u8 = 19;
-const MC_TAG_DN_ROOT_CA_ID: u8 = 20;
-const MC_TAG_DN_FABRIC_ID: u8 = 21;
-const MC_TAG_DN_NOC_CAT: u8 = 22;
-
 #[derive(FromPrimitive, Debug)]
 pub enum EcCurveIdValue {
     Prime256V1 = 1,
@@ -165,20 +158,29 @@ pub fn print_extensions(t: TLVElement) -> Result<(), Error> {
     Ok(())
 }
 
+#[derive(FromPrimitive)]
+pub enum DnTags {
+    NodeId = 17,
+    FirmwareSignId = 18,
+    IcaId = 19,
+    RootCaId = 20,
+    FabricId = 21,
+    NocCat = 22,
+}
 pub fn print_dn_list(t: TLVElement) -> Result<(), Error> {
     let iter = t.confirm_list()?.iter().ok_or(Error::Invalid)?;
     for t in iter {
         if let TagType::Context(tag) = t.get_tag() {
+            let tag = num::FromPrimitive::from_u8(tag).ok_or(Error::InvalidData)?;
             match tag {
-                MC_TAG_DN_NODE_ID => println!("    Chip Node Id = {:x?}", t.get_u32()?),
-                MC_TAG_DN_FW_SIGN_ID => {
+                DnTags::NodeId => println!("    Chip Node Id = {:x?}", t.get_u32()?),
+                DnTags::FirmwareSignId => {
                     println!("    Chip Firmware Signing Id = {:?}", t.get_u8()?)
                 }
-                MC_TAG_DN_ICA_ID => println!("    Chip ICA Id = {:?}", t.get_u8()?),
-                MC_TAG_DN_ROOT_CA_ID => println!("    Chip Root CA Id = {:?}", t.get_u8()?),
-                MC_TAG_DN_FABRIC_ID => println!("    Chip Fabric Id = {:?}", t.get_u8()?),
-                MC_TAG_DN_NOC_CAT => println!("    Chip NOC CAT = {:?}", t.get_u8()?),
-                _ => println!("Unsupported tag"),
+                DnTags::IcaId => println!("    Chip ICA Id = {:?}", t.get_u8()?),
+                DnTags::RootCaId => println!("    Chip Root CA Id = {:?}", t.get_u8()?),
+                DnTags::FabricId => println!("    Chip Fabric Id = {:?}", t.get_u8()?),
+                DnTags::NocCat => println!("    Chip NOC CAT = {:?}", t.get_u8()?),
             }
         }
     }
@@ -196,7 +198,7 @@ impl Cert {
         tlv::get_root_node_struct(self.0.as_slice())?
             .find_tag(CertTags::Subject as u32)?
             .confirm_list()?
-            .find_tag(MC_TAG_DN_NODE_ID as u32)
+            .find_tag(DnTags::NodeId as u32)
             .map_err(|_e| Error::NoNodeId)?
             .get_u32()
             .map(|e| e as u64)
@@ -206,7 +208,7 @@ impl Cert {
         tlv::get_root_node_struct(self.0.as_slice())?
             .find_tag(CertTags::Subject as u32)?
             .confirm_list()?
-            .find_tag(MC_TAG_DN_FABRIC_ID as u32)
+            .find_tag(DnTags::FabricId as u32)
             .map_err(|_e| Error::NoFabricId)?
             .get_u8()
             .map(|e| e as u64)
@@ -239,10 +241,6 @@ impl Cert {
             .get_slice()?;
 
         let their_subject = their.get_subject_key_id()?;
-        println!(
-            "Our auth: {:x?} their subject: {:x?}",
-            our_auth, their_subject
-        );
         if our_auth == their_subject {
             Ok(true)
         } else {
