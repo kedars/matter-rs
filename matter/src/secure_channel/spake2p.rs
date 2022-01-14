@@ -5,7 +5,7 @@ use hmac::{Hmac, Mac, NewMac};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
-use crate::error::Error;
+use crate::{crypto::pbkdf2_hmac, error::Error};
 
 #[cfg(feature = "crypto_openssl")]
 use super::crypto_openssl::CryptoOpenSSL;
@@ -103,7 +103,7 @@ impl Spake2P {
     fn get_w0w1s(pw: u32, iter: u32, salt: &[u8], w0w1s: &mut [u8]) {
         let mut pw_str: [u8; 4] = [0; 4];
         LittleEndian::write_u32(&mut pw_str, pw);
-        pbkdf2::pbkdf2::<Hmac<Sha256>>(&pw_str, salt, iter, w0w1s);
+        let _ = pbkdf2_hmac(&pw_str, iter as usize, salt, w0w1s);
     }
 
     pub fn start_verifier(&mut self, pw: u32, iter: u32, salt: &[u8]) -> Result<(), Error> {

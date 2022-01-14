@@ -3,8 +3,8 @@ use std::sync::Arc;
 use log::error;
 use mbedtls::{
     ecp::EcPoint,
-    hash,
     hash::Md,
+    hash::{self, Type},
     pk::{EcGroup, EcGroupId, Pk},
     rng::{CtrDrbg, OsEntropy},
     x509,
@@ -147,4 +147,9 @@ fn convert_asn1_sign_to_r_s(signature: &mut [u8]) -> Result<usize, Error> {
     } else {
         Err(Error::Invalid)
     }
+}
+
+pub fn pbkdf2_hmac(pass: &[u8], iter: usize, salt: &[u8], key: &mut [u8]) -> Result<(), Error> {
+    mbedtls::hash::pbkdf2_hmac(Type::Sha256, pass, salt, iter as u32, key)
+        .map_err(|_e| Error::TLSStack)
 }

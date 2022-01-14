@@ -8,7 +8,7 @@ name = "matter"
 path = "src/lib.rs"
 
 [features]
-default = ["crypto_openssl"]
+default = ["crypto_mbedtls"]
 crypto_openssl = ["openssl"]
 crypto_mbedtls = ["mbedtls"]
 
@@ -24,7 +24,6 @@ log = "0.4.14"
 env_logger = "0.9.0"
 sha2 = "0.9.8"
 rand = "0.8.4"
-pbkdf2 = "0.9.0"
 openssl = { version = "0.10.38", optional = true}
 mbedtls = { version = "0.8.1", optional = true}
 hmac = "0.11.0"
