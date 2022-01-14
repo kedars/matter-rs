@@ -54,7 +54,7 @@ impl Fabric {
         for c in f.compressed_id {
             mdns_service_name.push_str(&format!("{:02X}", c));
         }
-        mdns_service_name.push_str("-");
+        mdns_service_name.push('-');
         let mut node_id_be: [u8; 8] = [0; 8];
         BigEndian::write_u64(&mut node_id_be, node_id);
         for c in node_id_be {

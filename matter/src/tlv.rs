@@ -378,7 +378,7 @@ impl<'a> TLVElement<'a> {
                 return Ok(a);
             }
         }
-        return Err(Error::NoTagFound);
+        Err(Error::NoTagFound)
     }
 
     pub fn get_tag(&self) -> TagType {

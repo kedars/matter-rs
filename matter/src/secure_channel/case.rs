@@ -294,7 +294,7 @@ impl Case {
         let tag = GenericArray::from_slice(&tag);
 
         type AesCcm = Ccm<Aes128, U16, U13>;
-        let cipher = AesCcm::new(GenericArray::from_slice(&sigma3_key));
+        let cipher = AesCcm::new(GenericArray::from_slice(sigma3_key));
 
         let encrypted = &mut encrypted[..(encrypted_len - TAG_LEN)];
         cipher.decrypt_in_place_detached(nonce, &[], encrypted, tag)?;
@@ -409,6 +409,6 @@ impl Case {
         tw.put_str8(TagType::Context(3), our_pub_key)?;
         tw.put_str8(TagType::Context(4), peer_pub_key)?;
         tw.put_end_container()?;
-        Ok(fabric.sign_msg(write_buf.as_slice(), signature)?)
+        fabric.sign_msg(write_buf.as_slice(), signature)
     }
 }
