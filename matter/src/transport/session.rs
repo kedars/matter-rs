@@ -13,9 +13,11 @@ use super::{plain_hdr::PlainHdr, proto_hdr::ProtoHdr};
 
 const MATTER_AES128_KEY_SIZE: usize = 16;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum SessionMode {
-    Encrypted,
+    // The Case session will capture the local fabric index
+    Case(u8),
+    Pase,
     PlainText,
 }
 
@@ -62,14 +64,16 @@ pub struct CloneData {
     pub enc_key: [u8; MATTER_AES128_KEY_SIZE],
     pub att_challenge: [u8; MATTER_AES128_KEY_SIZE],
     peer_sess_id: u16,
+    mode: SessionMode,
 }
 impl CloneData {
-    pub fn new(peer_sess_id: u16) -> CloneData {
+    pub fn new(peer_sess_id: u16, mode: SessionMode) -> CloneData {
         CloneData {
             dec_key: [0; MATTER_AES128_KEY_SIZE],
             enc_key: [0; MATTER_AES128_KEY_SIZE],
             att_challenge: [0; MATTER_AES128_KEY_SIZE],
             peer_sess_id,
+            mode,
         }
     }
 }
@@ -105,7 +109,7 @@ impl Session {
             peer_sess_id: clone_from.peer_sess_id,
             child_local_sess_id: 0,
             msg_ctr: 1,
-            mode: SessionMode::Encrypted,
+            mode: clone_from.mode,
             data: None,
         };
 
@@ -156,7 +160,10 @@ impl Session {
     }
 
     pub fn is_encrypted(&self) -> bool {
-        self.mode == SessionMode::Encrypted
+        match self.mode {
+            SessionMode::Case(_) | SessionMode::Pase => true,
+            SessionMode::PlainText => false,
+        }
     }
 
     pub fn get_msg_ctr(&mut self) -> u32 {
@@ -167,14 +174,14 @@ impl Session {
 
     pub fn get_dec_key(&self) -> Option<&[u8]> {
         match self.mode {
-            SessionMode::Encrypted => Some(&self.dec_key),
+            SessionMode::Case(_) | SessionMode::Pase => Some(&self.dec_key),
             SessionMode::PlainText => None,
         }
     }
 
     pub fn get_enc_key(&self) -> Option<&[u8]> {
         match self.mode {
-            SessionMode::Encrypted => Some(&self.enc_key),
+            SessionMode::Case(_) | SessionMode::Pase => Some(&self.enc_key),
             SessionMode::PlainText => None,
         }
     }
@@ -298,13 +305,10 @@ impl SessionMgr {
         peer_addr: std::net::SocketAddr,
         is_encrypted: bool,
     ) -> Option<usize> {
-        let mode = if is_encrypted {
-            SessionMode::Encrypted
-        } else {
-            SessionMode::PlainText
-        };
         self.sessions.iter().position(|x| {
-            x.local_sess_id == sess_id && x.peer_addr == Some(peer_addr) && x.mode == mode
+            x.local_sess_id == sess_id
+                && x.peer_addr == Some(peer_addr)
+                && x.is_encrypted() == is_encrypted
         })
     }
 

@@ -2,11 +2,14 @@ use super::{
     common::{create_sc_status_report, SCStatusCodes},
     spake2p::Spake2P,
 };
-use crate::proto_demux::{ProtoRx, ProtoTx};
 use crate::tlv::*;
 use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
 use crate::{error::Error, transport::session::CloneData};
+use crate::{
+    proto_demux::{ProtoRx, ProtoTx},
+    transport::session::SessionMode,
+};
 use hkdf::Hkdf;
 use log::error;
 use rand::prelude::*;
@@ -67,7 +70,7 @@ impl PAKE {
 
             // Create a session
             let peer_sess_id = spake2.get_app_data() as u16;
-            let mut clone_data = CloneData::new(peer_sess_id);
+            let mut clone_data = CloneData::new(peer_sess_id, SessionMode::Pase);
             clone_data.dec_key.copy_from_slice(&session_keys[0..16]);
             clone_data.enc_key.copy_from_slice(&session_keys[16..32]);
             clone_data

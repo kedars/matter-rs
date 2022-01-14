@@ -15,7 +15,7 @@ use sha2::{Digest, Sha256};
 
 use crate::cert::Cert;
 use crate::secure_channel::common::SCStatusCodes;
-use crate::transport::session::CloneData;
+use crate::transport::session::{CloneData, SessionMode};
 use crate::{
     crypto::{CryptoKeyPair, KeyPair},
     error::Error,
@@ -141,7 +141,10 @@ impl Case {
             &mut session_keys,
         )?;
 
-        let mut clone_data = CloneData::new(case_session.initiator_sessid);
+        let mut clone_data = CloneData::new(
+            case_session.initiator_sessid,
+            SessionMode::Case(case_session.local_fabric_idx as u8),
+        );
         clone_data.dec_key.copy_from_slice(&session_keys[0..16]);
         clone_data.enc_key.copy_from_slice(&session_keys[16..32]);
         clone_data
