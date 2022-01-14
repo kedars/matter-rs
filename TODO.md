@@ -28,3 +28,10 @@
 * Implement the ARM Fail Safe and Regulatory Config properly. Currently we just ack them to proceed further
 * Generate proper signature for CSRRequest and AttestationRequest commands
 * Store the received Root-CA and NOC somewhere for later use
+* Currently AEAD, sha256 etc are directly used from rust crates. Instead use implementations from openssl/mbedtls
+* The 'async' requiring 2 buffers is just icky! I tried with peek_from(), but somehow that isn't blocking, causing this requirement
+* CASE:
+  - Handle initial MRP Parameters struct from Sigma1
+  - Sigma2: perform signature verification of the sig received from initiator
+  - Sigma2: perform cert chain validation
+  - In CommissioningComplete check if commissioning was in progress, and if not, return error
