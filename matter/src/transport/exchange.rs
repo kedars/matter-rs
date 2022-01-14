@@ -94,8 +94,7 @@ impl Exchange {
     }
 
     pub fn take_exchange_data<T: Any>(&mut self) -> Option<Box<T>> {
-        let t = self.data.take()?;
-        t.downcast::<T>().ok()
+        self.data.take()?.downcast::<T>().ok()
     }
 
     pub fn send(&self, proto_hdr: &mut ProtoHdr) -> Result<(), Error> {

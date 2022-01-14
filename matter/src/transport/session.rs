@@ -131,12 +131,7 @@ impl Session {
     }
 
     pub fn take_data<T: Any>(&mut self) -> Option<Box<T>> {
-        let a = self.data.take()?;
-        if let Ok(t) = a.downcast::<T>() {
-            Some(t)
-        } else {
-            None
-        }
+        self.data.take()?.downcast::<T>().ok()
     }
 
     pub fn get_local_sess_id(&self) -> u16 {
