@@ -14,7 +14,8 @@ use rand::prelude::*;
 use sha2::{Digest, Sha256};
 
 use crate::cert::Cert;
-use crate::tlv;
+use crate::secure_channel::common::SCStatusCodes;
+use crate::transport::session::CloneData;
 use crate::{
     crypto::{CryptoKeyPair, KeyPair},
     error::Error,
@@ -66,13 +67,14 @@ impl Case {
         proto_rx: &mut ProtoRx,
         proto_tx: &mut ProtoTx,
     ) -> Result<(), Error> {
-        let case_session = proto_rx
+        let mut case_session = proto_rx
             .exchange
-            .get_exchange_data::<CaseSession>()
+            .take_exchange_data::<CaseSession>()
             .ok_or(Error::InvalidState)?;
         if case_session.state != State::Sigma1Rx {
             return Err(Error::Invalid);
         }
+        case_session.state = State::Sigma3Rx;
 
         let root = get_root_node_struct(proto_rx.buf)?;
         let encrypted = root.find_tag(1)?.get_slice()?;
@@ -99,6 +101,7 @@ impl Case {
         let initiator_noc = Cert::new(root.find_tag(1)?.get_slice()?);
         let initiator_icac = Cert::new(root.find_tag(2)?.get_slice()?);
         let signature = root.find_tag(3)?.get_slice()?;
+        // TODO: Signature Validation
 
         let fabric = self.fabric_mgr.get_fabric(case_session.local_fabric_idx)?;
         if fabric.is_none() {
@@ -125,6 +128,31 @@ impl Case {
             proto_rx.exchange.close();
             return Ok(());
         }
+        // TODO: Cert Chain Validation
+
+        case_session.tt_hash.update(proto_rx.buf);
+        // TODO: Fix IPK
+        let dummy_ipk: [u8; 16] = [0; 16];
+        let mut session_keys: [u8; 48] = [0; 48];
+        Case::get_session_keys(
+            &dummy_ipk,
+            &case_session.tt_hash,
+            &case_session.shared_secret,
+            &mut session_keys,
+        )?;
+
+        let mut clone_data = CloneData::new(case_session.initiator_sessid);
+        clone_data.dec_key.copy_from_slice(&session_keys[0..16]);
+        clone_data.enc_key.copy_from_slice(&session_keys[16..32]);
+        clone_data
+            .att_challenge
+            .copy_from_slice(&session_keys[32..48]);
+        proto_tx.new_session = Some(proto_rx.session.clone(&clone_data));
+
+        common::create_sc_status_report(proto_tx, SCStatusCodes::SessionEstablishmentSuccess)?;
+        proto_rx.exchange.clear_exchange_data();
+        proto_rx.exchange.close();
+
         Ok(())
     }
 
@@ -220,6 +248,33 @@ impl Case {
         tw.put_end_container()?;
         case_session.tt_hash.update(proto_tx.write_buf.as_slice());
         proto_rx.exchange.set_exchange_data(case_session);
+        Ok(())
+    }
+
+    fn get_session_keys(
+        ipk: &[u8],
+        tt_hash: &Sha256,
+        shared_secret: &[u8],
+        key: &mut [u8],
+    ) -> Result<(), Error> {
+        const SEKEYS_INFO: [u8; 11] = [
+            0x53, 0x65, 0x73, 0x73, 0x69, 0x6f, 0x6e, 0x4b, 0x65, 0x79, 0x73,
+        ];
+        if key.len() < 48 {
+            return Err(Error::NoSpace);
+        }
+        let mut salt = Vec::<u8>::with_capacity(256);
+        salt.extend_from_slice(ipk);
+        let tt_hash = tt_hash.clone();
+        let tt_hash = tt_hash.finalize();
+        let tt_hash = tt_hash.as_slice();
+        salt.extend_from_slice(tt_hash);
+        //        println!("Session Key: salt: {:x?}, len: {}", salt, salt.len());
+
+        let h = Hkdf::<Sha256>::new(Some(salt.as_slice()), shared_secret);
+        h.expand(&SEKEYS_INFO, key).map_err(|_x| Error::NoSpace)?;
+        println!("Session Key: key: {:x?}", key);
+
         Ok(())
     }
 

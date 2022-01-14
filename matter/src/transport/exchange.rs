@@ -93,6 +93,11 @@ impl Exchange {
         self.data.as_mut()?.downcast_mut::<T>()
     }
 
+    pub fn take_exchange_data<T: Any>(&mut self) -> Option<Box<T>> {
+        let t = self.data.take()?;
+        t.downcast::<T>().ok()
+    }
+
     pub fn send(&self, proto_hdr: &mut ProtoHdr) -> Result<(), Error> {
         proto_hdr.exch_id = self.id;
         if self.role == ExchangeRole::Initiator {
