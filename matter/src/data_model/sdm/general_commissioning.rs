@@ -12,6 +12,8 @@ const CMD_ARMFAILSAFE_ID: u16 = 0x00;
 const CMD_ARMFAILSAFE_RESPONSE_ID: u16 = 0x01;
 const CMD_SETREGULATORYCONFIG_ID: u16 = 0x02;
 const CMD_SETREGULATORYCONFIG_RESPONSE_ID: u16 = 0x03;
+const CMD_COMMISSIONING_COMPLETE_ID: u16 = 0x04;
+const CMD_COMMISSIONING_COMPLETE_RESPONSE_ID: u16 = 0x05;
 
 const CMD_PATH_ARMFAILSAFE_RESPONSE: CmdPathIb = CmdPathIb {
     endpoint: Some(0),
@@ -23,6 +25,12 @@ const CMD_PATH_SETREGULATORY_RESPONSE: CmdPathIb = CmdPathIb {
     endpoint: Some(0),
     cluster: Some(CLUSTER_GENERAL_COMMISSIONING_ID),
     command: CMD_SETREGULATORYCONFIG_RESPONSE_ID,
+};
+
+const CMD_PATH_COMMISSIONING_COMPLETE_RESPONSE: CmdPathIb = CmdPathIb {
+    endpoint: Some(0),
+    cluster: Some(CLUSTER_GENERAL_COMMISSIONING_ID),
+    command: CMD_COMMISSIONING_COMPLETE_RESPONSE_ID,
 };
 
 fn handle_command_armfailsafe(
@@ -66,6 +74,34 @@ fn handle_command_setregulatoryconfig(
     Ok(())
 }
 
+fn handle_command_commissioningcomplete(
+    _cluster: &mut Cluster,
+    cmd_req: &mut CommandReq,
+) -> Result<(), Error> {
+    cmd_enter!("Commissioning Complete");
+
+    #[allow(dead_code)]
+    enum CommissioningError {
+        Ok = 0,
+        ErrValueOutsideRange = 1,
+        ErrInvalidAuth = 2,
+        ErrNotCommissioning = 3,
+    }
+    let mut status: u8 = CommissioningError::Ok as u8;
+
+    if cmd_req.trans.session.get_local_fabric_idx().is_none() {
+        status = CommissioningError::ErrInvalidAuth as u8;
+    }
+
+    let invoke_resp = InvokeRespIb::Command(CMD_PATH_COMMISSIONING_COMPLETE_RESPONSE, |t| {
+        t.put_u8(TagType::Context(0), status)?;
+        t.put_utf8(TagType::Context(1), b"")
+    });
+    cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)?;
+    cmd_req.trans.complete();
+    Ok(())
+}
+
 fn command_armfailsafe_new() -> Result<Box<Command>, Error> {
     Command::new(CMD_ARMFAILSAFE_ID, handle_command_armfailsafe)
 }
@@ -77,9 +113,17 @@ fn command_setregulatoryconfig_new() -> Result<Box<Command>, Error> {
     )
 }
 
+fn command_commissioningcomplete_new() -> Result<Box<Command>, Error> {
+    Command::new(
+        CMD_COMMISSIONING_COMPLETE_ID,
+        handle_command_commissioningcomplete,
+    )
+}
+
 pub fn cluster_general_commissioning_new() -> Result<Box<Cluster>, Error> {
     let mut cluster = Cluster::new(CLUSTER_GENERAL_COMMISSIONING_ID)?;
     cluster.add_command(command_armfailsafe_new()?)?;
     cluster.add_command(command_setregulatoryconfig_new()?)?;
+    cluster.add_command(command_commissioningcomplete_new()?)?;
     Ok(cluster)
 }

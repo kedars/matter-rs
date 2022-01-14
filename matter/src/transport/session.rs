@@ -166,6 +166,13 @@ impl Session {
         }
     }
 
+    pub fn get_local_fabric_idx(&self) -> Option<u8> {
+        match self.mode {
+            SessionMode::Case(a) => Some(a),
+            _ => None,
+        }
+    }
+
     pub fn get_msg_ctr(&mut self) -> u32 {
         let ctr = self.msg_ctr;
         self.msg_ctr += 1;
