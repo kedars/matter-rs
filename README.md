@@ -20,3 +20,4 @@ $ RUST_LOG="matter" cargo run --example onoff_light
 
 ## Functionality
 - PASE Works (TLV Parser/Generator, SPAKE2+, AEAD, Commissioning/Operational Certificates Cluster)
+- CASE Works 
