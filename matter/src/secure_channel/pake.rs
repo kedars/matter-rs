@@ -49,9 +49,9 @@ impl PAKE {
         proto_rx: &mut ProtoRx,
         proto_tx: &mut ProtoTx,
     ) -> Result<(), Error> {
-        let spake2 = proto_rx
+        let mut spake2 = proto_rx
             .exchange
-            .get_exchange_data::<Spake2P>()
+            .take_exchange_data::<Spake2P>()
             .ok_or(Error::InvalidState)?;
 
         let cA = extract_pasepake_1_or_3_params(proto_rx.buf)?;
@@ -88,9 +88,9 @@ impl PAKE {
         proto_rx: &mut ProtoRx,
         proto_tx: &mut ProtoTx,
     ) -> Result<(), Error> {
-        let spake2 = proto_rx
+        let mut spake2 = proto_rx
             .exchange
-            .get_exchange_data::<Spake2P>()
+            .take_exchange_data::<Spake2P>()
             .ok_or(Error::InvalidState)?;
 
         let pA = extract_pasepake_1_or_3_params(proto_rx.buf)?;
@@ -104,6 +104,7 @@ impl PAKE {
         tw.put_str8(TagType::Context(1), &pB)?;
         tw.put_str8(TagType::Context(2), &cB)?;
         tw.put_end_container()?;
+        proto_rx.exchange.set_exchange_data(spake2);
 
         Ok(())
     }
