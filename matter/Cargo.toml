@@ -15,9 +15,8 @@ crypto_esp_mbedtls = ["esp-idf-sys"]
 
 [dependencies]
 byteorder = "1.4.3"
-ccm = "0.4.4"
-aes = "0.7.5"
 heapless = "0.7.7"
+generic-array = "0.14.5"
 num = "0.3"
 num-derive = "0.3.3"
 num-traits = "0.2.14"
@@ -26,8 +25,8 @@ env_logger = "0.9.0"
 sha2 = "0.9.8"
 rand = "0.8.4"
 openssl = { version = "0.10.38", optional = true}
-mbedtls = { version = "0.8.1", optional = true}
 esp-idf-sys = { version = "0.30", features = ["binstart"], optional = true }
+mbedtls = { path = "/Users/kedars/work/rust/rust-mbedtls/mbedtls", optional = true}
 hmac = "0.11.0"
 hkdf = "0.11.0"
 subtle = "2.4.1"

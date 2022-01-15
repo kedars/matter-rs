@@ -6,8 +6,8 @@ use std::{
 use crate::error::Error;
 
 use super::crypto::CryptoSpake2;
-use aes::cipher::generic_array::GenericArray;
 use byteorder::{ByteOrder, LittleEndian};
+use generic_array::GenericArray;
 use log::error;
 use mbedtls::{
     bignum::Mpi,

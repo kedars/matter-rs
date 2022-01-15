@@ -1,5 +1,5 @@
-use aes::cipher::generic_array::GenericArray;
 use byteorder::{ByteOrder, LittleEndian};
+use generic_array::GenericArray;
 use hkdf::Hkdf;
 use hmac::{Hmac, Mac, NewMac};
 use sha2::{Digest, Sha256};

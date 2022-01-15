@@ -3,6 +3,7 @@ use std::sync::Arc;
 use log::error;
 use mbedtls::{
     bignum::Mpi,
+    cipher::{Authenticated, Cipher},
     ecp::EcPoint,
     hash::Md,
     hash::{self, Type},
@@ -257,5 +258,42 @@ fn convert_asn1_sign_to_r_s(signature: &mut [u8]) -> Result<usize, Error> {
 
 pub fn pbkdf2_hmac(pass: &[u8], iter: usize, salt: &[u8], key: &mut [u8]) -> Result<(), Error> {
     mbedtls::hash::pbkdf2_hmac(Type::Sha256, pass, salt, iter as u32, key)
+        .map_err(|_e| Error::TLSStack)
+}
+
+pub fn encrypt_in_place(
+    key: &[u8],
+    nonce: &[u8],
+    ad: &[u8],
+    data: &mut [u8],
+    data_len: usize,
+) -> Result<usize, Error> {
+    let cipher = Cipher::<_, Authenticated, _>::new(
+        mbedtls::cipher::raw::CipherId::Aes,
+        mbedtls::cipher::raw::CipherMode::CCM,
+        (key.len() * 8) as u32,
+    )?;
+    let cipher = cipher.set_key_iv(key, nonce)?;
+    cipher
+        .encrypt_auth_inplace(ad, data, data_len, 16)
+        .map(|(len, _)| len)
+        .map_err(|_e| Error::TLSStack)
+}
+
+pub fn decrypt_in_place(
+    key: &[u8],
+    nonce: &[u8],
+    ad: &[u8],
+    data: &mut [u8],
+) -> Result<usize, Error> {
+    let cipher = Cipher::<_, Authenticated, _>::new(
+        mbedtls::cipher::raw::CipherId::Aes,
+        mbedtls::cipher::raw::CipherMode::CCM,
+        (key.len() * 8) as u32,
+    )?;
+    let cipher = cipher.set_key_iv(key, nonce)?;
+    cipher
+        .decrypt_auth_inplace(ad, data, 16)
+        .map(|(len, _)| len)
         .map_err(|_e| Error::TLSStack)
 }

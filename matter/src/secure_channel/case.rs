@@ -1,12 +1,5 @@
 use std::sync::Arc;
 
-use aes::Aes128;
-use ccm::aead::{generic_array::GenericArray, AeadInPlace, NewAead};
-use ccm::{
-    consts::{U13, U16},
-    Ccm,
-};
-
 use hkdf::Hkdf;
 use log::{error, trace};
 use owning_ref::RwLockReadGuardRef;
@@ -18,7 +11,7 @@ use crate::crypto;
 use crate::secure_channel::common::SCStatusCodes;
 use crate::transport::session::{CloneData, SessionMode};
 use crate::{
-    crypto::{CryptoKeyPair, KeyPair},
+    crypto::{self, CryptoKeyPair, KeyPair},
     error::Error,
     fabric::{Fabric, FabricMgr, FabricMgrInner},
     proto_demux::{ProtoRx, ProtoTx},
@@ -353,17 +346,8 @@ impl Case {
             0x4e, 0x43, 0x41, 0x53, 0x45, 0x5f, 0x53, 0x69, 0x67, 0x6d, 0x61, 0x33, 0x4e,
         ];
 
-        let nonce = GenericArray::from_slice(&nonce);
         let encrypted_len = encrypted.len();
-        let mut tag = [0_u8; crypto::AEAD_MIC_LEN_BYTES];
-        tag.copy_from_slice(&encrypted[(encrypted_len - crypto::AEAD_MIC_LEN_BYTES)..]);
-        let tag = GenericArray::from_slice(&tag);
-
-        type AesCcm = Ccm<Aes128, U16, U13>;
-        let cipher = AesCcm::new(GenericArray::from_slice(&sigma3_key));
-
-        let encrypted = &mut encrypted[..(encrypted_len - crypto::AEAD_MIC_LEN_BYTES)];
-        cipher.decrypt_in_place_detached(nonce, &[], encrypted, tag)?;
+        crypto::decrypt_in_place(sigma3_key, &nonce, &[], encrypted)?;
         Ok(encrypted_len - crypto::AEAD_MIC_LEN_BYTES)
     }
 
@@ -444,14 +428,15 @@ impl Case {
         let nonce: [u8; crypto::AEAD_NONCE_LEN_BYTES] = [
             0x4e, 0x43, 0x41, 0x53, 0x45, 0x5f, 0x53, 0x69, 0x67, 0x6d, 0x61, 0x32, 0x4e,
         ];
-        let nonce = GenericArray::from_slice(&nonce);
+        //        let nonce = GenericArray::from_slice(&nonce);
+        //        type AesCcm = Ccm<Aes128, U16, U13>;
+        //        let cipher = AesCcm::new(GenericArray::from_slice(key));
+        const TAG_LEN: usize = 16;
+        let tag = [0u8; TAG_LEN];
+        write_buf.append(&tag)?;
         let cipher_text = write_buf.as_mut_slice();
 
-        type AesCcm = Ccm<Aes128, U16, U13>;
-        let cipher = AesCcm::new(GenericArray::from_slice(key));
-        let tag = cipher.encrypt_in_place_detached(nonce, &[], cipher_text)?;
-        write_buf.append(tag.as_slice())?;
-
+        crypto::encrypt_in_place(key, &nonce, &[], cipher_text, cipher_text.len() - TAG_LEN)?;
         Ok(write_buf.as_slice().len())
     }
 
