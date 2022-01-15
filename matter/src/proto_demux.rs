@@ -2,7 +2,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use crate::error::*;
 use crate::transport::exchange::Exchange;
-use crate::transport::session::Session;
+use crate::transport::session::{Session, SessionHandle};
 use crate::utils::writebuf::WriteBuf;
 
 const MAX_PROTOCOLS: usize = 4;
@@ -19,7 +19,7 @@ pub struct ProtoRx<'a> {
     pub proto_id: usize,
     pub proto_opcode: u8,
     pub buf: &'a [u8],
-    pub session: &'a mut Session,
+    pub session: SessionHandle<'a>,
     pub exchange: &'a mut Exchange,
     pub peer: SocketAddr,
 }
@@ -28,7 +28,7 @@ impl<'a> ProtoRx<'a> {
     pub fn new(
         proto_id: usize,
         proto_opcode: u8,
-        session: &'a mut Session,
+        session: SessionHandle<'a>,
         exchange: &'a mut Exchange,
         peer: SocketAddr,
         buf: &'a [u8],

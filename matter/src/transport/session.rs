@@ -1,5 +1,9 @@
 use core::fmt;
-use std::{any::Any, net::SocketAddr};
+use std::{
+    any::Any,
+    net::SocketAddr,
+    ops::{Deref, DerefMut},
+};
 
 use crate::{
     error::*,
@@ -288,13 +292,13 @@ impl SessionMgr {
         next_sess_id
     }
 
-    pub fn add(&mut self, peer_addr: std::net::SocketAddr) -> Result<(usize, &mut Session), Error> {
+    pub fn add(&mut self, peer_addr: std::net::SocketAddr) -> Result<SessionHandle, Error> {
         let child_sess_id = self.get_next_sess_id();
         let session = Session::new(child_sess_id, peer_addr);
 
         self.sessions.push(session).map_err(|_s| Error::NoSpace)?;
         let index = self._get(0, peer_addr, false).ok_or(Error::NoSpace)?;
-        Ok((index, &mut self.sessions[index]))
+        Ok(self.get_session_handle(index))
     }
 
     pub fn add_session(&mut self, session: Session) -> Result<(), Error> {
@@ -314,10 +318,12 @@ impl SessionMgr {
         })
     }
 
-    pub fn get_with_id(&mut self, sess_id: u16) -> Option<&mut Session> {
-        self.sessions
+    pub fn get_with_id(&mut self, sess_id: u16) -> Option<SessionHandle> {
+        let index = self
+            .sessions
             .iter_mut()
-            .find(|s| s.local_sess_id == sess_id)
+            .position(|s| s.local_sess_id == sess_id)?;
+        Some(self.get_session_handle(index))
     }
 
     pub fn get_or_add(
@@ -325,9 +331,9 @@ impl SessionMgr {
         sess_id: u16,
         peer_addr: std::net::SocketAddr,
         is_encrypted: bool,
-    ) -> Option<(usize, &mut Session)> {
+    ) -> Option<SessionHandle> {
         if let Some(index) = self._get(sess_id, peer_addr, is_encrypted) {
-            Some((index, &mut self.sessions[index]))
+            Some(self.get_session_handle(index))
         } else if sess_id == 0 && !is_encrypted {
             // We must create a new session for this case
             info!("Creating new session");
@@ -337,22 +343,25 @@ impl SessionMgr {
         }
     }
 
-    pub fn get_session(&mut self, sess_index: usize) -> Option<&mut Session> {
-        Some(&mut self.sessions[sess_index])
-    }
-
     pub fn recv(
         &mut self,
         plain_hdr: &mut PlainHdr,
         parse_buf: &mut ParseBuf,
         src: SocketAddr,
-    ) -> Result<(usize, &mut Session), Error> {
+    ) -> Result<SessionHandle, Error> {
         // Read unencrypted packet header
         plain_hdr.decode(parse_buf)?;
 
         // Get session
         self.get_or_add(plain_hdr.sess_id, src, plain_hdr.is_encrypted())
             .ok_or(Error::NoSession)
+    }
+
+    fn get_session_handle<'a>(&'a mut self, sess_idx: usize) -> SessionHandle<'a> {
+        SessionHandle {
+            sess_mgr: self,
+            sess_idx,
+        }
     }
 }
 
@@ -364,6 +373,32 @@ impl fmt::Display for SessionMgr {
         }
         write!(f, "], next_sess_id: {}", self.next_sess_id)?;
         write!(f, "}}")
+    }
+}
+
+#[derive(Debug)]
+pub struct SessionHandle<'a> {
+    sess_mgr: &'a mut SessionMgr,
+    // This will be a problem when sessions can be deleted. Will address that in the next iteration
+    sess_idx: usize,
+}
+
+impl<'a> SessionHandle<'a> {
+    pub fn get_next_sess_id(&mut self) -> u16 {
+        self.sess_mgr.get_next_sess_id()
+    }
+}
+
+impl<'a> Deref for SessionHandle<'a> {
+    type Target = Session;
+    fn deref(&self) -> &Self::Target {
+        &self.sess_mgr.sessions[self.sess_idx]
+    }
+}
+
+impl<'a> DerefMut for SessionHandle<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.sess_mgr.sessions[self.sess_idx]
     }
 }
 

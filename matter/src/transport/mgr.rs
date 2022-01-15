@@ -9,7 +9,7 @@ use crate::transport::exchange;
 use crate::transport::mrp;
 use crate::transport::plain_hdr;
 use crate::transport::proto_hdr;
-use crate::transport::session;
+use crate::transport::session::{self, SessionHandle};
 use crate::transport::udp::{self, MAX_RX_BUF_SIZE};
 use crate::utils::parsebuf::ParseBuf;
 use colored::*;
@@ -63,7 +63,7 @@ impl Mgr {
 
         // Get session
         //      Ok to use unwrap here since we know 'src' is certainly not None
-        let (_, session) = sess_mgr.recv(&mut plain_hdr, &mut parse_buf, src)?;
+        let session = sess_mgr.recv(&mut plain_hdr, &mut parse_buf, src)?;
 
         // Read encrypted header
         session.recv(&plain_hdr, &mut proto_hdr, &mut parse_buf)?;
@@ -91,7 +91,7 @@ impl Mgr {
         exch_id: u16,
         proto_tx: &mut ProtoTx,
     ) -> Result<(), Error> {
-        let session = self.sess_mgr.get_with_id(sess_id).ok_or(Error::NoSession)?;
+        let mut session = self.sess_mgr.get_with_id(sess_id).ok_or(Error::NoSession)?;
         let exchange = self
             .exch_mgr
             .get_with_id(sess_id, exch_id)
@@ -101,7 +101,7 @@ impl Mgr {
         Mgr::send_to_exchange(
             &self.transport,
             &mut self.rel_mgr,
-            session,
+            &mut session,
             exchange,
             proto_tx,
         )
@@ -113,7 +113,7 @@ impl Mgr {
     fn send_to_exchange(
         transport: &udp::UdpListener,
         rel_mgr: &mut mrp::ReliableMessage,
-        session: &mut Session,
+        session: &mut SessionHandle,
         exchange: &mut exchange::Exchange,
         proto_tx: &mut ProtoTx,
     ) -> Result<(), Error> {
@@ -180,7 +180,7 @@ impl Mgr {
         Mgr::send_to_exchange(
             &self.transport,
             &mut self.rel_mgr,
-            proto_rx.session,
+            &mut proto_rx.session,
             proto_rx.exchange,
             proto_tx,
         )

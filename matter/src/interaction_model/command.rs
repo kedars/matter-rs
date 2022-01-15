@@ -56,16 +56,16 @@ impl<F: Fn(&mut TLVWriter) -> Result<(), Error>> ToTLV for InvokeRespIb<F> {
     }
 }
 
-pub struct CommandReq<'a, 'b, 'c, 'd> {
+pub struct CommandReq<'a, 'b, 'c, 'd, 'e> {
     pub endpoint: u16,
     pub cluster: u32,
     pub command: u16,
     pub data: TLVElement<'a>,
     pub resp: &'a mut TLVWriter<'b, 'c>,
-    pub trans: &'a mut Transaction<'d>,
+    pub trans: &'a mut Transaction<'d, 'e>,
 }
 
-impl<'a, 'b, 'c, 'd> CommandReq<'a, 'b, 'c, 'd> {
+impl<'a, 'b, 'c, 'd, 'e> CommandReq<'a, 'b, 'c, 'd, 'e> {
     pub fn to_cmd_path_ib(&self) -> CmdPathIb {
         CmdPathIb {
             endpoint: Some(self.endpoint),

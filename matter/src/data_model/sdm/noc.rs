@@ -138,8 +138,8 @@ fn add_nocsrelement(
     Ok(())
 }
 
-fn get_addnoc_params<'a, 'b, 'c, 'd>(
-    cmd_req: &mut CommandReq<'a, 'b, 'c, 'd>,
+fn get_addnoc_params<'a, 'b, 'c, 'd, 'e>(
+    cmd_req: &mut CommandReq<'a, 'b, 'c, 'd, 'e>,
 ) -> Result<(&'a [u8], &'a [u8], &'a [u8], u32, u16), Error> {
     let noc_value = cmd_req.data.find_tag(0)?.get_slice()?;
     let icac_value = cmd_req.data.find_tag(1)?.get_slice()?;

@@ -2,7 +2,7 @@ use crate::error::*;
 use crate::proto_demux;
 use crate::proto_demux::ResponseRequired;
 use crate::proto_demux::{ProtoRx, ProtoTx};
-use crate::transport::session::Session;
+use crate::transport::session::SessionHandle;
 use log::error;
 use num;
 use num_derive::FromPrimitive;
@@ -34,8 +34,8 @@ pub enum OpCode {
     TimedRequest = 10,
 }
 
-impl<'a> Transaction<'a> {
-    pub fn new(session: &'a mut Session) -> Self {
+impl<'a, 'b> Transaction<'a, 'b> {
+    pub fn new(session: &'b mut SessionHandle<'a>) -> Self {
         Self {
             state: TransactionState::Ongoing,
             data: None,
@@ -64,7 +64,7 @@ impl proto_demux::HandleProto for InteractionModel {
         proto_rx: &mut ProtoRx,
         proto_tx: &mut ProtoTx,
     ) -> Result<ResponseRequired, Error> {
-        let mut trans = Transaction::new(proto_rx.session);
+        let mut trans = Transaction::new(&mut proto_rx.session);
         let proto_opcode: OpCode =
             num::FromPrimitive::from_u8(proto_rx.proto_opcode).ok_or(Error::Invalid)?;
         proto_tx.proto_id = PROTO_ID_INTERACTION_MODEL;
@@ -96,7 +96,7 @@ mod tests {
     use crate::tlv::TLVElement;
     use crate::tlv_writer::TLVWriter;
     use crate::transport::exchange::Exchange;
-    use crate::transport::session::Session;
+    use crate::transport::session::SessionMgr;
     use std::net::IpAddr;
     use std::net::Ipv4Addr;
     use std::net::SocketAddr;
@@ -156,11 +156,18 @@ mod tests {
         }));
         let mut interaction_model = InteractionModel::new(data_model.clone());
         let mut exch: Exchange = Default::default();
-        let mut sess: Session = Default::default();
+        let mut sess_mgr: SessionMgr = Default::default();
+        let sess = sess_mgr
+            .get_or_add(
+                0,
+                SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 5542),
+                false,
+            )
+            .unwrap();
         let mut proto_rx = ProtoRx::new(
             0x01,
             0x08,
-            &mut sess,
+            sess,
             &mut exch,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
             &b,
