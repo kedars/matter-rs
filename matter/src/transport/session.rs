@@ -52,11 +52,6 @@ pub struct Session {
      */
     local_sess_id: u16,
     peer_sess_id: u16,
-    // The local sess id is only set on session 0 of a peer-addr, when PASE/CASE is in-progress.
-    // We could have held the local session ID in the PASE/CASE specific data, untill an encrypted
-    // session is established. But doing that implies that the new session ID allocator couldn't
-    // see this child session ID. Keeping it here, makes it easier to manage.
-    child_local_sess_id: u16,
     msg_ctr: u32,
     mode: SessionMode,
     data: Option<Box<dyn Any>>,
@@ -67,16 +62,18 @@ pub struct CloneData {
     pub dec_key: [u8; MATTER_AES128_KEY_SIZE],
     pub enc_key: [u8; MATTER_AES128_KEY_SIZE],
     pub att_challenge: [u8; MATTER_AES128_KEY_SIZE],
+    local_sess_id: u16,
     peer_sess_id: u16,
     mode: SessionMode,
 }
 impl CloneData {
-    pub fn new(peer_sess_id: u16, mode: SessionMode) -> CloneData {
+    pub fn new(peer_sess_id: u16, local_sess_id: u16, mode: SessionMode) -> CloneData {
         CloneData {
             dec_key: [0; MATTER_AES128_KEY_SIZE],
             enc_key: [0; MATTER_AES128_KEY_SIZE],
             att_challenge: [0; MATTER_AES128_KEY_SIZE],
             peer_sess_id,
+            local_sess_id,
             mode,
         }
     }
@@ -87,13 +84,12 @@ impl Session {
     // then they eventually get converted into an encrypted session with the new_encrypted_session() which
     // clones from this plaintext session, but acquires the local/peer session IDs and the
     // encryption keys.
-    pub fn new(child_local_sess_id: u16, peer_addr: std::net::SocketAddr) -> Session {
+    pub fn new(peer_addr: std::net::SocketAddr) -> Session {
         Session {
             peer_addr: Some(peer_addr),
             dec_key: [0; MATTER_AES128_KEY_SIZE],
             enc_key: [0; MATTER_AES128_KEY_SIZE],
             att_challenge: [0; MATTER_AES128_KEY_SIZE],
-            child_local_sess_id,
             peer_sess_id: 0,
             local_sess_id: 0,
             msg_ctr: 1,
@@ -109,16 +105,12 @@ impl Session {
             dec_key: clone_from.dec_key,
             enc_key: clone_from.enc_key,
             att_challenge: clone_from.att_challenge,
-            local_sess_id: self.child_local_sess_id,
+            local_sess_id: clone_from.local_sess_id,
             peer_sess_id: clone_from.peer_sess_id,
-            child_local_sess_id: 0,
             msg_ctr: 1,
             mode: clone_from.mode,
             data: None,
         };
-
-        self.child_local_sess_id = 0;
-
         session
     }
 
@@ -142,16 +134,8 @@ impl Session {
         self.local_sess_id
     }
 
-    pub fn get_child_local_sess_id(&self) -> u16 {
-        self.child_local_sess_id
-    }
-
     pub fn get_peer_sess_id(&self) -> u16 {
         self.peer_sess_id
-    }
-
-    pub fn set_local_sess_id(&mut self) {
-        self.local_sess_id = self.child_local_sess_id;
     }
 
     pub fn get_peer_addr(&self) -> Option<SocketAddr> {
@@ -282,9 +266,11 @@ impl SessionMgr {
             }
 
             // Ensure the currently selected id doesn't match any existing session
-            if self.sessions.iter().position(|x| {
-                x.local_sess_id == next_sess_id || x.child_local_sess_id == next_sess_id
-            }) == None
+            if self
+                .sessions
+                .iter()
+                .position(|x| x.local_sess_id == next_sess_id)
+                == None
             {
                 break;
             }
@@ -293,8 +279,7 @@ impl SessionMgr {
     }
 
     pub fn add(&mut self, peer_addr: std::net::SocketAddr) -> Result<SessionHandle, Error> {
-        let child_sess_id = self.get_next_sess_id();
-        let session = Session::new(child_sess_id, peer_addr);
+        let session = Session::new(peer_addr);
 
         self.sessions.push(session).map_err(|_s| Error::NoSpace)?;
         let index = self._get(0, peer_addr, false).ok_or(Error::NoSpace)?;
@@ -384,7 +369,7 @@ pub struct SessionHandle<'a> {
 }
 
 impl<'a> SessionHandle<'a> {
-    pub fn get_next_sess_id(&mut self) -> u16 {
+    pub fn reserve_new_sess_id(&mut self) -> u16 {
         self.sess_mgr.get_next_sess_id()
     }
 }

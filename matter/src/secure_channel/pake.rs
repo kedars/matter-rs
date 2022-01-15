@@ -69,8 +69,10 @@ impl PAKE {
                 .map_err(|_x| Error::NoSpace)?;
 
             // Create a session
-            let peer_sess_id = spake2.get_app_data() as u16;
-            let mut clone_data = CloneData::new(peer_sess_id, SessionMode::Pase);
+            let data = spake2.get_app_data();
+            let peer_sessid: u16 = (data & 0xff) as u16;
+            let local_sessid: u16 = ((data >> 16) & 0xff) as u16;
+            let mut clone_data = CloneData::new(peer_sessid, local_sessid, SessionMode::Pase);
             clone_data.dec_key.copy_from_slice(&session_keys[0..16]);
             clone_data.enc_key.copy_from_slice(&session_keys[16..32]);
             clone_data
@@ -127,18 +129,17 @@ impl PAKE {
         let mut our_random: [u8; 32] = [0; 32];
         rand::thread_rng().fill_bytes(&mut our_random);
 
+        let local_sessid = proto_rx.session.reserve_new_sess_id();
+        let spake2p_data: u32 = ((local_sessid as u32) << 16) | initiator_sessid as u32;
         let mut spake2p = Box::new(Spake2P::new());
-        spake2p.set_app_data(initiator_sessid as u32);
+        spake2p.set_app_data(spake2p_data as u32);
 
         // Generate response
         let mut tw = TLVWriter::new(&mut proto_tx.write_buf);
         tw.put_start_struct(TagType::Anonymous)?;
         tw.put_str8(TagType::Context(1), initiator_random)?;
         tw.put_str8(TagType::Context(2), &our_random)?;
-        tw.put_u16(
-            TagType::Context(3),
-            proto_rx.session.get_child_local_sess_id(),
-        )?;
+        tw.put_u16(TagType::Context(3), local_sessid)?;
         if !has_params {
             tw.put_start_struct(TagType::Context(4))?;
             tw.put_u32(TagType::Context(1), ITERATION_COUNT)?;

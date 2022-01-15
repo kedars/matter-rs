@@ -36,16 +36,18 @@ enum State {
 
 pub struct CaseSession {
     state: State,
-    initiator_sessid: u16,
+    peer_sessid: u16,
+    local_sessid: u16,
     tt_hash: Sha256,
     shared_secret: [u8; 32],
     local_fabric_idx: usize,
 }
 impl CaseSession {
-    pub fn new(initiator_sessid: u16) -> Result<Self, Error> {
+    pub fn new(peer_sessid: u16, local_sessid: u16) -> Result<Self, Error> {
         Ok(Self {
             state: State::Sigma1Rx,
-            initiator_sessid,
+            peer_sessid,
+            local_sessid,
             tt_hash: Sha256::new(),
             shared_secret: [0; 32],
             local_fabric_idx: 0,
@@ -142,7 +144,8 @@ impl Case {
         )?;
 
         let mut clone_data = CloneData::new(
-            case_session.initiator_sessid,
+            case_session.peer_sessid,
+            case_session.local_sessid,
             SessionMode::Case(case_session.local_fabric_idx as u8),
         );
         clone_data.dec_key.copy_from_slice(&session_keys[0..16]);
@@ -177,7 +180,8 @@ impl Case {
             return Ok(());
         }
 
-        let mut case_session = Box::new(CaseSession::new(initiator_sessid as u16)?);
+        let local_sessid = proto_rx.session.reserve_new_sess_id();
+        let mut case_session = Box::new(CaseSession::new(initiator_sessid as u16, local_sessid)?);
         case_session.tt_hash.update(proto_rx.buf);
         case_session.local_fabric_idx = local_fabric_idx?;
         trace!(
@@ -242,10 +246,7 @@ impl Case {
         let mut tw = TLVWriter::new(&mut proto_tx.write_buf);
         tw.put_start_struct(TagType::Anonymous)?;
         tw.put_str8(TagType::Context(1), &our_random)?;
-        tw.put_u16(
-            TagType::Context(2),
-            proto_rx.session.get_child_local_sess_id(),
-        )?;
+        tw.put_u16(TagType::Context(2), local_sessid)?;
         tw.put_str8(TagType::Context(3), our_pub_key)?;
         tw.put_str16(TagType::Context(4), encrypted)?;
         tw.put_end_container()?;
