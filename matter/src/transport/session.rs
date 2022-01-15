@@ -134,6 +134,11 @@ impl Session {
         self.local_sess_id
     }
 
+    #[cfg(test)]
+    pub fn set_local_sess_id(&mut self, sess_id: u16) {
+        self.local_sess_id = sess_id;
+    }
+
     pub fn get_peer_sess_id(&self) -> u16 {
         self.peer_sess_id
     }
@@ -395,29 +400,35 @@ mod tests {
     #[test]
     fn test_next_sess_id_doesnt_reuse() {
         let mut sm = SessionMgr::new();
-        sm.add(SocketAddr::new(
-            std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-            8080,
-        ))
-        .unwrap();
+        let mut sess = sm
+            .add(SocketAddr::new(
+                std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+                8080,
+            ))
+            .unwrap();
+        sess.set_local_sess_id(1);
         assert_eq!(sm.get_next_sess_id(), 2);
         assert_eq!(sm.get_next_sess_id(), 3);
-        sm.add(SocketAddr::new(
-            std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-            8080,
-        ))
-        .unwrap();
+        let mut sess = sm
+            .add(SocketAddr::new(
+                std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+                8080,
+            ))
+            .unwrap();
+        sess.set_local_sess_id(4);
         assert_eq!(sm.get_next_sess_id(), 5);
     }
 
     #[test]
     fn test_next_sess_id_overflows() {
         let mut sm = SessionMgr::new();
-        sm.add(SocketAddr::new(
-            std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-            8080,
-        ))
-        .unwrap();
+        let mut sess = sm
+            .add(SocketAddr::new(
+                std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+                8080,
+            ))
+            .unwrap();
+        sess.set_local_sess_id(1);
         assert_eq!(sm.get_next_sess_id(), 2);
         sm.next_sess_id = 65534;
         assert_eq!(sm.get_next_sess_id(), 65534);
