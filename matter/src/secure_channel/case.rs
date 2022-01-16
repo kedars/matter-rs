@@ -91,7 +91,6 @@ impl Case {
         let dummy_ipk = [0_u8; crypto::SYMM_KEY_LEN_BYTES];
         let len = Case::get_sigma3_decryption(&dummy_ipk, &case_session, decrypted)?;
         let decrypted = &decrypted[..len];
-        trace!("Decrypted: {:x?}", decrypted);
 
         let root = get_root_node_struct(decrypted)?;
         let initiator_noc_b = root.find_tag(1)?.get_slice()?;
@@ -323,7 +322,7 @@ impl Case {
 
         let h = Hkdf::<Sha256>::new(Some(salt.as_slice()), shared_secret);
         h.expand(&SEKEYS_INFO, key).map_err(|_x| Error::NoSpace)?;
-        println!("Session Key: key: {:x?}", key);
+        //        println!("Session Key: key: {:x?}", key);
 
         Ok(())
     }
