@@ -11,6 +11,7 @@ use openssl::nid::Nid;
 use openssl::pkey::PKey;
 use openssl::pkey::{self, Private};
 use openssl::x509::{X509NameBuilder, X509ReqBuilder, X509};
+use openssl::{pkey, symm};
 
 use super::CryptoKeyPair;
 
@@ -181,4 +182,52 @@ pub fn pubkey_from_der<'a>(der: &'a [u8], out_key: &mut [u8]) -> Result<(), Erro
 pub fn pbkdf2_hmac(pass: &[u8], iter: usize, salt: &[u8], key: &mut [u8]) -> Result<(), Error> {
     openssl::pkcs5::pbkdf2_hmac(pass, salt, iter, MessageDigest::sha256(), key)
         .map_err(|_e| Error::TLSStack)
+}
+
+pub fn encrypt_in_place(
+    key: &[u8],
+    nonce: &[u8],
+    ad: &[u8],
+    data: &mut [u8],
+    data_len: usize,
+) -> Result<usize, Error> {
+    let plain_text = &data[..data_len];
+    const TAG_LEN: usize = 16;
+    let mut tag = [0u8; TAG_LEN];
+
+    let result = symm::encrypt_aead(
+        symm::Cipher::aes_128_ccm(),
+        key,
+        Some(nonce),
+        ad,
+        plain_text,
+        &mut tag,
+    )?;
+    data[..data_len].copy_from_slice(result.as_slice());
+    data[data_len..(data_len + TAG_LEN)].copy_from_slice(&tag);
+    Ok(result.len() + TAG_LEN)
+}
+
+pub fn decrypt_in_place(
+    key: &[u8],
+    nonce: &[u8],
+    ad: &[u8],
+    data: &mut [u8],
+) -> Result<usize, Error> {
+    const TAG_LEN: usize = 16;
+    let tag_start = data.len() - TAG_LEN;
+    let mut tag = [0u8; TAG_LEN];
+    tag.copy_from_slice(&data[tag_start..]);
+    let data = &mut data[..tag_start];
+
+    let result = symm::decrypt_aead(
+        symm::Cipher::aes_128_ccm(),
+        key,
+        Some(nonce),
+        ad,
+        data,
+        &tag,
+    )?;
+    data[..result.len()].copy_from_slice(result.as_slice());
+    Ok(result.len())
 }
