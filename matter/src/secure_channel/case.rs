@@ -14,6 +14,7 @@ use rand::prelude::*;
 use sha2::{Digest, Sha256};
 
 use crate::cert::Cert;
+use crate::crypto;
 use crate::secure_channel::common::SCStatusCodes;
 use crate::transport::session::{CloneData, SessionMode};
 use crate::{
@@ -39,7 +40,7 @@ pub struct CaseSession {
     peer_sessid: u16,
     local_sessid: u16,
     tt_hash: Sha256,
-    shared_secret: [u8; 32],
+    shared_secret: [u8; crypto::ECDH_SHARED_SECRET_LEN_BYTES],
     local_fabric_idx: usize,
 }
 impl CaseSession {
@@ -82,8 +83,8 @@ impl Case {
         let encrypted = root.find_tag(1)?.get_slice()?;
 
         // TODO: Fix IPK
-        let dummy_ipk: [u8; 16] = [0; 16];
-        let mut sigma3_key: [u8; 16] = [0; 16];
+        let dummy_ipk = [0_u8; crypto::SYMM_KEY_LEN_BYTES];
+        let mut sigma3_key = [0_u8; crypto::SYMM_KEY_LEN_BYTES];
         Case::get_sigma3_key(
             &dummy_ipk,
             &case_session.tt_hash,
@@ -134,8 +135,8 @@ impl Case {
 
         case_session.tt_hash.update(proto_rx.buf);
         // TODO: Fix IPK
-        let dummy_ipk: [u8; 16] = [0; 16];
-        let mut session_keys: [u8; 48] = [0; 48];
+        let dummy_ipk = [0_u8; crypto::SYMM_KEY_LEN_BYTES];
+        let mut session_keys = [0_u8; 3 * crypto::SYMM_KEY_LEN_BYTES];
         Case::get_session_keys(
             &dummy_ipk,
             &case_session.tt_hash,
@@ -191,7 +192,7 @@ impl Case {
 
         // Create an ephemeral Key Pair
         let key_pair = KeyPair::new()?;
-        let mut our_pub_key: [u8; 66] = [0; 66];
+        let mut our_pub_key = [0_u8; crypto::EC_POINT_LEN_BYTES];
         let len = key_pair.get_public_key(&mut our_pub_key)?;
         let our_pub_key = &our_pub_key[..len];
 
@@ -227,8 +228,8 @@ impl Case {
             let signature = &signature[..sign_len];
 
             // TODO: Fix IPK
-            let dummy_ipk: [u8; 16] = [0; 16];
-            let mut sigma2_key: [u8; 16] = [0; 16];
+            let dummy_ipk = [0_u8; crypto::SYMM_KEY_LEN_BYTES];
+            let mut sigma2_key = [0_u8; crypto::SYMM_KEY_LEN_BYTES];
             Case::get_sigma2_key(
                 &dummy_ipk,
                 &our_random,
@@ -288,18 +289,17 @@ impl Case {
         ];
 
         let nonce = GenericArray::from_slice(&nonce);
-        const TAG_LEN: usize = 16;
         let encrypted_len = encrypted.len();
-        let mut tag: [u8; TAG_LEN] = [0; TAG_LEN];
-        tag.copy_from_slice(&encrypted[(encrypted_len - TAG_LEN)..]);
+        let mut tag = [0_u8; crypto::AEAD_MIC_LEN_BYTES];
+        tag.copy_from_slice(&encrypted[(encrypted_len - crypto::AEAD_MIC_LEN_BYTES)..]);
         let tag = GenericArray::from_slice(&tag);
 
         type AesCcm = Ccm<Aes128, U16, U13>;
         let cipher = AesCcm::new(GenericArray::from_slice(sigma3_key));
 
-        let encrypted = &mut encrypted[..(encrypted_len - TAG_LEN)];
+        let encrypted = &mut encrypted[..(encrypted_len - crypto::AEAD_MIC_LEN_BYTES)];
         cipher.decrypt_in_place_detached(nonce, &[], encrypted, tag)?;
-        Ok(encrypted_len - TAG_LEN)
+        Ok(encrypted_len - crypto::AEAD_MIC_LEN_BYTES)
     }
 
     fn get_sigma3_key(
@@ -378,7 +378,7 @@ impl Case {
         tw.put_str8(TagType::Context(4), &resumption_id)?;
         tw.put_end_container()?;
         //        println!("TBE is {:x?}", write_buf.as_slice());
-        let nonce: [u8; 13] = [
+        let nonce: [u8; crypto::AEAD_NONCE_LEN_BYTES] = [
             0x4e, 0x43, 0x41, 0x53, 0x45, 0x5f, 0x53, 0x69, 0x67, 0x6d, 0x61, 0x32, 0x4e,
         ];
         let nonce = GenericArray::from_slice(&nonce);

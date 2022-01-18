@@ -88,7 +88,7 @@ impl CryptoKeyPair for KeyPair {
         let mut tmp_key =
             Pk::private_from_ec_components(EcGroup::new(EcGroupId::SecP256R1)?, tmp_key)?;
         // First get the SHA256 of the message
-        let mut msg_hash: [u8; 32] = [0; 32];
+        let mut msg_hash = [0_u8; super::SHA256_HASH_LEN_BYTES];
         Md::hash(hash::Type::Sha256, msg, &mut msg_hash)?;
         let mut ctr_drbg = CtrDrbg::new(Arc::new(OsEntropy::new()), None)?;
 
@@ -120,7 +120,7 @@ fn convert_asn1_sign_to_r_s(signature: &mut [u8]) -> Result<usize, Error> {
         offset += (len - 32) as usize;
 
         // Extract the 32 bytes of 'r'
-        let mut r: [u8; 32] = [0; 32];
+        let mut r = [0_u8; super::BIGNUM_LEN_BYTES];
         r.copy_from_slice(&signature[offset..(offset + 32)]);
         offset += 32;
 
@@ -137,7 +137,7 @@ fn convert_asn1_sign_to_r_s(signature: &mut [u8]) -> Result<usize, Error> {
         offset += (len - 32) as usize;
 
         // Extract the 32 bytes of 's'
-        let mut s: [u8; 32] = [0; 32];
+        let mut s = [0_u8; super::BIGNUM_LEN_BYTES];
         s.copy_from_slice(&signature[offset..(offset + 32)]);
 
         signature[0..32].copy_from_slice(&r);

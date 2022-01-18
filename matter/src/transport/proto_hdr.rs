@@ -1,9 +1,9 @@
 use std::fmt;
 
-use crate::error::*;
 use crate::transport::plain_hdr;
 use crate::utils::parsebuf::ParseBuf;
 use crate::utils::writebuf::WriteBuf;
+use crate::{crypto, error::*};
 
 use aes::Aes128;
 use ccm::aead::{generic_array::GenericArray, AeadInPlace, NewAead};
@@ -140,14 +140,9 @@ impl fmt::Display for ProtoHdr {
     }
 }
 
-// Values as per the Matter spec
-const AAD_LEN: usize = 8;
-const TAG_LEN: usize = 16;
-const IV_LEN: usize = 13;
-
 fn get_iv(recvd_ctr: u32, iv: &mut [u8]) -> Result<(), Error> {
     // The IV is the source address (64-bit) followed by the message counter (32-bit)
-    let mut write_buf = WriteBuf::new(iv, IV_LEN);
+    let mut write_buf = WriteBuf::new(iv, iv.len());
     // For some reason, this is 0 in the 'bypass' mode
     write_buf.le_u8(0)?;
     write_buf.le_u32(recvd_ctr)?;
@@ -162,7 +157,7 @@ pub fn encrypt_in_place(
     key: &[u8],
 ) -> Result<(), Error> {
     // IV
-    let mut iv: [u8; IV_LEN] = [0; IV_LEN];
+    let mut iv = [0_u8; crypto::AEAD_NONCE_LEN_BYTES];
     get_iv(send_ctr, &mut iv)?;
     let nonce = GenericArray::from_slice(&iv);
 
@@ -182,7 +177,7 @@ pub fn encrypt_in_place(
 fn decrypt_in_place(recvd_ctr: u32, parsebuf: &mut ParseBuf, key: &[u8]) -> Result<(), Error> {
     // AAD:
     //    the unencrypted header of this packet
-    let mut aad: [u8; AAD_LEN] = [0; AAD_LEN];
+    let mut aad = [0_u8; crypto::AEAD_AAD_LEN_BYTES];
     let parsed_slice = parsebuf.parsed_as_slice();
     if parsed_slice.len() == aad.len() {
         // The plain_header is variable sized in length, I wonder if the AAD is fixed at 8, or the variable size.
@@ -193,14 +188,14 @@ fn decrypt_in_place(recvd_ctr: u32, parsebuf: &mut ParseBuf, key: &[u8]) -> Resu
     }
 
     // Tag:
-    //    the last TAG_LEN bytes of the packet
-    let mut tag: [u8; TAG_LEN] = [0; TAG_LEN];
-    tag.copy_from_slice(parsebuf.tail(TAG_LEN)?);
+    //    the last AEAD_MIC_LEN_BYTES of the packet
+    let mut tag = [0_u8; crypto::AEAD_MIC_LEN_BYTES];
+    tag.copy_from_slice(parsebuf.tail(crypto::AEAD_MIC_LEN_BYTES)?);
     let tag = GenericArray::from_slice(&tag);
 
     // IV:
     //   the specific way for creating IV is in get_iv
-    let mut iv: [u8; IV_LEN] = [0; IV_LEN];
+    let mut iv = [0_u8; crypto::AEAD_NONCE_LEN_BYTES];
     get_iv(recvd_ctr, &mut iv)?;
     let nonce = GenericArray::from_slice(&iv);
 
