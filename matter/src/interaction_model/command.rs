@@ -14,10 +14,10 @@ use log::info;
 
 #[macro_export]
 macro_rules! cmd_enter {
-    ($e:expr) => {
+    ($e:expr) => {{
         use colored::Colorize;
         info! {"{} {}", "Handling Command".cyan(), $e.cyan()}
-    };
+    }};
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -1,5 +1,6 @@
 use super::objects::*;
 use crate::{
+    cmd_enter,
     error::*,
     interaction_model::command::{self, CommandReq, InvokeRespIb},
     tlv_common::TagType,
@@ -21,9 +22,9 @@ fn attr_on_off_new() -> Result<Box<Attribute>, Error> {
 
 fn handle_command_on_off(_cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Result<(), Error> {
     match cmd_req.command as u16 {
-        CMD_OFF_ID => info!("Handling off"),
-        CMD_ON_ID => info!("Handling on"),
-        CMD_TOGGLE_ID => info!("Handling toggle"),
+        CMD_OFF_ID => cmd_enter!("Off"),
+        CMD_ON_ID => cmd_enter!("On"),
+        CMD_TOGGLE_ID => cmd_enter!("Toggle"),
         _ => info!("Command not supported"),
     }
 
