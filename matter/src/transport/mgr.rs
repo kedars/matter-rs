@@ -97,7 +97,7 @@ impl Mgr {
             .get_with_id(sess_id, exch_id)
             .ok_or(Error::NoExchange)?;
 
-        proto_tx.peer = session.get_peer_addr().ok_or(Error::InvalidPeerAddr)?;
+        proto_tx.peer = session.get_peer_addr();
         Mgr::send_to_exchange(
             &self.transport,
             &mut self.rel_mgr,

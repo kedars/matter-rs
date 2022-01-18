@@ -31,10 +31,9 @@ impl Default for SessionMode {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Session {
-    // If this field is None, the rest of the members are ignored
-    peer_addr: Option<std::net::SocketAddr>,
+    peer_addr: std::net::SocketAddr,
     // I find the session initiator/responder role getting confused with exchange initiator/responder
     // So, we might keep this as enc_key and dec_key for now
     dec_key: [u8; MATTER_AES128_KEY_SIZE],
@@ -86,7 +85,7 @@ impl Session {
     // encryption keys.
     pub fn new(peer_addr: std::net::SocketAddr) -> Session {
         Session {
-            peer_addr: Some(peer_addr),
+            peer_addr: peer_addr,
             dec_key: [0; MATTER_AES128_KEY_SIZE],
             enc_key: [0; MATTER_AES128_KEY_SIZE],
             att_challenge: [0; MATTER_AES128_KEY_SIZE],
@@ -143,7 +142,7 @@ impl Session {
         self.peer_sess_id
     }
 
-    pub fn get_peer_addr(&self) -> Option<SocketAddr> {
+    pub fn get_peer_addr(&self) -> SocketAddr {
         self.peer_addr
     }
 
@@ -307,7 +306,7 @@ impl SessionMgr {
     ) -> Option<usize> {
         self.sessions.iter().position(|x| {
             x.local_sess_id == sess_id
-                && x.peer_addr == Some(peer_addr)
+                && x.peer_addr == peer_addr
                 && x.is_encrypted() == is_encrypted
         })
     }
