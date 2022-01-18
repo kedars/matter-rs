@@ -16,17 +16,24 @@ use crate::{cert, cmd_enter, error::*};
 use log::{error, info};
 
 use super::dev_att::DevAttDataFetcher;
+use super::failsafe::FailSafe;
 
 pub struct NOC {
     dev_att: Box<dyn DevAttDataFetcher>,
     fabric_mgr: Arc<FabricMgr>,
+    failsafe: Arc<FailSafe>,
 }
 
 impl NOC {
-    pub fn new(dev_att: Box<dyn DevAttDataFetcher>, fabric_mgr: Arc<FabricMgr>) -> Self {
+    pub fn new(
+        dev_att: Box<dyn DevAttDataFetcher>,
+        fabric_mgr: Arc<FabricMgr>,
+        failsafe: Arc<FailSafe>,
+    ) -> Self {
         Self {
             dev_att,
             fabric_mgr,
+            failsafe,
         }
     }
 }
@@ -277,7 +284,13 @@ fn handle_command_addnoc(cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Res
     if noc_data.state != NocDataState::RootCAAdded {
         // This handling will be incorrect once the RootCA is changed later on, but in that there will be an accessing Fabric
         // which doesn't exist at the time of PASE
-        error!("AddNOC received with RootCA Added State");
+        error!("AddNOC received without RootCA Added State");
+        return Err(Error::InvalidState);
+    }
+
+    let noc_cluster = cluster.get_data::<NOC>().ok_or(Error::InvalidState)?;
+    if !noc_cluster.failsafe.allow_noc_change()? {
+        error!("AddNOC not allowed by Fail Safe");
         return Err(Error::InvalidState);
     }
 
@@ -285,16 +298,9 @@ fn handle_command_addnoc(cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Res
         get_addnoc_params(cmd_req)?;
 
     info!("Received NOC as:");
-    cert::print_cert(noc_value).map_err(|e| {
-        error!("Error parsing NOC");
-        e
-    })?;
-
+    cert::print_cert(noc_value)?;
     info!("Received ICAC as:");
-    let _ = cert::print_cert(icac_value).map_err(|e| {
-        error!("Error parsing ICAC");
-        e
-    });
+    let _ = cert::print_cert(icac_value)?;
 
     let fabric = Fabric::new(
         noc_data.key_pair,
@@ -303,11 +309,8 @@ fn handle_command_addnoc(cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Res
         Cert::new(noc_value),
         Cert::new(ipk_value),
     )?;
-    let fab_idx = cluster
-        .get_data::<NOC>()
-        .ok_or(Error::InvalidState)?
-        .fabric_mgr
-        .add(fabric)?;
+    let fab_idx = noc_cluster.fabric_mgr.add(fabric)?;
+    noc_cluster.failsafe.record_add_noc(fab_idx)?;
     let invoke_resp = InvokeRespIb::Command(CMD_PATH_NOCRESPONSE, |t| {
         // Status
         t.put_u8(TagType::Context(0), 0)?;
@@ -344,6 +347,7 @@ fn command_addnoc_new() -> Result<Box<Command>, Error> {
 pub fn cluster_operational_credentials_new(
     dev_att: Box<dyn DevAttDataFetcher>,
     fabric_mgr: Arc<FabricMgr>,
+    failsafe: Arc<FailSafe>,
 ) -> Result<Box<Cluster>, Error> {
     let mut cluster = Cluster::new(CLUSTER_OPERATIONAL_CREDENTIALS_ID)?;
     cluster.add_command(command_attrequest_new()?)?;
@@ -352,7 +356,7 @@ pub fn cluster_operational_credentials_new(
     cluster.add_command(command_addtrustedrootcert_new()?)?;
     cluster.add_command(command_addnoc_new()?)?;
 
-    let noc = Box::new(NOC::new(dev_att, fabric_mgr));
+    let noc = Box::new(NOC::new(dev_att, fabric_mgr, failsafe));
     cluster.set_data(noc);
     Ok(cluster)
 }

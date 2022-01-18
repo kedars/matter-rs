@@ -161,6 +161,10 @@ impl Session {
         }
     }
 
+    pub fn get_session_mode(&self) -> SessionMode {
+        self.mode
+    }
+
     pub fn get_msg_ctr(&mut self) -> u32 {
         let ctr = self.msg_ctr;
         self.msg_ctr += 1;

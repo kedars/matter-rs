@@ -1,0 +1,114 @@
+use crate::{error::Error, transport::session::SessionMode};
+use log::error;
+use std::sync::RwLock;
+
+#[derive(PartialEq)]
+enum NocState {
+    Idle,
+    // This is the local fabric index
+    AddNocRecvd(u8),
+    UpdateNocRecvd(u8),
+}
+
+pub struct ArmedCtx {
+    session_mode: SessionMode,
+    timeout: u8,
+    noc_state: NocState,
+}
+
+pub enum State {
+    Idle,
+    Armed(ArmedCtx),
+}
+
+pub struct FailSafeInner {
+    state: State,
+}
+
+pub struct FailSafe {
+    state: RwLock<FailSafeInner>,
+}
+
+impl FailSafe {
+    pub fn new() -> Self {
+        Self {
+            state: RwLock::new(FailSafeInner { state: State::Idle }),
+        }
+    }
+
+    pub fn arm(&self, timeout: u8, session_mode: SessionMode) -> Result<(), Error> {
+        let mut inner = self.state.write()?;
+        match &mut inner.state {
+            State::Idle => {
+                inner.state = State::Armed(ArmedCtx {
+                    session_mode,
+                    timeout,
+                    noc_state: NocState::Idle,
+                })
+            }
+            State::Armed(c) => {
+                if c.session_mode != session_mode {
+                    return Err(Error::Invalid);
+                }
+                // re-arm
+                c.timeout = timeout;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn disarm(&self, session_mode: SessionMode) -> Result<(), Error> {
+        let mut inner = self.state.write()?;
+        match &mut inner.state {
+            State::Idle => {
+                error!("Received Fail-Safe Disarm without it being armed");
+                return Err(Error::Invalid);
+            }
+            State::Armed(c) => {
+                match c.noc_state {
+                    NocState::Idle => return Err(Error::Invalid),
+                    NocState::AddNocRecvd(idx) | NocState::UpdateNocRecvd(idx) => {
+                        if SessionMode::Case(idx) != session_mode {
+                            error!(
+                                "Received disarm in separate session from previous Add/Update NOC"
+                            );
+                            return Err(Error::Invalid);
+                        }
+                    }
+                }
+                inner.state = State::Idle;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn record_add_noc(&self, fabric_index: u8) -> Result<(), Error> {
+        let mut inner = self.state.write()?;
+        match &mut inner.state {
+            State::Idle => Err(Error::Invalid),
+            State::Armed(c) => {
+                if c.noc_state == NocState::Idle {
+                    c.noc_state = NocState::AddNocRecvd(fabric_index);
+                    Ok(())
+                } else {
+                    Err(Error::Invalid)
+                }
+            }
+        }
+    }
+
+    pub fn allow_noc_change(&self) -> Result<bool, Error> {
+        let mut inner = self.state.write()?;
+        let allow = match &mut inner.state {
+            State::Idle => false,
+            State::Armed(c) => {
+                if c.noc_state == NocState::Idle {
+                    true
+                } else {
+                    false
+                }
+            }
+        };
+        Ok(allow)
+    }
+}

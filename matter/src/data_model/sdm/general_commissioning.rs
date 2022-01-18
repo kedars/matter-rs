@@ -1,10 +1,21 @@
 use crate::cmd_enter;
 use crate::data_model::objects::*;
+use crate::data_model::sdm::failsafe::FailSafe;
 use crate::interaction_model::command::InvokeRespIb;
 use crate::interaction_model::CmdPathIb;
 use crate::tlv_common::TagType;
 use crate::{error::*, interaction_model::command::CommandReq};
 use log::info;
+use std::sync::Arc;
+
+#[derive(Clone, Copy)]
+#[allow(dead_code)]
+enum CommissioningError {
+    Ok = 0,
+    ErrValueOutsideRange = 1,
+    ErrInvalidAuth = 2,
+    ErrNotCommissioning = 3,
+}
 
 const CLUSTER_GENERAL_COMMISSIONING_ID: u32 = 0x0030;
 
@@ -34,7 +45,7 @@ const CMD_PATH_COMMISSIONING_COMPLETE_RESPONSE: CmdPathIb = CmdPathIb {
 };
 
 fn handle_command_armfailsafe(
-    _cluster: &mut Cluster,
+    cluster: &mut Cluster,
     cmd_req: &mut CommandReq,
 ) -> Result<(), Error> {
     cmd_enter!("ARM Fail Safe");
@@ -47,8 +58,20 @@ fn handle_command_armfailsafe(
         expiry_len, bread_crumb
     );
 
+    let mut status = CommissioningError::Ok;
+    let failsafe = cluster
+        .get_data::<Arc<FailSafe>>()
+        .ok_or(Error::InvalidState)?;
+    if failsafe
+        .arm(expiry_len, cmd_req.trans.session.get_session_mode())
+        .is_err()
+    {
+        // Spec says return BUSY, but there is no such field in CommissioningError enum
+        status = CommissioningError::ErrInvalidAuth;
+    }
+
     let invoke_resp = InvokeRespIb::Command(CMD_PATH_ARMFAILSAFE_RESPONSE, |t| {
-        t.put_u8(TagType::Context(0), 0)?;
+        t.put_u8(TagType::Context(0), status as u8)?;
         t.put_utf8(TagType::Context(1), b"")
     });
     cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)?;
@@ -75,21 +98,25 @@ fn handle_command_setregulatoryconfig(
 }
 
 fn handle_command_commissioningcomplete(
-    _cluster: &mut Cluster,
+    cluster: &mut Cluster,
     cmd_req: &mut CommandReq,
 ) -> Result<(), Error> {
     cmd_enter!("Commissioning Complete");
-
-    #[allow(dead_code)]
-    enum CommissioningError {
-        Ok = 0,
-        ErrValueOutsideRange = 1,
-        ErrInvalidAuth = 2,
-        ErrNotCommissioning = 3,
-    }
     let mut status: u8 = CommissioningError::Ok as u8;
 
+    // Has to be a Case Session
     if cmd_req.trans.session.get_local_fabric_idx().is_none() {
+        status = CommissioningError::ErrInvalidAuth as u8;
+    }
+
+    let failsafe = cluster
+        .get_data::<Arc<FailSafe>>()
+        .ok_or(Error::InvalidState)?;
+    if failsafe
+        .disarm(cmd_req.trans.session.get_session_mode())
+        .is_err()
+    {
+        // Spec says return BUSY, but there is no such field in CommissioningError enum
         status = CommissioningError::ErrInvalidAuth as u8;
     }
 
@@ -120,10 +147,12 @@ fn command_commissioningcomplete_new() -> Result<Box<Command>, Error> {
     )
 }
 
-pub fn cluster_general_commissioning_new() -> Result<Box<Cluster>, Error> {
+pub fn cluster_general_commissioning_new() -> Result<(Box<Cluster>, Arc<FailSafe>), Error> {
     let mut cluster = Cluster::new(CLUSTER_GENERAL_COMMISSIONING_ID)?;
     cluster.add_command(command_armfailsafe_new()?)?;
     cluster.add_command(command_setregulatoryconfig_new()?)?;
     cluster.add_command(command_commissioningcomplete_new()?)?;
-    Ok(cluster)
+    let failsafe = Arc::new(FailSafe::new());
+    cluster.set_data(Box::new(failsafe.clone()));
+    Ok((cluster, failsafe))
 }

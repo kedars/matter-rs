@@ -24,8 +24,12 @@ pub fn device_type_add_root_node(
     };
     // Add the mandatory clusters
     node.add_cluster(0, cluster_basic_information_new()?)?;
-    node.add_cluster(0, cluster_operational_credentials_new(dev_att, fabric_mgr)?)?;
-    node.add_cluster(0, cluster_general_commissioning_new()?)?;
+    let (general_commissioning, failsafe) = cluster_general_commissioning_new()?;
+    node.add_cluster(0, general_commissioning)?;
+    node.add_cluster(
+        0,
+        cluster_operational_credentials_new(dev_att, fabric_mgr, failsafe)?,
+    )?;
     Ok(endpoint)
 }
 
