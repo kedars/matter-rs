@@ -18,13 +18,30 @@ use log::{error, info};
 use super::dev_att::DevAttDataFetcher;
 use super::failsafe::FailSafe;
 
-pub struct NOC {
+#[derive(Clone, Copy)]
+#[allow(dead_code)]
+enum NocStatus {
+    Ok = 0,
+    InvalidPublicKey = 1,
+    InvalidNodeOpId = 2,
+    InvalidNOC = 3,
+    MissingCsr = 4,
+    TableFull = 5,
+    MissingAcl = 6,
+    MissingIpk = 7,
+    InsufficientPrivlege = 8,
+    FabricConflict = 9,
+    LabelConflict = 10,
+    InvalidFabricIndex = 11,
+}
+
+pub struct NocCluster {
     dev_att: Box<dyn DevAttDataFetcher>,
     fabric_mgr: Arc<FabricMgr>,
     failsafe: Arc<FailSafe>,
 }
 
-impl NOC {
+impl NocCluster {
     pub fn new(
         dev_att: Box<dyn DevAttDataFetcher>,
         fabric_mgr: Arc<FabricMgr>,
@@ -81,16 +98,9 @@ const CMD_PATH_ATTRESPONSE: CmdPathIb = CmdPathIb {
     command: CMD_ATTRESPONSE_ID,
 };
 
-#[derive(PartialEq)]
-enum NocDataState {
-    KeyPairGenerated,
-    RootCAAdded,
-}
-
 struct NocData {
     pub key_pair: KeyPair,
     pub root_ca: Cert,
-    pub state: NocDataState,
 }
 
 impl NocData {
@@ -98,7 +108,6 @@ impl NocData {
         Self {
             key_pair,
             root_ca: Cert::default(),
-            state: NocDataState::KeyPairGenerated,
         }
     }
 }
@@ -168,7 +177,9 @@ fn handle_command_attrequest(cluster: &mut Cluster, cmd_req: &mut CommandReq) ->
     let att_nonce = cmd_req.data.find_tag(0)?.get_slice()?;
     info!("Received Attestation Nonce:{:?}", att_nonce);
 
-    let noc = cluster.get_data::<NOC>().ok_or(Error::InvalidState)?;
+    let noc = cluster
+        .get_data::<NocCluster>()
+        .ok_or(Error::InvalidState)?;
 
     let invoke_resp = InvokeRespIb::Command(CMD_PATH_ATTRESPONSE, |t| {
         add_attestation_element(&noc.dev_att, att_nonce, t)?;
@@ -206,7 +217,9 @@ fn handle_command_certchainrequest(
         }
     };
 
-    let noc = cluster.get_data::<NOC>().ok_or(Error::InvalidState)?;
+    let noc = cluster
+        .get_data::<NocCluster>()
+        .ok_or(Error::InvalidState)?;
 
     let mut buf: [u8; RESP_MAX] = [0; RESP_MAX];
     let len = noc.dev_att.get_devatt_data(cert_type, &mut buf)?;
@@ -256,14 +269,6 @@ fn handle_command_addtrustedrootcert(
         .get_data::<NocData>()
         .ok_or(Error::InvalidState)?;
 
-    if noc_data.state != NocDataState::KeyPairGenerated {
-        // This handling will be incorrect once the RootCA is changed later on, but in that there will be an accessing Fabric
-        // which doesn't exist at the time of PASE
-        error!("Added RootCA without KeyPair generated");
-        return Err(Error::InvalidState);
-    }
-    noc_data.state = NocDataState::RootCAAdded;
-
     let root_cert = cmd_req.data.find_tag(0)?.get_slice()?;
     info!("Received Trusted Cert:{:x?}", root_cert);
 
@@ -274,33 +279,36 @@ fn handle_command_addtrustedrootcert(
     Ok(())
 }
 
-fn handle_command_addnoc(cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Result<(), Error> {
-    cmd_enter!("AddNOC");
+fn _handle_command_addnoc(
+    cluster: &mut Cluster,
+    cmd_req: &mut CommandReq,
+) -> Result<(), NocStatus> {
     let noc_data = cmd_req
         .trans
         .session
         .take_data::<NocData>()
-        .ok_or(Error::InvalidState)?;
-    if noc_data.state != NocDataState::RootCAAdded {
-        // This handling will be incorrect once the RootCA is changed later on, but in that there will be an accessing Fabric
-        // which doesn't exist at the time of PASE
-        error!("AddNOC received without RootCA Added State");
-        return Err(Error::InvalidState);
-    }
+        .ok_or(NocStatus::MissingCsr)?;
 
-    let noc_cluster = cluster.get_data::<NOC>().ok_or(Error::InvalidState)?;
-    if !noc_cluster.failsafe.allow_noc_change()? {
+    let noc_cluster = cluster
+        .get_data::<NocCluster>()
+        .ok_or(NocStatus::TableFull)?;
+
+    if !noc_cluster
+        .failsafe
+        .allow_noc_change()
+        .map_err(|_| NocStatus::InsufficientPrivlege)?
+    {
         error!("AddNOC not allowed by Fail Safe");
-        return Err(Error::InvalidState);
+        return Err(NocStatus::InsufficientPrivlege);
     }
 
     let (noc_value, icac_value, ipk_value, _case_admin_node_id, _vendor_id) =
-        get_addnoc_params(cmd_req)?;
+        get_addnoc_params(cmd_req).map_err(|_| NocStatus::InvalidNOC)?;
 
     info!("Received NOC as:");
-    cert::print_cert(noc_value)?;
+    cert::print_cert(noc_value).map_err(|_| NocStatus::InvalidNOC)?;
     info!("Received ICAC as:");
-    let _ = cert::print_cert(icac_value)?;
+    let _ = cert::print_cert(icac_value).map_err(|_| NocStatus::InvalidNOC)?;
 
     let fabric = Fabric::new(
         noc_data.key_pair,
@@ -308,9 +316,16 @@ fn handle_command_addnoc(cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Res
         Cert::new(icac_value),
         Cert::new(noc_value),
         Cert::new(ipk_value),
-    )?;
-    let fab_idx = noc_cluster.fabric_mgr.add(fabric)?;
-    noc_cluster.failsafe.record_add_noc(fab_idx)?;
+    )
+    .map_err(|_| NocStatus::TableFull)?;
+    let fab_idx = noc_cluster
+        .fabric_mgr
+        .add(fabric)
+        .map_err(|_| NocStatus::TableFull)?;
+
+    if noc_cluster.failsafe.record_add_noc(fab_idx).is_err() {
+        error!("Failed to record NoC in the FailSafe, what to do?");
+    }
     let invoke_resp = InvokeRespIb::Command(CMD_PATH_NOCRESPONSE, |t| {
         // Status
         t.put_u8(TagType::Context(0), 0)?;
@@ -319,8 +334,21 @@ fn handle_command_addnoc(cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Res
         // Debug string
         t.put_utf8(TagType::Context(2), b"")
     });
-    cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)?;
+    let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
     cmd_req.trans.complete();
+    Ok(())
+}
+
+fn handle_command_addnoc(cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Result<(), Error> {
+    cmd_enter!("AddNOC");
+    if let Err(e) = _handle_command_addnoc(cluster, cmd_req) {
+        let invoke_resp = InvokeRespIb::Command(CMD_PATH_NOCRESPONSE, |t| {
+            // Status
+            t.put_u8(TagType::Context(0), e as u8)
+        });
+        let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
+        cmd_req.trans.complete();
+    }
     Ok(())
 }
 
@@ -356,7 +384,7 @@ pub fn cluster_operational_credentials_new(
     cluster.add_command(command_addtrustedrootcert_new()?)?;
     cluster.add_command(command_addnoc_new()?)?;
 
-    let noc = Box::new(NOC::new(dev_att, fabric_mgr, failsafe));
+    let noc = Box::new(NocCluster::new(dev_att, fabric_mgr, failsafe));
     cluster.set_data(noc);
     Ok(cluster)
 }

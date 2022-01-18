@@ -3,6 +3,7 @@ use log::error;
 use std::sync::RwLock;
 
 #[derive(PartialEq)]
+#[allow(dead_code)]
 enum NocState {
     Idle,
     // This is the local fabric index
