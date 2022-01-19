@@ -10,7 +10,6 @@ use crate::{
     transport::{plain_hdr, proto_hdr},
     utils::{parsebuf::ParseBuf, writebuf::WriteBuf},
 };
-use heapless::Vec;
 use log::{info, trace};
 
 use super::{plain_hdr::PlainHdr, proto_hdr::ProtoHdr};
@@ -39,16 +38,6 @@ pub struct Session {
     dec_key: [u8; MATTER_AES128_KEY_SIZE],
     enc_key: [u8; MATTER_AES128_KEY_SIZE],
     att_challenge: [u8; MATTER_AES128_KEY_SIZE],
-    /*
-     *
-     * - Session Role (whether we are session-Initiator or Session-Responder (use the correct key accordingly(
-     * - local session ID (our ID assigned to this session)
-     * - peer session ID (the peer's ID assigned to this session)
-     * - local message counter (the one we'll use for our TX)
-     * - message reception state (a list of counters already received from the peer) to detect duplicates
-     * - peer Node ID - instead of the IP Address, which can change, the Node ID should be used
-     * - This is all for 'unicast' sessions
-     */
     local_sess_id: u16,
     peer_sess_id: u16,
     msg_ctr: u32,
@@ -79,10 +68,6 @@ impl CloneData {
 }
 
 impl Session {
-    // All new sessions begin life as PlainText, with a child local session ID,
-    // then they eventually get converted into an encrypted session with the new_encrypted_session() which
-    // clones from this plaintext session, but acquires the local/peer session IDs and the
-    // encryption keys.
     pub fn new(peer_addr: std::net::SocketAddr) -> Session {
         Session {
             peer_addr: peer_addr,
@@ -251,13 +236,13 @@ impl fmt::Display for Session {
 #[derive(Debug)]
 pub struct SessionMgr {
     next_sess_id: u16,
-    sessions: Vec<Session, 16>,
+    sessions: [Option<Session>; 16],
 }
 
 impl SessionMgr {
     pub fn new() -> SessionMgr {
         SessionMgr {
-            sessions: Vec::new(),
+            sessions: Default::default(),
             next_sess_id: 1,
         }
     }
@@ -274,28 +259,26 @@ impl SessionMgr {
             }
 
             // Ensure the currently selected id doesn't match any existing session
-            if self
-                .sessions
-                .iter()
-                .position(|x| x.local_sess_id == next_sess_id)
-                == None
-            {
+            if self.get_with_id(next_sess_id).is_none() {
                 break;
             }
         }
         next_sess_id
     }
 
-    pub fn add(&mut self, peer_addr: std::net::SocketAddr) -> Result<SessionHandle, Error> {
-        let session = Session::new(peer_addr);
-
-        self.sessions.push(session).map_err(|_s| Error::NoSpace)?;
-        let index = self._get(0, peer_addr, false).ok_or(Error::NoSpace)?;
-        Ok(self.get_session_handle(index))
+    fn get_empty_slot(&self) -> Option<usize> {
+        self.sessions.iter().position(|x| x.is_none())
     }
 
-    pub fn add_session(&mut self, session: Session) -> Result<(), Error> {
-        self.sessions.push(session).map_err(|_s| Error::NoSpace)
+    pub fn add(&mut self, peer_addr: std::net::SocketAddr) -> Result<SessionHandle, Error> {
+        let session = Session::new(peer_addr);
+        self.add_session(session)
+    }
+
+    pub fn add_session(&mut self, session: Session) -> Result<SessionHandle, Error> {
+        let index = self.get_empty_slot().ok_or(Error::NoSpace)?;
+        self.sessions[index] = Some(session);
+        Ok(self.get_session_handle(index))
     }
 
     fn _get(
@@ -305,9 +288,13 @@ impl SessionMgr {
         is_encrypted: bool,
     ) -> Option<usize> {
         self.sessions.iter().position(|x| {
-            x.local_sess_id == sess_id
-                && x.peer_addr == peer_addr
-                && x.is_encrypted() == is_encrypted
+            if let Some(x) = x {
+                x.local_sess_id == sess_id
+                    && x.peer_addr == peer_addr
+                    && x.is_encrypted() == is_encrypted
+            } else {
+                false
+            }
         })
     }
 
@@ -315,7 +302,7 @@ impl SessionMgr {
         let index = self
             .sessions
             .iter_mut()
-            .position(|s| s.local_sess_id == sess_id)?;
+            .position(|x| x.as_ref().map(|s| s.local_sess_id) == Some(sess_id))?;
         Some(self.get_session_handle(index))
     }
 
@@ -361,7 +348,7 @@ impl SessionMgr {
 impl fmt::Display for SessionMgr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "{{[")?;
-        for s in &self.sessions {
+        for s in self.sessions.iter().flatten() {
             writeln!(f, "{{ {}, }},", s)?;
         }
         write!(f, "], next_sess_id: {}", self.next_sess_id)?;
@@ -372,7 +359,6 @@ impl fmt::Display for SessionMgr {
 #[derive(Debug)]
 pub struct SessionHandle<'a> {
     sess_mgr: &'a mut SessionMgr,
-    // This will be a problem when sessions can be deleted. Will address that in the next iteration
     sess_idx: usize,
 }
 
@@ -385,13 +371,15 @@ impl<'a> SessionHandle<'a> {
 impl<'a> Deref for SessionHandle<'a> {
     type Target = Session;
     fn deref(&self) -> &Self::Target {
-        &self.sess_mgr.sessions[self.sess_idx]
+        // There is no other option but to panic if this is None
+        self.sess_mgr.sessions[self.sess_idx].as_ref().unwrap()
     }
 }
 
 impl<'a> DerefMut for SessionHandle<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.sess_mgr.sessions[self.sess_idx]
+        // There is no other option but to panic if this is None
+        self.sess_mgr.sessions[self.sess_idx].as_mut().unwrap()
     }
 }
 
