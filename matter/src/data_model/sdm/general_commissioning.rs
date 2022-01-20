@@ -2,7 +2,9 @@ use crate::cmd_enter;
 use crate::data_model::objects::*;
 use crate::data_model::sdm::failsafe::FailSafe;
 use crate::interaction_model::command::InvokeRespIb;
+use crate::interaction_model::core::IMStatusCode;
 use crate::interaction_model::CmdPathIb;
+use crate::tlv::TLVElement;
 use crate::tlv_common::TagType;
 use crate::{error::*, interaction_model::command::CommandReq};
 use log::info;
@@ -44,37 +46,42 @@ const CMD_PATH_COMMISSIONING_COMPLETE_RESPONSE: CmdPathIb = CmdPathIb {
     command: CMD_COMMISSIONING_COMPLETE_RESPONSE_ID,
 };
 
-fn handle_command_armfailsafe(
-    cluster: &mut Cluster,
-    cmd_req: &mut CommandReq,
-) -> Result<(), Error> {
-    cmd_enter!("ARM Fail Safe");
+fn get_armfailsafe_params(data: &TLVElement) -> Result<(u8, u8), Error> {
     // These data types don't match the spec
-    let expiry_len = cmd_req.data.find_tag(0)?.get_u8()?;
-    let bread_crumb = cmd_req.data.find_tag(1)?.get_u8()?;
+    let expiry_len = data.find_tag(0)?.get_u8()?;
+    let bread_crumb = data.find_tag(1)?.get_u8()?;
 
     info!(
         "Received expiry len: {} breadcrumb: {:x}",
         expiry_len, bread_crumb
     );
+    Ok((expiry_len, bread_crumb))
+}
 
-    let mut status = CommissioningError::Ok;
+fn handle_command_armfailsafe(
+    cluster: &mut Cluster,
+    cmd_req: &mut CommandReq,
+) -> Result<(), IMStatusCode> {
+    cmd_enter!("ARM Fail Safe");
+
+    let (expiry_len, _) =
+        get_armfailsafe_params(&cmd_req.data).map_err(|_| IMStatusCode::InvalidCommand)?;
+
     let failsafe = cluster
         .get_data::<Arc<FailSafe>>()
-        .ok_or(Error::InvalidState)?;
+        .ok_or(IMStatusCode::Failure)?;
     if failsafe
         .arm(expiry_len, cmd_req.trans.session.get_session_mode())
         .is_err()
     {
-        // Spec says return BUSY, but there is no such field in CommissioningError enum
-        status = CommissioningError::ErrInvalidAuth;
+        return Err(IMStatusCode::Busy);
     }
 
     let invoke_resp = InvokeRespIb::Command(CMD_PATH_ARMFAILSAFE_RESPONSE, |t| {
-        t.put_u8(TagType::Context(0), status as u8)?;
+        t.put_u8(TagType::Context(0), CommissioningError::Ok as u8)?;
         t.put_utf8(TagType::Context(1), b"")
     });
-    cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)?;
+    let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
     cmd_req.trans.complete();
     Ok(())
 }
@@ -82,17 +89,22 @@ fn handle_command_armfailsafe(
 fn handle_command_setregulatoryconfig(
     _cluster: &mut Cluster,
     cmd_req: &mut CommandReq,
-) -> Result<(), Error> {
+) -> Result<(), IMStatusCode> {
     cmd_enter!("Set Regulatory Config");
     // These data types don't match the spec
-    let country_code = cmd_req.data.find_tag(1)?.get_slice()?;
+    let country_code = cmd_req
+        .data
+        .find_tag(1)
+        .map_err(|_| IMStatusCode::InvalidCommand)?
+        .get_slice()
+        .map_err(|_| IMStatusCode::InvalidCommand)?;
     info!("Received country code: {:?}", country_code);
 
     let invoke_resp = InvokeRespIb::Command(CMD_PATH_SETREGULATORY_RESPONSE, |t| {
         t.put_u8(TagType::Context(0), 0)?;
         t.put_utf8(TagType::Context(1), b"")
     });
-    cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)?;
+    let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
     cmd_req.trans.complete();
     Ok(())
 }
@@ -100,7 +112,7 @@ fn handle_command_setregulatoryconfig(
 fn handle_command_commissioningcomplete(
     cluster: &mut Cluster,
     cmd_req: &mut CommandReq,
-) -> Result<(), Error> {
+) -> Result<(), IMStatusCode> {
     cmd_enter!("Commissioning Complete");
     let mut status: u8 = CommissioningError::Ok as u8;
 
@@ -109,14 +121,15 @@ fn handle_command_commissioningcomplete(
         status = CommissioningError::ErrInvalidAuth as u8;
     }
 
+    // AddNOC or UpdateNOC must have happened, and that too for the same fabric
+    // scope that is for this session
     let failsafe = cluster
         .get_data::<Arc<FailSafe>>()
-        .ok_or(Error::InvalidState)?;
+        .ok_or(IMStatusCode::Failure)?;
     if failsafe
         .disarm(cmd_req.trans.session.get_session_mode())
         .is_err()
     {
-        // Spec says return BUSY, but there is no such field in CommissioningError enum
         status = CommissioningError::ErrInvalidAuth as u8;
     }
 
@@ -124,7 +137,7 @@ fn handle_command_commissioningcomplete(
         t.put_u8(TagType::Context(0), status)?;
         t.put_utf8(TagType::Context(1), b"")
     });
-    cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)?;
+    let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
     cmd_req.trans.complete();
     Ok(())
 }

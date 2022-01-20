@@ -1,4 +1,7 @@
-use crate::{error::*, interaction_model::command::CommandReq};
+use crate::{
+    error::*,
+    interaction_model::{command::CommandReq, core::IMStatusCode},
+};
 use std::{any::Any, fmt};
 
 /* This file needs some major revamp.
@@ -49,7 +52,7 @@ impl std::fmt::Display for Attribute {
     }
 }
 
-pub type CommandCb = fn(&mut Cluster, cmd_req: &mut CommandReq) -> Result<(), Error>;
+pub type CommandCb = fn(&mut Cluster, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode>;
 
 pub struct Command {
     id: u16,
@@ -115,14 +118,13 @@ impl Cluster {
         Err(Error::NoSpace)
     }
 
-    pub fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), Error> {
+    pub fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
         let cmd = self
             .commands
             .iter()
-            .find(|x| x.as_ref().map_or(false, |c| c.id == cmd_req.command))
-            .ok_or(Error::CommandNotFound)?
-            .as_ref()
-            .ok_or(Error::CommandNotFound)?;
+            .flatten()
+            .find(|x| x.id == cmd_req.command)
+            .ok_or(IMStatusCode::UnsupportedCommand)?;
         (cmd.cb)(self, cmd_req)
     }
 }

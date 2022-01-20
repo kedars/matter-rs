@@ -1,3 +1,4 @@
+use super::core::IMStatusCode;
 use super::core::OpCode;
 use super::CmdPathIb;
 use super::InteractionModel;
@@ -26,7 +27,7 @@ where
     F: Fn(&mut TLVWriter) -> Result<(), Error>,
 {
     Command(CmdPathIb, F),
-    Status(CmdPathIb, u32, u32, F),
+    Status(CmdPathIb, IMStatusCode, u32, F),
 }
 
 #[allow(non_snake_case)]
@@ -111,11 +112,11 @@ impl ToTLV for CmdPathIb {
 fn put_status_ib(
     tw: &mut TLVWriter,
     tag_type: TagType,
-    status: u32,
+    status: IMStatusCode,
     cluster_status: u32,
 ) -> Result<(), Error> {
     tw.put_start_struct(tag_type)?;
-    tw.put_u32(TagType::Context(0), status)?;
+    tw.put_u32(TagType::Context(0), status as u32)?;
     tw.put_u32(TagType::Context(1), cluster_status)?;
     tw.put_end_container()
 }

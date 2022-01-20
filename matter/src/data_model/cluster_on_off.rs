@@ -2,8 +2,7 @@ use super::objects::*;
 use crate::{
     cmd_enter,
     error::*,
-    interaction_model::command::{self, CommandReq, InvokeRespIb},
-    tlv_common::TagType,
+    interaction_model::{command::CommandReq, core::IMStatusCode},
 };
 use log::info;
 
@@ -20,7 +19,10 @@ fn attr_on_off_new() -> Result<Box<Attribute>, Error> {
     Attribute::new(ATTR_ON_OFF_ID, AttrValue::Bool(false))
 }
 
-fn handle_command_on_off(_cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Result<(), Error> {
+fn handle_command_on_off(
+    _cluster: &mut Cluster,
+    cmd_req: &mut CommandReq,
+) -> Result<(), IMStatusCode> {
     match cmd_req.command as u16 {
         CMD_OFF_ID => cmd_enter!("Off"),
         CMD_ON_ID => cmd_enter!("On"),
@@ -28,11 +30,9 @@ fn handle_command_on_off(_cluster: &mut Cluster, cmd_req: &mut CommandReq) -> Re
         _ => info!("Command not supported"),
     }
 
-    let invoke_resp = InvokeRespIb::Status(cmd_req.to_cmd_path_ib(), 0, 0, command::dummy);
-    cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)?;
     // Always mark complete for now
     cmd_req.trans.complete();
-    Ok(())
+    Err(IMStatusCode::Sucess)
 }
 
 fn command_on_new() -> Result<Box<Command>, Error> {

@@ -2,8 +2,13 @@ use super::{device_types::device_type_add_root_node, objects::*, sdm::dev_att::D
 use crate::{
     error::*,
     fabric::FabricMgr,
-    interaction_model::{command::CommandReq, CmdPathIb, InteractionConsumer, Transaction},
+    interaction_model::{
+        command::{self, CommandReq, InvokeRespIb},
+        core::IMStatusCode,
+        CmdPathIb, InteractionConsumer, Transaction,
+    },
     tlv::TLVElement,
+    tlv_common::TagType,
     tlv_writer::TLVWriter,
 };
 use log::info;
@@ -27,6 +32,15 @@ impl DataModel {
         }
         Ok(dm)
     }
+
+    fn handle_command(&self, mut cmd_req: CommandReq) -> Result<(), IMStatusCode> {
+        let mut node = self.node.write().unwrap();
+        node.get_endpoint(cmd_req.endpoint.into())
+            .map_err(|_| IMStatusCode::UnsupportedEndpoint)?
+            .get_cluster(cmd_req.cluster)
+            .map_err(|_| IMStatusCode::UnsupportedCluster)?
+            .handle_command(&mut cmd_req)
+    }
 }
 
 impl InteractionConsumer for DataModel {
@@ -39,7 +53,7 @@ impl InteractionConsumer for DataModel {
     ) -> Result<(), Error> {
         info!("Invoke Commmand Handler executing: {:?}", cmd_path_ib);
 
-        let mut cmd_req = CommandReq {
+        let cmd_req = CommandReq {
             // TODO: Need to support wildcards
             endpoint: cmd_path_ib.endpoint.unwrap_or(1),
             cluster: cmd_path_ib.cluster.unwrap_or(0),
@@ -48,14 +62,14 @@ impl InteractionConsumer for DataModel {
             trans,
             resp: tlvwriter,
         };
+        let cmd_path_ib = cmd_req.to_cmd_path_ib();
 
-        {
-            let mut node = self.node.write()?;
-            node.get_endpoint(cmd_req.endpoint.into())?
-                .get_cluster(cmd_req.cluster)?
-                .handle_command(&mut cmd_req)?;
+        let result = self.handle_command(cmd_req);
+        if let Err(result) = result {
+            // Err return implies we must send the StatusIB with this code
+            let invoke_resp = InvokeRespIb::Status(cmd_path_ib, result, 0, command::dummy);
+            tlvwriter.put_object(TagType::Anonymous, &invoke_resp)?;
         }
-
         Ok(())
     }
 }

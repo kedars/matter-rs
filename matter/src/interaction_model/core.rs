@@ -88,7 +88,7 @@ impl proto_demux::HandleProto for InteractionModel {
     }
 }
 
-#[derive(FromPrimitive, Debug)]
+#[derive(FromPrimitive, Debug, Clone, Copy)]
 pub enum IMStatusCode {
     Sucess = 0,
     Failure = 1,
