@@ -5,18 +5,20 @@ use std::sync::RwLock;
 #[derive(PartialEq)]
 #[allow(dead_code)]
 enum NocState {
-    Idle,
+    NocNotRecvd,
     // This is the local fabric index
     AddNocRecvd(u8),
     UpdateNocRecvd(u8),
 }
 
+#[derive(PartialEq)]
 pub struct ArmedCtx {
     session_mode: SessionMode,
     timeout: u8,
     noc_state: NocState,
 }
 
+#[derive(PartialEq)]
 pub enum State {
     Idle,
     Armed(ArmedCtx),
@@ -44,7 +46,7 @@ impl FailSafe {
                 inner.state = State::Armed(ArmedCtx {
                     session_mode,
                     timeout,
-                    noc_state: NocState::Idle,
+                    noc_state: NocState::NocNotRecvd,
                 })
             }
             State::Armed(c) => {
@@ -67,7 +69,7 @@ impl FailSafe {
             }
             State::Armed(c) => {
                 match c.noc_state {
-                    NocState::Idle => return Err(Error::Invalid),
+                    NocState::NocNotRecvd => return Err(Error::Invalid),
                     NocState::AddNocRecvd(idx) | NocState::UpdateNocRecvd(idx) => {
                         if SessionMode::Case(idx) != session_mode {
                             error!(
@@ -83,12 +85,16 @@ impl FailSafe {
         Ok(())
     }
 
+    pub fn is_armed(&self) -> bool {
+        self.state.read().unwrap().state != State::Idle
+    }
+
     pub fn record_add_noc(&self, fabric_index: u8) -> Result<(), Error> {
         let mut inner = self.state.write()?;
         match &mut inner.state {
             State::Idle => Err(Error::Invalid),
             State::Armed(c) => {
-                if c.noc_state == NocState::Idle {
+                if c.noc_state == NocState::NocNotRecvd {
                     c.noc_state = NocState::AddNocRecvd(fabric_index);
                     Ok(())
                 } else {
@@ -103,7 +109,7 @@ impl FailSafe {
         let allow = match &mut inner.state {
             State::Idle => false,
             State::Armed(c) => {
-                if c.noc_state == NocState::Idle {
+                if c.noc_state == NocState::NocNotRecvd {
                     true
                 } else {
                     false

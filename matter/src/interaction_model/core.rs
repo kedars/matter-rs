@@ -88,6 +88,32 @@ impl proto_demux::HandleProto for InteractionModel {
     }
 }
 
+#[derive(FromPrimitive, Debug)]
+pub enum IMStatusCode {
+    Sucess = 0,
+    Failure = 1,
+    InvalidSubscription = 0x7D,
+    UnsupportedAccess = 0x7E,
+    UnsupportedEndpoint = 0x7F,
+    InvalidAction = 0x80,
+    UnsupportedCommand = 0x81,
+    InvalidCommand = 0x85,
+    UnsupportedAttribute = 0x86,
+    ConstraintError = 0x87,
+    UnsupportedWrite = 0x88,
+    ResourceExhausted = 0x89,
+    NotFound = 0x8b,
+    UnreportableAttribute = 0x8c,
+    InvalidDataType = 0x8d,
+    UnsupportedRead = 0x8f,
+    DataVersionMismatch = 0x92,
+    Timeout = 0x94,
+    Busy = 0x9c,
+    UnsupportedCluster = 0xc3,
+    NoUpstreamSubscription = 0xc5,
+    NeedsTimedInteraction = 0xc6,
+}
+
 #[cfg(test)]
 mod tests {
     use crate::interaction_model::core::*;

@@ -8,9 +8,11 @@ use crate::data_model::objects::*;
 use crate::data_model::sdm::dev_att;
 use crate::fabric::{Fabric, FabricMgr};
 use crate::interaction_model::command::{self, CommandReq, InvokeRespIb};
+use crate::interaction_model::core::IMStatusCode;
 use crate::interaction_model::CmdPathIb;
 use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
+use crate::transport::session::SessionMode;
 use crate::utils::writebuf::WriteBuf;
 use crate::{cert, cmd_enter, error::*};
 use log::{error, info};
@@ -258,22 +260,54 @@ fn handle_command_csrrequest(
     Ok(())
 }
 
+fn _handle_command_addtrustedrootcert(
+    cluster: &mut Cluster,
+    cmd_req: &mut CommandReq,
+) -> Result<IMStatusCode, IMStatusCode> {
+    cmd_enter!("AddTrustedRootCert");
+    let noc_cluster = cluster
+        .get_data::<NocCluster>()
+        .ok_or(IMStatusCode::Failure)?;
+
+    if !noc_cluster.failsafe.is_armed() {
+        return Err(IMStatusCode::UnsupportedAccess);
+    }
+
+    // This may happen on CASE or PASE. For PASE, the existence of NOC Data is necessary
+    match cmd_req.trans.session.get_session_mode() {
+        SessionMode::Case(_) => (), // For a CASE Session, we just return success for now,
+        SessionMode::Pase => {
+            let noc_data = cmd_req
+                .trans
+                .session
+                .get_data::<NocData>()
+                .ok_or(IMStatusCode::Failure)?;
+
+            let root_cert = cmd_req
+                .data
+                .find_tag(0)
+                .map_err(|_| IMStatusCode::InvalidCommand)?
+                .get_slice()
+                .map_err(|_| IMStatusCode::InvalidCommand)?;
+            info!("Received Trusted Cert:{:x?}", root_cert);
+
+            noc_data.root_ca = Cert::new(root_cert);
+        }
+        _ => (),
+    }
+    Ok(IMStatusCode::Sucess)
+}
+
 fn handle_command_addtrustedrootcert(
-    _cluster: &mut Cluster,
+    cluster: &mut Cluster,
     cmd_req: &mut CommandReq,
 ) -> Result<(), Error> {
-    cmd_enter!("AddTrustedRootCert");
-    let noc_data = cmd_req
-        .trans
-        .session
-        .get_data::<NocData>()
-        .ok_or(Error::InvalidState)?;
-
-    let root_cert = cmd_req.data.find_tag(0)?.get_slice()?;
-    info!("Received Trusted Cert:{:x?}", root_cert);
-
-    noc_data.root_ca = Cert::new(root_cert);
-    let invoke_resp = InvokeRespIb::Status(cmd_req.to_cmd_path_ib(), 0, 0, command::dummy);
+    let status = match _handle_command_addtrustedrootcert(cluster, cmd_req) {
+        Ok(i) => i,
+        Err(e) => e,
+    };
+    let invoke_resp =
+        InvokeRespIb::Status(cmd_req.to_cmd_path_ib(), status as u32, 0, command::dummy);
     cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp)?;
     cmd_req.trans.complete();
     Ok(())
