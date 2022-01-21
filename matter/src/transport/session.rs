@@ -169,6 +169,10 @@ impl Session {
         }
     }
 
+    pub fn get_att_challenge(&self) -> &[u8] {
+        &self.att_challenge
+    }
+
     pub fn recv(
         &self,
         plain_hdr: &PlainHdr,

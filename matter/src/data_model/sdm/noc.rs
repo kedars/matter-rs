@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::cert::Cert;
-use crate::crypto::{CryptoKeyPair, KeyPair};
+use crate::crypto::{self, CryptoKeyPair, KeyPair};
 use crate::data_model::objects::*;
 use crate::data_model::sdm::dev_att;
 use crate::fabric::{Fabric, FabricMgr};
@@ -119,36 +119,53 @@ impl NocData {
 fn add_attestation_element(
     dev_att: &Box<dyn DevAttDataFetcher>,
     att_nonce: &[u8],
-    resp: &mut TLVWriter,
+    write_buf: &mut WriteBuf,
+    t: &mut TLVWriter,
 ) -> Result<(), Error> {
     let mut cert_dec: [u8; MAX_CERT_DECLARATION_LEN] = [0; MAX_CERT_DECLARATION_LEN];
     let len = dev_att.get_devatt_data(dev_att::DataType::CertDeclaration, &mut cert_dec)?;
     let cert_dec = &cert_dec[0..len];
 
     let epoch = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as u32;
-    let mut buf: [u8; RESP_MAX] = [0; RESP_MAX];
-    let mut write_buf = WriteBuf::new(&mut buf, RESP_MAX);
-    let mut writer = TLVWriter::new(&mut write_buf);
+    let mut writer = TLVWriter::new(write_buf);
     writer.put_start_struct(TagType::Anonymous)?;
     writer.put_str8(TagType::Context(1), cert_dec)?;
     writer.put_str8(TagType::Context(2), att_nonce)?;
     writer.put_u32(TagType::Context(3), epoch)?;
     writer.put_end_container()?;
 
-    resp.put_str16(TagType::Context(0), write_buf.as_slice())?;
+    t.put_str16(TagType::Context(0), write_buf.as_slice())?;
     Ok(())
+}
+
+fn add_attestation_signature(
+    dev_att: &Box<dyn DevAttDataFetcher>,
+    attest_element: &mut WriteBuf,
+    attest_challenge: &[u8],
+    resp: &mut TLVWriter,
+) -> Result<(), Error> {
+    let dac_key = {
+        let mut pubkey = [0_u8; crypto::EC_POINT_LEN_BYTES];
+        let mut privkey = [0_u8; crypto::BIGNUM_LEN_BYTES];
+        dev_att.get_devatt_data(dev_att::DataType::DACPubKey, &mut pubkey)?;
+        dev_att.get_devatt_data(dev_att::DataType::DACPrivKey, &mut privkey)?;
+        KeyPair::new_from_components(&pubkey, &privkey)
+    }?;
+    attest_element.copy_from_slice(attest_challenge)?;
+    let mut signature = [0u8; crypto::EC_SIGNATURE_LEN_BYTES];
+    dac_key.sign_msg(attest_element.as_slice(), &mut signature)?;
+    resp.put_str8(TagType::Context(1), &signature)
 }
 
 fn add_nocsrelement(
     noc_keypair: &KeyPair,
     csr_nonce: &[u8],
+    write_buf: &mut WriteBuf,
     resp: &mut TLVWriter,
 ) -> Result<(), Error> {
     let mut csr: [u8; MAX_CSR_LEN] = [0; MAX_CSR_LEN];
     let csr = noc_keypair.get_csr(&mut csr)?;
-    let mut buf: [u8; RESP_MAX] = [0; RESP_MAX];
-    let mut write_buf = WriteBuf::new(&mut buf, RESP_MAX);
-    let mut writer = TLVWriter::new(&mut write_buf);
+    let mut writer = TLVWriter::new(write_buf);
     writer.put_start_struct(TagType::Anonymous)?;
     writer.put_str8(TagType::Context(1), csr)?;
     writer.put_str8(TagType::Context(2), csr_nonce)?;
@@ -211,10 +228,15 @@ fn handle_command_attrequest(
     let noc = cluster
         .get_data::<NocCluster>()
         .ok_or(IMStatusCode::Failure)?;
+    let mut attest_challenge = [0u8; crypto::SYMM_KEY_LEN_BYTES];
+    attest_challenge.copy_from_slice(cmd_req.trans.session.get_att_challenge());
 
     let invoke_resp = InvokeRespIb::Command(CMD_PATH_ATTRESPONSE, |t| {
-        add_attestation_element(&noc.dev_att, att_nonce, t)?;
-        t.put_str8(TagType::Context(1), b"ThisistheAttestationSignature")
+        let mut buf: [u8; RESP_MAX] = [0; RESP_MAX];
+        let mut attest_element = WriteBuf::new(&mut buf, RESP_MAX);
+
+        add_attestation_element(&noc.dev_att, att_nonce, &mut attest_element, t)?;
+        add_attestation_signature(&noc.dev_att, &mut attest_element, &attest_challenge, t)
     });
     let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
     cmd_req.trans.complete();
@@ -263,20 +285,28 @@ fn handle_command_csrrequest(
         .map_err(|_| IMStatusCode::InvalidCommand)?;
     info!("Received CSR Nonce:{:?}", csr_nonce);
 
-    if !cluster
+    let noc_cluster = cluster
         .get_data::<NocCluster>()
-        .ok_or(IMStatusCode::Failure)?
-        .failsafe
-        .is_armed()
-    {
+        .ok_or(IMStatusCode::Failure)?;
+    if !noc_cluster.failsafe.is_armed() {
         return Err(IMStatusCode::UnsupportedAccess);
     }
 
     let noc_keypair = KeyPair::new().map_err(|_| IMStatusCode::Failure)?;
+    let mut attest_challenge = [0u8; crypto::SYMM_KEY_LEN_BYTES];
+    attest_challenge.copy_from_slice(cmd_req.trans.session.get_att_challenge());
 
     let invoke_resp = InvokeRespIb::Command(CMD_PATH_CSRRESPONSE, |t| {
-        add_nocsrelement(&noc_keypair, csr_nonce, t)?;
-        t.put_str8(TagType::Context(1), b"ThisistheAttestationSignature")
+        let mut buf: [u8; RESP_MAX] = [0; RESP_MAX];
+        let mut nocsr_element = WriteBuf::new(&mut buf, RESP_MAX);
+
+        add_nocsrelement(&noc_keypair, csr_nonce, &mut nocsr_element, t)?;
+        add_attestation_signature(
+            &noc_cluster.dev_att,
+            &mut nocsr_element,
+            &attest_challenge,
+            t,
+        )
     });
 
     let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);

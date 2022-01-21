@@ -16,6 +16,8 @@ pub const EC_POINT_LEN_BYTES: usize = 65;
 
 pub const ECDH_SHARED_SECRET_LEN_BYTES: usize = 32;
 
+pub const EC_SIGNATURE_LEN_BYTES: usize = 64;
+
 // APIs particular to a KeyPair so a KeyPair object can be defined
 pub trait CryptoKeyPair {
     fn get_csr<'a>(&self, csr: &'a mut [u8]) -> Result<&'a [u8], Error>;

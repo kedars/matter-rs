@@ -2,7 +2,7 @@ use crate::error::Error;
 
 use log::error;
 use openssl::asn1::Asn1Type;
-use openssl::bn::BigNumContext;
+use openssl::bn::{BigNum, BigNumContext};
 use openssl::derive::Deriver;
 use openssl::ec::{EcGroup, EcKey, EcPoint, PointConversionForm};
 use openssl::ecdsa::EcdsaSig;
@@ -23,6 +23,16 @@ impl KeyPair {
         let group = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1)?;
         let key = EcKey::generate(&group)?;
         Ok(Self { key })
+    }
+
+    pub fn new_from_components(pub_key: &[u8], priv_key: &[u8]) -> Result<Self, Error> {
+        let group = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1)?;
+        let mut ctx = BigNumContext::new()?;
+        let priv_key = BigNum::from_slice(priv_key)?;
+        let pub_key = EcPoint::from_bytes(&group, pub_key, &mut ctx)?;
+        Ok(Self {
+            key: EcKey::from_private_components(&group, &priv_key, &pub_key)?,
+        })
     }
 }
 
@@ -85,19 +95,16 @@ impl CryptoKeyPair for KeyPair {
         h.update(msg)?;
         let msg = h.finish()?;
 
-        if signature.len() < 64 {
+        if signature.len() < super::EC_SIGNATURE_LEN_BYTES {
             return Err(Error::NoSpace);
         }
         safemem::write_bytes(signature, 0);
 
         let sig = EcdsaSig::sign(&msg, &self.key)?;
         let r = sig.r().to_vec();
-        println!("r: {:x?}", r);
         signature[0..r.len()].copy_from_slice(r.as_slice());
         let s = sig.s().to_vec();
-        println!("s: {:x?}", s);
         signature[32..(32 + s.len())].copy_from_slice(s.as_slice());
-        println!("Signature: {:x?}", signature);
         Ok(64)
     }
 }

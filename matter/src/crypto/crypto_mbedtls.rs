@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use log::error;
 use mbedtls::{
+    bignum::Mpi,
     ecp::EcPoint,
     hash::Md,
     hash::{self, Type},
@@ -22,6 +23,14 @@ impl KeyPair {
         let mut ctr_drbg = CtrDrbg::new(Arc::new(OsEntropy::new()), None)?;
         Ok(Self {
             key: Pk::generate_ec(&mut ctr_drbg, EcGroupId::SecP256R1)?,
+        })
+    }
+
+    pub fn new_from_components(_pub_key: &[u8], priv_key: &[u8]) -> Result<Self, Error> {
+        // No rust-mbedtls API yet for creating keypair from both public and private key
+        let priv_key = Mpi::from_binary(priv_key)?;
+        Ok(Self {
+            key: Pk::private_from_ec_components(EcGroup::new(EcGroupId::SecP256R1)?, priv_key)?,
         })
     }
 }
@@ -92,8 +101,18 @@ impl CryptoKeyPair for KeyPair {
         Md::hash(hash::Type::Sha256, msg, &mut msg_hash)?;
         let mut ctr_drbg = CtrDrbg::new(Arc::new(OsEntropy::new()), None)?;
 
-        tmp_key.sign(hash::Type::Sha256, &msg_hash, signature, &mut ctr_drbg)?;
-        convert_asn1_sign_to_r_s(signature)
+        if signature.len() < super::EC_SIGNATURE_LEN_BYTES {
+            return Err(Error::NoSpace);
+        }
+        safemem::write_bytes(signature, 0);
+
+        // mbedTLS writes the DER signature first
+        // TODO: Update rust-mbedtls to provide raw level APIs to get r and s values
+        let mut tmp_sign = [0u8; super::EC_SIGNATURE_LEN_BYTES * 3];
+        tmp_key.sign(hash::Type::Sha256, &msg_hash, &mut tmp_sign, &mut ctr_drbg)?;
+        let len = convert_asn1_sign_to_r_s(&mut tmp_sign)?;
+        signature[..len].copy_from_slice(&tmp_sign[..len]);
+        Ok(len)
     }
 }
 

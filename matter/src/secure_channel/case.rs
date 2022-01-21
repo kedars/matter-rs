@@ -98,7 +98,7 @@ impl Case {
 
         let len = Case::get_sigma3_decryption(&sigma3_key, &mut decrypted)?;
         let decrypted = &decrypted[..len];
-        println!("Decrypted: {:x?}", decrypted);
+        trace!("Decrypted: {:x?}", decrypted);
 
         let root = get_root_node_struct(decrypted)?;
         let initiator_noc = Cert::new(root.find_tag(1)?.get_slice()?);
@@ -212,7 +212,7 @@ impl Case {
 
         let mut encrypted: [u8; MAX_ENCRYPTED_SIZE] = [0; MAX_ENCRYPTED_SIZE];
         let encrypted_len = {
-            let mut signature: [u8; 160] = [0; 160];
+            let mut signature = [0u8; crypto::EC_SIGNATURE_LEN_BYTES];
             let fabric = self.fabric_mgr.get_fabric(case_session.local_fabric_idx)?;
             if fabric.is_none() {
                 common::create_sc_status_report(

@@ -4,6 +4,8 @@ pub enum DataType {
     CertDeclaration,
     PAI,
     DAC,
+    DACPubKey,
+    DACPrivKey,
 }
 
 pub trait DevAttDataFetcher {
