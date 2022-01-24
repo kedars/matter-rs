@@ -135,6 +135,14 @@ fn convert_asn1_sign_to_r_s(signature: &mut [u8]) -> Result<usize, Error> {
         // Length
         let len = signature[offset];
         offset += 1;
+        // XXX Once, I have seen a crash in this conversion, need to dig
+        if len < 32 {
+            error!(
+                "Cannot deal with this: this will crash: the slice is: {:x?}",
+                signature
+            );
+        }
+
         // Sometimes length is more than 32 with a 0 prefix-padded, skip over that
         offset += (len - 32) as usize;
 
