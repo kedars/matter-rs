@@ -14,7 +14,7 @@ use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
 use crate::transport::session::SessionMode;
 use crate::utils::writebuf::WriteBuf;
-use crate::{cert, cmd_enter, error::*};
+use crate::{cmd_enter, error::*};
 use log::{error, info};
 
 use super::dev_att::{DataType, DevAttDataFetcher};
@@ -382,16 +382,16 @@ fn _handle_command_addnoc(
     let (noc_value, icac_value, ipk_value, _case_admin_node_id, _vendor_id) =
         get_addnoc_params(cmd_req).map_err(|_| NocStatus::InvalidNOC)?;
 
-    info!("Received NOC as:");
-    cert::print_cert(noc_value).map_err(|_| NocStatus::InvalidNOC)?;
-    info!("Received ICAC as:");
-    let _ = cert::print_cert(icac_value).map_err(|_| NocStatus::InvalidNOC)?;
+    let noc_value = Cert::new(noc_value);
+    info!("Received NOC as: {}", noc_value);
+    let icac_value = Cert::new(icac_value);
+    info!("Received ICAC as: {}", icac_value);
 
     let fabric = Fabric::new(
         noc_data.key_pair,
         noc_data.root_ca,
-        Cert::new(icac_value),
-        Cert::new(noc_value),
+        icac_value,
+        noc_value,
         Cert::new(ipk_value),
     )
     .map_err(|_| NocStatus::TableFull)?;

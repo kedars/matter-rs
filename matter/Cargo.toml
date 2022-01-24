@@ -34,6 +34,7 @@ smol = "1.2.5"
 futures-lite = "1.12.0"
 owning_ref = "0.4.1"
 safemem = "0.3.3"
+chrono = "0.4.19"
 
 [[example]]
 name = "onoff_light"
