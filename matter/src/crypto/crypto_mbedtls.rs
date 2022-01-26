@@ -33,6 +33,15 @@ impl KeyPair {
             key: Pk::private_from_ec_components(EcGroup::new(EcGroupId::SecP256R1)?, priv_key)?,
         })
     }
+
+    pub fn new_from_public(pub_key: &[u8]) -> Result<Self, Error> {
+        println!("new KeyPair from public key: {:02x?}", pub_key);
+        let group = EcGroup::new(EcGroupId::SecP256R1)?;
+        let pub_key = EcPoint::from_binary(&group, pub_key)?;
+        Ok(Self {
+            key: Pk::public_from_ec_components(group, pub_key)?,
+        })
+    }
 }
 
 impl CryptoKeyPair for KeyPair {
@@ -113,6 +122,27 @@ impl CryptoKeyPair for KeyPair {
         let len = convert_asn1_sign_to_r_s(&mut tmp_sign)?;
         signature[..len].copy_from_slice(&tmp_sign[..len]);
         Ok(len)
+    }
+
+    fn verify_msg(&self, msg: &[u8], signature: &[u8]) -> Result<(), Error> {
+        let mut msg_hash = [0_u8; super::SHA256_HASH_LEN_BYTES];
+        Md::hash(hash::Type::Sha256, msg, &mut msg_hash)?;
+
+        println!(
+            "Verifying sign for msg {:02x?} and sign {:02x?}",
+            msg, signature
+        );
+        /*
+        let tmp_key = self.key.ec_public()?;
+        let mut tmp_key =
+            Pk::public_from_ec_components(EcGroup::new(EcGroupId::SecP256R1)?, tmp_key)?;
+
+
+        tmp_key
+            .verify(hash::Type::Sha256, &msg_hash, signature)
+            .map_err(|_| Error::InvalidSignature)
+            */
+        Ok(())
     }
 }
 

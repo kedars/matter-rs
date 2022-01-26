@@ -29,4 +29,8 @@ impl CryptoKeyPair for KeyPairDummy {
         error!("This API should never get called");
         Err(Error::Invalid)
     }
+    fn verify_msg(&self, _msg: &[u8], _signature: &[u8]) -> Result<(), Error> {
+        error!("This API should never get called");
+        Err(Error::Invalid)
+    }
 }

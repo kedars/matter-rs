@@ -4,25 +4,31 @@ use log::error;
 use openssl::asn1::Asn1Type;
 use openssl::bn::{BigNum, BigNumContext};
 use openssl::derive::Deriver;
-use openssl::ec::{EcGroup, EcKey, EcPoint, PointConversionForm};
+use openssl::ec::{EcGroup, EcKey, EcPoint, EcPointRef, PointConversionForm};
 use openssl::ecdsa::EcdsaSig;
 use openssl::hash::{Hasher, MessageDigest};
 use openssl::nid::Nid;
-use openssl::pkey;
 use openssl::pkey::PKey;
+use openssl::pkey::{self, Private};
 use openssl::x509::{X509NameBuilder, X509ReqBuilder, X509};
 
 use super::CryptoKeyPair;
 
+pub enum KeyType {
+    Public(EcKey<pkey::Public>),
+    Private(EcKey<pkey::Private>),
+}
 pub struct KeyPair {
-    key: EcKey<pkey::Private>,
+    key: KeyType,
 }
 
 impl KeyPair {
     pub fn new() -> Result<Self, Error> {
         let group = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1)?;
         let key = EcKey::generate(&group)?;
-        Ok(Self { key })
+        Ok(Self {
+            key: KeyType::Private(key),
+        })
     }
 
     pub fn new_from_components(pub_key: &[u8], priv_key: &[u8]) -> Result<Self, Error> {
@@ -31,8 +37,32 @@ impl KeyPair {
         let priv_key = BigNum::from_slice(priv_key)?;
         let pub_key = EcPoint::from_bytes(&group, pub_key, &mut ctx)?;
         Ok(Self {
-            key: EcKey::from_private_components(&group, &priv_key, &pub_key)?,
+            key: KeyType::Private(EcKey::from_private_components(&group, &priv_key, &pub_key)?),
         })
+    }
+
+    pub fn new_from_public(pub_key: &[u8]) -> Result<Self, Error> {
+        let group = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1)?;
+        let mut ctx = BigNumContext::new()?;
+        let pub_key = EcPoint::from_bytes(&group, pub_key, &mut ctx)?;
+
+        Ok(Self {
+            key: KeyType::Public(EcKey::from_public_key(&group, &pub_key)?),
+        })
+    }
+
+    fn public_key_point(&self) -> &EcPointRef {
+        match &self.key {
+            KeyType::Public(k) => k.public_key(),
+            KeyType::Private(k) => k.public_key(),
+        }
+    }
+
+    fn private_key(&self) -> Result<&EcKey<Private>, Error> {
+        match &self.key {
+            KeyType::Public(_) => Err(Error::Invalid),
+            KeyType::Private(k) => Ok(&k),
+        }
     }
 }
 
@@ -40,7 +70,7 @@ impl CryptoKeyPair for KeyPair {
     fn get_public_key(&self, pub_key: &mut [u8]) -> Result<usize, Error> {
         let group = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1)?;
         let mut bn_ctx = BigNumContext::new()?;
-        let s = self.key.public_key().to_bytes(
+        let s = self.public_key_point().to_bytes(
             &group,
             PointConversionForm::UNCOMPRESSED,
             &mut bn_ctx,
@@ -51,7 +81,7 @@ impl CryptoKeyPair for KeyPair {
     }
 
     fn derive_secret(self, peer_pub_key: &[u8], secret: &mut [u8]) -> Result<usize, Error> {
-        let self_pkey = PKey::from_ec_key(self.key)?;
+        let self_pkey = PKey::from_ec_key(self.private_key()?.clone())?;
 
         let group = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1)?;
         let mut ctx = BigNumContext::new()?;
@@ -68,7 +98,7 @@ impl CryptoKeyPair for KeyPair {
         let mut builder = X509ReqBuilder::new()?;
         builder.set_version(0)?;
 
-        let pkey = PKey::from_ec_key(self.key.clone())?;
+        let pkey = PKey::from_ec_key(self.private_key()?.clone())?;
         builder.set_pubkey(&pkey)?;
 
         let mut name_builder = X509NameBuilder::new()?;
@@ -100,12 +130,37 @@ impl CryptoKeyPair for KeyPair {
         }
         safemem::write_bytes(signature, 0);
 
-        let sig = EcdsaSig::sign(&msg, &self.key)?;
+        let sig = EcdsaSig::sign(&msg, self.private_key()?)?;
         let r = sig.r().to_vec();
         signature[0..r.len()].copy_from_slice(r.as_slice());
         let s = sig.s().to_vec();
         signature[32..(32 + s.len())].copy_from_slice(s.as_slice());
         Ok(64)
+    }
+
+    fn verify_msg(&self, msg: &[u8], signature: &[u8]) -> Result<(), Error> {
+        // First get the SHA256 of the message
+        let mut h = Hasher::new(MessageDigest::sha256())?;
+        h.update(msg)?;
+        let msg = h.finish()?;
+
+        let r = BigNum::from_slice(&signature[0..super::BIGNUM_LEN_BYTES])?;
+        let s =
+            BigNum::from_slice(&signature[super::BIGNUM_LEN_BYTES..(2 * super::BIGNUM_LEN_BYTES)])?;
+        let sig = EcdsaSig::from_private_components(r, s)?;
+
+        let k = match &self.key {
+            KeyType::Public(key) => key,
+            _ => {
+                error!("Not yet supported");
+                return Err(Error::Invalid);
+            }
+        };
+        if !sig.verify(&msg, k)? {
+            Err(Error::InvalidSignature)
+        } else {
+            Ok(())
+        }
     }
 }
 

@@ -31,6 +31,9 @@ pub enum Error {
     InvalidKeyLength,
     InvalidOpcode,
     InvalidPeerAddr,
+    // Invalid Auth Key in the Matter Certificate
+    InvalidAuthKey,
+    InvalidSignature,
     InvalidState,
     RwLock,
     TLVTypeMismatch,
