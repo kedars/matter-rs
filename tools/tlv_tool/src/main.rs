@@ -44,18 +44,17 @@ fn main() {
         16
     };
 
-    let list = m.value_of("tlvs").unwrap().split(' ');
+    let list: String = m.value_of("tlvs").unwrap().chars().filter(|c|!c.is_whitespace()).collect();
+    let list = list.split(',');
     let mut tlv_list: [u8; 1024] = [0; 1024];
     let mut index = 0;
     for byte in list {
         let byte = byte.strip_prefix("0x").unwrap_or(byte);
-        let byte = byte.strip_suffix(",").unwrap_or(byte);
         if let Ok(b) = u8::from_str_radix(byte, base) {
             tlv_list[index] = b;
             index += 1;
         } else {
-            eprintln!("Error parsing input byte: {}", byte);
-            process::exit(1);
+            eprintln!("Skipping unknown byte: {}", byte);
         }
         if index >= 1024 {
             eprintln!("Input too long");
