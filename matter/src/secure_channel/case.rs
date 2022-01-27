@@ -82,21 +82,17 @@ impl Case {
         let root = get_root_node_struct(proto_rx.buf)?;
         let encrypted = root.find_tag(1)?.get_slice()?;
 
-        // TODO: Fix IPK
-        let dummy_ipk = [0_u8; crypto::SYMM_KEY_LEN_BYTES];
-        let mut sigma3_key = [0_u8; crypto::SYMM_KEY_LEN_BYTES];
-        Case::get_sigma3_key(
-            &dummy_ipk,
-            &case_session.tt_hash,
-            &case_session.shared_secret,
-            &mut sigma3_key,
-        )?;
-        // println!("Sigma3 Key: {:x?}", sigma3_key);
         let mut decrypted: [u8; 800] = [0; 800];
+        if encrypted.len() > decrypted.len() {
+            error!("Data too large");
+            return Err(Error::NoSpace);
+        }
         let mut decrypted = &mut decrypted[..encrypted.len()];
         decrypted.copy_from_slice(encrypted);
 
-        let len = Case::get_sigma3_decryption(&sigma3_key, &mut decrypted)?;
+        // TODO: Fix IPK
+        let dummy_ipk = [0_u8; crypto::SYMM_KEY_LEN_BYTES];
+        let len = Case::get_sigma3_decryption(&dummy_ipk, &case_session, &mut decrypted)?;
         let decrypted = &decrypted[..len];
         trace!("Decrypted: {:x?}", decrypted);
 
@@ -115,45 +111,16 @@ impl Case {
         // Safe to unwrap here
         let fabric = fabric.as_ref().as_ref().unwrap();
 
-        if (fabric.get_fabric_id() != initiator_noc.get_fabric_id()?)
-            || (fabric.get_fabric_id() != initiator_icac.get_fabric_id()?)
-        {
-            common::create_sc_status_report(proto_tx, common::SCStatusCodes::InvalidParameter)?;
-            proto_rx.exchange.close();
-            return Ok(());
-        }
-
-        if !initiator_noc.is_authority(&initiator_icac)?
-            || !initiator_icac.is_authority(&fabric.root_ca)?
-        {
+        if Case::validate_certs(fabric, &initiator_noc, &initiator_icac).is_err() {
             error!("Certificate Chain doesn't match");
             common::create_sc_status_report(proto_tx, common::SCStatusCodes::InvalidParameter)?;
             proto_rx.exchange.close();
             return Ok(());
         }
-        // TODO: Cert Chain Validation
 
+        // Only now do we add this message to the TT Hash
         case_session.tt_hash.update(proto_rx.buf);
-        // TODO: Fix IPK
-        let dummy_ipk = [0_u8; crypto::SYMM_KEY_LEN_BYTES];
-        let mut session_keys = [0_u8; 3 * crypto::SYMM_KEY_LEN_BYTES];
-        Case::get_session_keys(
-            &dummy_ipk,
-            &case_session.tt_hash,
-            &case_session.shared_secret,
-            &mut session_keys,
-        )?;
-
-        let mut clone_data = CloneData::new(
-            case_session.peer_sessid,
-            case_session.local_sessid,
-            SessionMode::Case(case_session.local_fabric_idx as u8),
-        );
-        clone_data.dec_key.copy_from_slice(&session_keys[0..16]);
-        clone_data.enc_key.copy_from_slice(&session_keys[16..32]);
-        clone_data
-            .att_challenge
-            .copy_from_slice(&session_keys[32..48]);
+        let clone_data = Case::get_session_clone_data(&dummy_ipk, &case_session)?;
         proto_tx.new_session = Some(proto_rx.session.clone(&clone_data));
 
         common::create_sc_status_report(proto_tx, SCStatusCodes::SessionEstablishmentSuccess)?;
@@ -256,6 +223,46 @@ impl Case {
         Ok(())
     }
 
+    fn get_session_clone_data(
+        ipk: &[u8],
+        case_session: &Box<CaseSession>,
+    ) -> Result<CloneData, Error> {
+        let mut session_keys = [0_u8; 3 * crypto::SYMM_KEY_LEN_BYTES];
+        Case::get_session_keys(
+            ipk,
+            &case_session.tt_hash,
+            &case_session.shared_secret,
+            &mut session_keys,
+        )?;
+
+        let mut clone_data = CloneData::new(
+            case_session.peer_sessid,
+            case_session.local_sessid,
+            SessionMode::Case(case_session.local_fabric_idx as u8),
+        );
+        clone_data.dec_key.copy_from_slice(&session_keys[0..16]);
+        clone_data.enc_key.copy_from_slice(&session_keys[16..32]);
+        clone_data
+            .att_challenge
+            .copy_from_slice(&session_keys[32..48]);
+        Ok(clone_data)
+    }
+
+    fn validate_certs(fabric: &Fabric, noc: &Cert, icac: &Cert) -> Result<(), Error> {
+        if (fabric.get_fabric_id() != noc.get_fabric_id()?)
+            || (fabric.get_fabric_id() != icac.get_fabric_id()?)
+        {
+            return Err(Error::Invalid);
+        }
+
+        noc.verify_chain_start()
+            .add(icac)?
+            .add(&fabric.root_ca)?
+            .finalise()?;
+
+        Ok(())
+    }
+
     fn get_session_keys(
         ipk: &[u8],
         tt_hash: &Sha256,
@@ -283,7 +290,20 @@ impl Case {
         Ok(())
     }
 
-    fn get_sigma3_decryption(sigma3_key: &[u8], encrypted: &mut [u8]) -> Result<usize, Error> {
+    fn get_sigma3_decryption(
+        ipk: &[u8],
+        case_session: &Box<CaseSession>,
+        encrypted: &mut [u8],
+    ) -> Result<usize, Error> {
+        let mut sigma3_key = [0_u8; crypto::SYMM_KEY_LEN_BYTES];
+        Case::get_sigma3_key(
+            ipk,
+            &case_session.tt_hash,
+            &case_session.shared_secret,
+            &mut sigma3_key,
+        )?;
+        // println!("Sigma3 Key: {:x?}", sigma3_key);
+
         let nonce: [u8; 13] = [
             0x4e, 0x43, 0x41, 0x53, 0x45, 0x5f, 0x53, 0x69, 0x67, 0x6d, 0x61, 0x33, 0x4e,
         ];
@@ -295,7 +315,7 @@ impl Case {
         let tag = GenericArray::from_slice(&tag);
 
         type AesCcm = Ccm<Aes128, U16, U13>;
-        let cipher = AesCcm::new(GenericArray::from_slice(sigma3_key));
+        let cipher = AesCcm::new(GenericArray::from_slice(&sigma3_key));
 
         let encrypted = &mut encrypted[..(encrypted_len - crypto::AEAD_MIC_LEN_BYTES)];
         cipher.decrypt_in_place_detached(nonce, &[], encrypted, tag)?;

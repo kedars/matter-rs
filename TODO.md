@@ -19,11 +19,17 @@
   - SPAKE2+: the check with I (abort if `h*X == I`), as indicated by the RFC is pending
 
 * Implement the ARM Fail Safe and Regulatory Config properly. Currently we just ack them to proceed further
-* Currently AEAD, sha256 etc are directly used from rust crates. Instead use implementations from openssl/mbedtls
+* Currently AEAD, sha256 etc are directly used from rust crates. Instead use implementations from openssl/mbedtls - Done. Upstream MRs pending
+* rust-mbedTLS: We have to do some gymnastics because current APIs only support signature encoded in ASN1 format. Fix this upstream
 * The 'async' requiring 2 buffers is just icky! I tried with peek_from(), but somehow that isn't blocking, causing this requirement
 * CASE:
   - Handle initial MRP Parameters struct from Sigma1
   - Sigma2: perform signature verification of the sig received from initiator
-  - Sigma2: perform cert chain validation
 * FailSafe:
   - Enable timer and expiration handling for fail-safe context
+* Cert Verification:
+  - Basic certificate chain verification 
+  - Time validation (Not Before/Not After)
+  - KeyUsage flags and others are pending
+* Cert:
+  - Create an intermediate cert representation, instead of parsing the TLV array everytime

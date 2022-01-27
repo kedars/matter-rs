@@ -606,6 +606,15 @@ mod tests {
     }
 
     #[test]
+    fn test_verify_chain_incomplete() {
+        // The chain doesn't lead up to a self-signed certificate
+        let noc = Cert::new(&test_vectors::NOC1_SUCCESS);
+        let icac = Cert::new(&test_vectors::ICAC1_SUCCESS);
+        let a = noc.verify_chain_start();
+        assert_eq!(Err(Error::InvalidAuthKey), a.add(&icac).unwrap().finalise());
+    }
+
+    #[test]
     fn test_auth_key_chain_incorrect() {
         let noc = Cert::new(&test_vectors::NOC1_AUTH_KEY_FAIL);
         let icac = Cert::new(&test_vectors::ICAC1_SUCCESS);
