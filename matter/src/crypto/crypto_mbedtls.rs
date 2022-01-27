@@ -35,9 +35,9 @@ impl KeyPair {
     }
 
     pub fn new_from_public(pub_key: &[u8]) -> Result<Self, Error> {
-        println!("new KeyPair from public key: {:02x?}", pub_key);
         let group = EcGroup::new(EcGroupId::SecP256R1)?;
         let pub_key = EcPoint::from_binary(&group, pub_key)?;
+
         Ok(Self {
             key: Pk::public_from_ec_components(group, pub_key)?,
         })
@@ -105,6 +105,7 @@ impl CryptoKeyPair for KeyPair {
         let tmp_key = self.key.ec_private()?;
         let mut tmp_key =
             Pk::private_from_ec_components(EcGroup::new(EcGroupId::SecP256R1)?, tmp_key)?;
+
         // First get the SHA256 of the message
         let mut msg_hash = [0_u8; super::SHA256_HASH_LEN_BYTES];
         Md::hash(hash::Type::Sha256, msg, &mut msg_hash)?;
@@ -125,25 +126,75 @@ impl CryptoKeyPair for KeyPair {
     }
 
     fn verify_msg(&self, msg: &[u8], signature: &[u8]) -> Result<(), Error> {
-        let mut msg_hash = [0_u8; super::SHA256_HASH_LEN_BYTES];
-        Md::hash(hash::Type::Sha256, msg, &mut msg_hash)?;
-
-        println!(
-            "Verifying sign for msg {:02x?} and sign {:02x?}",
-            msg, signature
-        );
-        /*
+        // mbedtls requires a 'mut' key. Instead of making a change in our Trait,
+        // we just clone the key this way
         let tmp_key = self.key.ec_public()?;
         let mut tmp_key =
             Pk::public_from_ec_components(EcGroup::new(EcGroupId::SecP256R1)?, tmp_key)?;
 
+        // First get the SHA256 of the message
+        let mut msg_hash = [0_u8; super::SHA256_HASH_LEN_BYTES];
+        Md::hash(hash::Type::Sha256, msg, &mut msg_hash)?;
 
-        tmp_key
-            .verify(hash::Type::Sha256, &msg_hash, signature)
-            .map_err(|_| Error::InvalidSignature)
-            */
-        Ok(())
+        // current rust-mbedTLS APIs the signature to be in DER format
+        let mut mbedtls_sign = [0u8; super::EC_SIGNATURE_LEN_BYTES * 3];
+        let len = convert_r_s_to_asn1_sign(signature, &mut mbedtls_sign);
+        let mbedtls_sign = &mbedtls_sign[..len];
+
+        if let Err(e) = tmp_key.verify(hash::Type::Sha256, &msg_hash, &mbedtls_sign) {
+            println!("The error is {}", e);
+            Err(Error::InvalidSignature)
+        } else {
+            Ok(())
+        }
     }
+}
+
+fn convert_r_s_to_asn1_sign(signature: &[u8], mbedtls_sign: &mut [u8]) -> usize {
+    let mut offset = 0;
+    mbedtls_sign[offset] = 0x30;
+    offset += 1;
+    let mut len = 68;
+    if (signature[0] & 0x80) == 0x80 {
+        len += 1;
+    }
+    if (signature[32] & 0x80) == 0x80 {
+        len += 1;
+    }
+    mbedtls_sign[offset] = len;
+    offset += 1;
+    mbedtls_sign[offset] = 0x02;
+    offset += 1;
+    if (signature[0] & 0x80) == 0x80 {
+        // It seems if topmost bit is 1, there is an extra 0
+        mbedtls_sign[offset] = 33;
+        offset += 1;
+        mbedtls_sign[offset] = 0;
+        offset += 1;
+    } else {
+        mbedtls_sign[offset] = 32;
+        offset += 1;
+    }
+    mbedtls_sign[offset..(offset + 32)].copy_from_slice(&signature[..32]);
+    offset += 32;
+
+    mbedtls_sign[offset] = 0x02;
+    offset += 1;
+    if (signature[32] & 0x80) == 0x80 {
+        // It seems if topmost bit is 1, there is an extra 0
+        mbedtls_sign[offset] = 33;
+        offset += 1;
+        mbedtls_sign[offset] = 0;
+        offset += 1;
+    } else {
+        mbedtls_sign[offset] = 32;
+        offset += 1;
+    }
+
+    mbedtls_sign[offset..(offset + 32)].copy_from_slice(&signature[32..64]);
+    offset += 32;
+
+    offset
 }
 
 // mbedTLS sign() function directly encodes the signature in ASN1. The lower level function
