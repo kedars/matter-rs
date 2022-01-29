@@ -117,8 +117,8 @@ impl Case {
 
         let initiator_noc = Cert::new(initiator_noc_b);
         let initiator_icac = Cert::new(initiator_icac_b);
-        if Case::validate_certs(fabric, &initiator_noc, &initiator_icac).is_err() {
-            error!("Certificate Chain doesn't match");
+        if let Err(e) = Case::validate_certs(fabric, &initiator_noc, &initiator_icac) {
+            error!("Certificate Chain doesn't match: {}", e);
             common::create_sc_status_report(proto_tx, common::SCStatusCodes::InvalidParameter)?;
             proto_rx.exchange.close();
             return Ok(());
@@ -290,9 +290,13 @@ impl Case {
     }
 
     fn validate_certs(fabric: &Fabric, noc: &Cert, icac: &Cert) -> Result<(), Error> {
-        if (fabric.get_fabric_id() != noc.get_fabric_id()?)
-            || (fabric.get_fabric_id() != icac.get_fabric_id()?)
-        {
+        if let Ok(fid) = icac.get_fabric_id() {
+            if fid != fabric.get_fabric_id() {
+                return Err(Error::Invalid);
+            }
+        }
+
+        if fabric.get_fabric_id() != noc.get_fabric_id()? {
             return Err(Error::Invalid);
         }
 
