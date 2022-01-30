@@ -70,7 +70,7 @@ impl CloneData {
 impl Session {
     pub fn new(peer_addr: std::net::SocketAddr) -> Session {
         Session {
-            peer_addr: peer_addr,
+            peer_addr,
             dec_key: [0; MATTER_AES128_KEY_SIZE],
             enc_key: [0; MATTER_AES128_KEY_SIZE],
             att_challenge: [0; MATTER_AES128_KEY_SIZE],
@@ -84,7 +84,7 @@ impl Session {
 
     // A new encrypted session always clones from a previous 'new' session
     pub fn clone(&mut self, clone_from: &CloneData) -> Session {
-        let session = Session {
+        Session {
             peer_addr: self.peer_addr,
             dec_key: clone_from.dec_key,
             enc_key: clone_from.enc_key,
@@ -94,8 +94,7 @@ impl Session {
             msg_ctr: 1,
             mode: clone_from.mode,
             data: None,
-        };
-        session
+        }
     }
 
     pub fn set_data(&mut self, data: Box<dyn Any>) {
@@ -341,7 +340,7 @@ impl SessionMgr {
             .ok_or(Error::NoSession)
     }
 
-    fn get_session_handle<'a>(&'a mut self, sess_idx: usize) -> SessionHandle<'a> {
+    fn get_session_handle(&mut self, sess_idx: usize) -> SessionHandle {
         SessionHandle {
             sess_mgr: self,
             sess_idx,

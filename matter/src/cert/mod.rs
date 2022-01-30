@@ -143,7 +143,7 @@ fn decode_extended_key_usage(t: TLVElement, w: &mut dyn CertConsumer) -> Result<
                 return Err(Error::Invalid);
             }
         };
-        w.oid(&str, &oid)?;
+        w.oid(str, &oid)?;
     }
     w.end_seq()?;
     Ok(())
@@ -385,12 +385,12 @@ fn decode_cert(buf: &[u8], w: &mut dyn CertConsumer) -> Result<(), Error> {
     let (str, pub_key) = match get_pubkey_algo(current.get_u8()?).ok_or(Error::Invalid)? {
         PubKeyAlgoValue::EcPubKey => ("ECPubKey", OID_PUB_KEY_ECPUBKEY),
     };
-    w.oid(&str, &pub_key)?;
+    w.oid(str, &pub_key)?;
     current = get_next_tag(&mut iter, CertTags::EcCurveId)?;
     let (str, curve_id) = match get_ec_curve_id(current.get_u8()?).ok_or(Error::Invalid)? {
         EcCurveIdValue::Prime256V1 => ("Prime256v1", OID_EC_TYPE_PRIME256V1),
     };
-    w.oid(&str, &curve_id)?;
+    w.oid(str, &curve_id)?;
     w.end_seq()?;
 
     current = get_next_tag(&mut iter, CertTags::EcPubKey)?;
@@ -520,7 +520,7 @@ impl<'a> CertVerifier<'a> {
         Self { cert }
     }
 
-    pub fn add(self, parent: &'a Cert) -> Result<CertVerifier<'a>, Error> {
+    pub fn add_cert(self, parent: &'a Cert) -> Result<CertVerifier<'a>, Error> {
         if !self.cert.is_authority(parent)? {
             return Err(Error::InvalidAuthKey);
         }
@@ -544,7 +544,7 @@ impl<'a> CertVerifier<'a> {
 
     pub fn finalise(self) -> Result<(), Error> {
         let cert = self.cert;
-        self.add(cert)?;
+        self.add_cert(cert)?;
         Ok(())
     }
 }
@@ -602,7 +602,12 @@ mod tests {
         let icac = Cert::new(&test_vectors::ICAC1_SUCCESS);
         let rca = Cert::new(&test_vectors::RCA1_SUCCESS);
         let a = noc.verify_chain_start();
-        a.add(&icac).unwrap().add(&rca).unwrap().finalise().unwrap();
+        a.add_cert(&icac)
+            .unwrap()
+            .add_cert(&rca)
+            .unwrap()
+            .finalise()
+            .unwrap();
     }
 
     #[test]
@@ -611,7 +616,10 @@ mod tests {
         let noc = Cert::new(&test_vectors::NOC1_SUCCESS);
         let icac = Cert::new(&test_vectors::ICAC1_SUCCESS);
         let a = noc.verify_chain_start();
-        assert_eq!(Err(Error::InvalidAuthKey), a.add(&icac).unwrap().finalise());
+        assert_eq!(
+            Err(Error::InvalidAuthKey),
+            a.add_cert(&icac).unwrap().finalise()
+        );
     }
 
     #[test]
@@ -619,7 +627,7 @@ mod tests {
         let noc = Cert::new(&test_vectors::NOC1_AUTH_KEY_FAIL);
         let icac = Cert::new(&test_vectors::ICAC1_SUCCESS);
         let a = noc.verify_chain_start();
-        assert_eq!(Err(Error::InvalidAuthKey), a.add(&icac).map(|_| ()));
+        assert_eq!(Err(Error::InvalidAuthKey), a.add_cert(&icac).map(|_| ()));
     }
 
     #[test]
@@ -627,7 +635,7 @@ mod tests {
         let noc = Cert::new(&test_vectors::NOC1_CORRUPT_CERT);
         let icac = Cert::new(&test_vectors::ICAC1_SUCCESS);
         let a = noc.verify_chain_start();
-        assert_eq!(Err(Error::InvalidSignature), a.add(&icac).map(|_| ()));
+        assert_eq!(Err(Error::InvalidSignature), a.add_cert(&icac).map(|_| ()));
     }
 
     mod test_vectors {

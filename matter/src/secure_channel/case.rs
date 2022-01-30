@@ -91,12 +91,12 @@ impl Case {
             error!("Data too large");
             return Err(Error::NoSpace);
         }
-        let mut decrypted = &mut decrypted[..encrypted.len()];
+        let decrypted = &mut decrypted[..encrypted.len()];
         decrypted.copy_from_slice(encrypted);
 
         // TODO: Fix IPK
         let dummy_ipk = [0_u8; crypto::SYMM_KEY_LEN_BYTES];
-        let len = Case::get_sigma3_decryption(&dummy_ipk, &case_session, &mut decrypted)?;
+        let len = Case::get_sigma3_decryption(&dummy_ipk, &case_session, decrypted)?;
         let decrypted = &decrypted[..len];
         trace!("Decrypted: {:x?}", decrypted);
 
@@ -301,8 +301,8 @@ impl Case {
         }
 
         noc.verify_chain_start()
-            .add(icac)?
-            .add(&fabric.root_ca)?
+            .add_cert(icac)?
+            .add_cert(&fabric.root_ca)?
             .finalise()?;
 
         Ok(())
@@ -414,7 +414,7 @@ impl Case {
         salt.extend_from_slice(tt_hash);
         //        println!("Sigma2Key: salt: {:x?}, len: {}", salt, salt.len());
 
-        let h = Hkdf::<Sha256>::new(Some(salt.as_slice()), &mut case_session.shared_secret);
+        let h = Hkdf::<Sha256>::new(Some(salt.as_slice()), &case_session.shared_secret);
         h.expand(&S2K_INFO, key).map_err(|_x| Error::NoSpace)?;
         //        println!("Sigma2Key: key: {:x?}", key);
 

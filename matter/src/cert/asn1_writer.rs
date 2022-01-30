@@ -69,7 +69,7 @@ impl<'a> ASN1Writer<'a> {
     fn encode_len(&mut self, mut at_offset: usize, len: usize) -> Result<usize, Error> {
         let mut bytes_of_len = ASN1Writer::bytes_to_encode_len(len)?;
         if bytes_of_len > 1 {
-            self.buf[at_offset] = (0x80 | bytes_of_len - 1) as u8;
+            self.buf[at_offset] = (0x80 | (bytes_of_len - 1)) as u8;
             at_offset += 1;
             bytes_of_len -= 1;
         }

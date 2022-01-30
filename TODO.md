@@ -24,11 +24,9 @@
 * The 'async' requiring 2 buffers is just icky! I tried with peek_from(), but somehow that isn't blocking, causing this requirement
 * CASE:
   - Handle initial MRP Parameters struct from Sigma1
-  - Sigma2: perform signature verification of the sig received from initiator
 * FailSafe:
   - Enable timer and expiration handling for fail-safe context
 * Cert Verification:
-  - Basic certificate chain verification 
   - Time validation (Not Before/Not After)
   - KeyUsage flags and others are pending
 * Cert:

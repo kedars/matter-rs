@@ -29,7 +29,7 @@ const SPACE: [&str; MAX_DEPTH] = [
 
 impl<'a, 'b> CertConsumer for CertPrinter<'a, 'b> {
     fn start_seq(&mut self, tag: &str) -> Result<(), Error> {
-        if tag.len() != 0 {
+        if !tag.is_empty() {
             let _ = writeln!(self.f, "{} {}", SPACE[self.level], tag);
         }
         self.level += 1;
@@ -56,7 +56,7 @@ impl<'a, 'b> CertConsumer for CertPrinter<'a, 'b> {
         Ok(())
     }
     fn start_compound_ostr(&mut self, tag: &str) -> Result<(), Error> {
-        if tag.len() != 0 {
+        if !tag.is_empty() {
             let _ = writeln!(self.f, "{} {}", SPACE[self.level], tag);
         }
         self.level += 1;
@@ -71,7 +71,7 @@ impl<'a, 'b> CertConsumer for CertPrinter<'a, 'b> {
         Ok(())
     }
     fn start_set(&mut self, tag: &str) -> Result<(), Error> {
-        if tag.len() != 0 {
+        if !tag.is_empty() {
             let _ = writeln!(self.f, "{} {}", SPACE[self.level], tag);
         }
         self.level += 1;
@@ -95,7 +95,7 @@ impl<'a, 'b> CertConsumer for CertPrinter<'a, 'b> {
         Ok(())
     }
     fn oid(&mut self, tag: &str, _oid: &[u8]) -> Result<(), Error> {
-        if tag.len() != 0 {
+        if !tag.is_empty() {
             let _ = writeln!(self.f, "{} {}", SPACE[self.level], tag);
         }
         Ok(())

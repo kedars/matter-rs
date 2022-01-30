@@ -192,7 +192,7 @@ impl CryptoMbedTLS {
         let mut len_buf: [u8; 8] = [0; 8];
         LittleEndian::write_u64(&mut len_buf, buf.len() as u64);
         tt.update(len_buf);
-        if buf.len() > 0 {
+        if !buf.is_empty() {
             tt.update(buf);
         }
     }

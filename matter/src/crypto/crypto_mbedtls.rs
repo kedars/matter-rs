@@ -57,16 +57,14 @@ impl CryptoKeyPair for KeyPair {
 
         let mut ctr_drbg = CtrDrbg::new(Arc::new(OsEntropy::new()), None)?;
         match builder.write_der(out_csr, &mut ctr_drbg) {
-            Ok(Some(a)) => {
-                return Ok(a);
-            }
+            Ok(Some(a)) => Ok(a),
             Ok(None) => {
                 error!("Error in writing CSR: None received");
-                return Err(Error::Invalid);
+                Err(Error::Invalid)
             }
             Err(e) => {
                 error!("Error in writing CSR {}", e);
-                return Err(Error::TLSStack);
+                Err(Error::TLSStack)
             }
         }
     }
@@ -141,7 +139,7 @@ impl CryptoKeyPair for KeyPair {
         let len = convert_r_s_to_asn1_sign(signature, &mut mbedtls_sign);
         let mbedtls_sign = &mbedtls_sign[..len];
 
-        if let Err(e) = tmp_key.verify(hash::Type::Sha256, &msg_hash, &mbedtls_sign) {
+        if let Err(e) = tmp_key.verify(hash::Type::Sha256, &msg_hash, mbedtls_sign) {
             println!("The error is {}", e);
             Err(Error::InvalidSignature)
         } else {

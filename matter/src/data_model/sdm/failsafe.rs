@@ -108,14 +108,14 @@ impl FailSafe {
         let mut inner = self.state.write()?;
         let allow = match &mut inner.state {
             State::Idle => false,
-            State::Armed(c) => {
-                if c.noc_state == NocState::NocNotRecvd {
-                    true
-                } else {
-                    false
-                }
-            }
+            State::Armed(c) => c.noc_state == NocState::NocNotRecvd,
         };
         Ok(allow)
+    }
+}
+
+impl Default for FailSafe {
+    fn default() -> Self {
+        Self::new()
     }
 }
