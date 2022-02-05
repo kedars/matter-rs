@@ -274,8 +274,10 @@ pub fn encrypt_in_place(
         (key.len() * 8) as u32,
     )?;
     let cipher = cipher.set_key_iv(key, nonce)?;
+    let (data, tag) = data.split_at_mut(data_len);
+    let tag = &mut tag[..16];
     cipher
-        .encrypt_auth_inplace(ad, data, data_len, 16)
+        .encrypt_auth_inplace(ad, data, tag)
         .map(|(len, _)| len)
         .map_err(|_e| Error::TLSStack)
 }
@@ -292,8 +294,10 @@ pub fn decrypt_in_place(
         (key.len() * 8) as u32,
     )?;
     let cipher = cipher.set_key_iv(key, nonce)?;
+    let data_len = data.len() - 16;
+    let (data, tag) = data.split_at_mut(data_len);
     cipher
-        .decrypt_auth_inplace(ad, data, 16)
+        .decrypt_auth_inplace(ad, data, tag)
         .map(|(len, _)| len)
         .map_err(|_e| Error::TLSStack)
 }

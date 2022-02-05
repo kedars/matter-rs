@@ -8,7 +8,7 @@ name = "matter"
 path = "src/lib.rs"
 
 [features]
-default = ["crypto_openssl"]
+default = ["crypto_mbedtls"]
 crypto_openssl = ["openssl"]
 crypto_mbedtls = ["mbedtls"]
 crypto_esp_mbedtls = ["esp-idf-sys"]
