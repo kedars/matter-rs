@@ -175,21 +175,29 @@ fn add_nocsrelement(
     Ok(())
 }
 
-fn get_addnoc_params<'a, 'b, 'c, 'd, 'e>(
-    cmd_req: &mut CommandReq<'a, 'b, 'c, 'd, 'e>,
-) -> Result<(&'a [u8], &'a [u8], &'a [u8], u32, u16), Error> {
-    let noc_value = cmd_req.data.find_tag(0)?.get_slice()?;
-    let icac_value = cmd_req.data.find_tag(1)?.get_slice()?;
-    let ipk_value = cmd_req.data.find_tag(2)?.get_slice()?;
-    let case_admin_node_id = cmd_req.data.find_tag(3)?.get_u32()?;
-    let vendor_id = cmd_req.data.find_tag(4)?.get_u16()?;
-    Ok((
-        noc_value,
-        icac_value,
-        ipk_value,
-        case_admin_node_id,
-        vendor_id,
-    ))
+struct AddNocReq<'a> {
+    noc_value: &'a [u8],
+    icac_value: &'a [u8],
+    ipk_value: &'a [u8],
+    _case_admin_node_id: u32,
+    _vendor_id: u16,
+}
+
+impl<'a> AddNocReq<'a> {
+    fn new(data: &'a TLVElement) -> Result<Self, Error> {
+        let noc_value = data.find_tag(0)?.get_slice()?;
+        let icac_value = data.find_tag(1)?.get_slice()?;
+        let ipk_value = data.find_tag(2)?.get_slice()?;
+        let case_admin_node_id = data.find_tag(3)?.get_u32()?;
+        let vendor_id = data.find_tag(4)?.get_u16()?;
+        Ok(Self {
+            noc_value,
+            icac_value,
+            ipk_value,
+            _case_admin_node_id: case_admin_node_id,
+            _vendor_id: vendor_id,
+        })
+    }
 }
 
 fn get_certchainrequest_params(data: &TLVElement) -> Result<DataType, Error> {
@@ -333,7 +341,7 @@ fn handle_command_addtrustedrootcert(
 
     // This may happen on CASE or PASE. For PASE, the existence of NOC Data is necessary
     match cmd_req.trans.session.get_session_mode() {
-        SessionMode::Case(_) => (), // For a CASE Session, we just return success for now,
+        SessionMode::Case(_) => error!("CASE: AddTrustedRootCert handling pending"), // For a CASE Session, we just return success for now,
         SessionMode::Pase => {
             let noc_data = cmd_req
                 .trans
@@ -379,12 +387,11 @@ fn _handle_command_addnoc(
         return Err(NocStatus::InsufficientPrivlege);
     }
 
-    let (noc_value, icac_value, ipk_value, _case_admin_node_id, _vendor_id) =
-        get_addnoc_params(cmd_req).map_err(|_| NocStatus::InvalidNOC)?;
+    let r = AddNocReq::new(&cmd_req.data).map_err(|_| NocStatus::InvalidNOC)?;
 
-    let noc_value = Cert::new(noc_value);
+    let noc_value = Cert::new(r.noc_value);
     info!("Received NOC as: {}", noc_value);
-    let icac_value = Cert::new(icac_value);
+    let icac_value = Cert::new(r.icac_value);
     info!("Received ICAC as: {}", icac_value);
 
     let fabric = Fabric::new(
@@ -392,7 +399,7 @@ fn _handle_command_addnoc(
         noc_data.root_ca,
         icac_value,
         noc_value,
-        Cert::new(ipk_value),
+        Cert::new(r.ipk_value),
     )
     .map_err(|_| NocStatus::TableFull)?;
     let fab_idx = noc_cluster
