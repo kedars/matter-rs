@@ -155,7 +155,7 @@ pub fn encrypt_in_place(
     get_iv(send_ctr, &mut iv)?;
 
     // Cipher Text
-    let tag_space = [0u8; TAG_LEN];
+    let tag_space = [0u8; crypto::AEAD_MIC_LEN_BYTES];
     writebuf.append(&tag_space)?;
     let cipher_text = writebuf.as_mut_slice();
 
@@ -164,7 +164,7 @@ pub fn encrypt_in_place(
         &iv,
         plain_hdr,
         cipher_text,
-        cipher_text.len() - TAG_LEN,
+        cipher_text.len() - crypto::AEAD_MIC_LEN_BYTES,
     )?;
     //println!("Cipher Text: {:x?}", cipher_text);
 
@@ -198,7 +198,7 @@ fn decrypt_in_place(recvd_ctr: u32, parsebuf: &mut ParseBuf, key: &[u8]) -> Resu
 
     crypto::decrypt_in_place(key, &iv, &aad, cipher_text)?;
     // println!("Plain Text: {:x?}", cipher_text);
-    parsebuf.tail(TAG_LEN)?;
+    parsebuf.tail(crypto::AEAD_MIC_LEN_BYTES)?;
     Ok(())
 }
 

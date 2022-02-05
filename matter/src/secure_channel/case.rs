@@ -11,7 +11,7 @@ use crate::crypto;
 use crate::secure_channel::common::SCStatusCodes;
 use crate::transport::session::{CloneData, SessionMode};
 use crate::{
-    crypto::{self, CryptoKeyPair, KeyPair},
+    crypto::{CryptoKeyPair, KeyPair},
     error::Error,
     fabric::{Fabric, FabricMgr, FabricMgrInner},
     proto_demux::{ProtoRx, ProtoTx},
@@ -346,7 +346,7 @@ impl Case {
         ];
 
         let encrypted_len = encrypted.len();
-        crypto::decrypt_in_place(sigma3_key, &nonce, &[], encrypted)?;
+        crypto::decrypt_in_place(&sigma3_key, &nonce, &[], encrypted)?;
         Ok(encrypted_len - crypto::AEAD_MIC_LEN_BYTES)
     }
 
