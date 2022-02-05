@@ -11,21 +11,21 @@ use std::sync::Arc;
 pub struct Matter {
     transport_mgr: transport::mgr::Mgr,
     data_model: Arc<DataModel>,
-    _fabric_mgr: Arc<FabricMgr>,
+    fabric_mgr: Arc<FabricMgr>,
 }
 
 impl Matter {
-    pub fn new(dev_att: Box<dyn DevAttDataFetcher>) -> Result<Matter, Error> {
+    pub fn new(dev_att: Box<dyn DevAttDataFetcher>) -> Result<Box<Matter>, Error> {
         let fabric_mgr = Arc::new(FabricMgr::new()?);
         let data_model = Arc::new(DataModel::new(dev_att, fabric_mgr.clone())?);
-        let interaction_model = Box::new(InteractionModel::new(data_model.clone()));
-        let secure_channel = Box::new(SecureChannel::new(fabric_mgr.clone()));
-        let mut matter = Matter {
+        let mut matter = Box::new(Matter {
             transport_mgr: transport::mgr::Mgr::new()?,
             data_model,
-            _fabric_mgr: fabric_mgr,
-        };
+            fabric_mgr,
+        });
+        let interaction_model = Box::new(InteractionModel::new(matter.data_model.clone()));
         matter.transport_mgr.register_protocol(interaction_model)?;
+        let secure_channel = Box::new(SecureChannel::new(matter.fabric_mgr.clone()));
         matter.transport_mgr.register_protocol(secure_channel)?;
         Ok(matter)
     }

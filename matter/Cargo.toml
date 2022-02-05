@@ -11,6 +11,7 @@ path = "src/lib.rs"
 default = ["crypto_mbedtls"]
 crypto_openssl = ["openssl"]
 crypto_mbedtls = ["mbedtls"]
+crypto_esp_mbedtls = ["esp-idf-sys"]
 
 [dependencies]
 byteorder = "1.4.3"
@@ -26,15 +27,15 @@ sha2 = "0.9.8"
 rand = "0.8.4"
 openssl = { version = "0.10.38", optional = true}
 mbedtls = { version = "0.8.1", optional = true}
+esp-idf-sys = { version = "0.30", features = ["binstart"], optional = true }
 hmac = "0.11.0"
 hkdf = "0.11.0"
 subtle = "2.4.1"
 colored = "2.0.0"
 smol = "1.2.5"
-futures-lite = "1.12.0"
 owning_ref = "0.4.1"
 safemem = "0.3.3"
-chrono = "0.4.19"
+chrono = { version = "0.4.19", default-features = false, features = ["clock", "std"] }
 
 [[example]]
 name = "onoff_light"

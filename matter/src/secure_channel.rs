@@ -1,5 +1,7 @@
 pub mod case;
 pub mod common;
+#[cfg(feature = "crypto_esp_mbedtls")]
+pub mod crypto_esp_mbedtls;
 #[cfg(feature = "crypto_mbedtls")]
 pub mod crypto_mbedtls;
 #[cfg(feature = "crypto_openssl")]

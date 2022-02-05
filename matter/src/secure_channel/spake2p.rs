@@ -13,6 +13,9 @@ use super::crypto_openssl::CryptoOpenSSL;
 #[cfg(feature = "crypto_mbedtls")]
 use super::crypto_mbedtls::CryptoMbedTLS;
 
+#[cfg(feature = "crypto_esp_mbedtls")]
+use super::crypto_esp_mbedtls::CryptoEspMbedTls;
+
 use super::{common::SCStatusCodes, crypto::CryptoSpake2};
 
 // This file handle Spake2+ specific instructions. In itself, this file is
@@ -63,6 +66,11 @@ fn crypto_spake2_new() -> Result<Box<dyn CryptoSpake2>, Error> {
 #[cfg(feature = "crypto_mbedtls")]
 fn crypto_spake2_new() -> Result<Box<dyn CryptoSpake2>, Error> {
     Ok(Box::new(CryptoMbedTLS::new()?))
+}
+
+#[cfg(feature = "crypto_esp_mbedtls")]
+fn crypto_spake2_new() -> Result<Box<dyn CryptoSpake2>, Error> {
+    Ok(Box::new(CryptoEspMbedTls::new()?))
 }
 
 impl Default for Spake2P {
