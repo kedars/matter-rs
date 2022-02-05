@@ -1,4 +1,6 @@
-* udp.c: Move the 'in_buf' out of the stack to bss
+* udp.c:
+  * Could get rid of 'smol' in here, no other processing is performed in this thread
+  * Move the 'in_buf' out of the stack to bss
 * TLVList:
   * The 'Pointer' could be directly used in the TLVListIterator, makes it common
   * Not too happy with the way iterator_consumer is done for ContainerIterator, we could just zip the internal ListIterator instead?
@@ -21,7 +23,6 @@
 * Implement the ARM Fail Safe and Regulatory Config properly. Currently we just ack them to proceed further
 * Currently AEAD, sha256 etc are directly used from rust crates. Instead use implementations from openssl/mbedtls - Done. Upstream MRs pending
 * rust-mbedTLS: We have to do some gymnastics because current APIs only support signature encoded in ASN1 format. Fix this upstream
-* The 'async' requiring 2 buffers is just icky! I tried with peek_from(), but somehow that isn't blocking, causing this requirement
 * CASE:
   - Handle initial MRP Parameters struct from Sigma1
 * FailSafe:
