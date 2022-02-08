@@ -5,8 +5,7 @@ use mbedtls::{
     bignum::Mpi,
     cipher::{Authenticated, Cipher},
     ecp::EcPoint,
-    hash::Md,
-    hash::{self, Type},
+    hash::{self, Md, Type},
     pk::{EcGroup, EcGroupId, Pk},
     rng::{CtrDrbg, OsEntropy},
     x509,
@@ -261,6 +260,10 @@ pub fn pbkdf2_hmac(pass: &[u8], iter: usize, salt: &[u8], key: &mut [u8]) -> Res
         .map_err(|_e| Error::TLSStack)
 }
 
+pub fn hkdf_sha256(salt: &[u8], ikm: &[u8], info: &[u8], key: &mut [u8]) -> Result<(), Error> {
+    Md::hkdf(Type::Sha256, salt, ikm, info, key).map_err(|_e| Error::TLSStack)
+}
+
 pub fn encrypt_in_place(
     key: &[u8],
     nonce: &[u8],
@@ -275,7 +278,7 @@ pub fn encrypt_in_place(
     )?;
     let cipher = cipher.set_key_iv(key, nonce)?;
     let (data, tag) = data.split_at_mut(data_len);
-    let tag = &mut tag[..16];
+    let tag = &mut tag[..super::AEAD_MIC_LEN_BYTES];
     cipher
         .encrypt_auth_inplace(ad, data, tag)
         .map(|(len, _)| len)
@@ -294,7 +297,7 @@ pub fn decrypt_in_place(
         (key.len() * 8) as u32,
     )?;
     let cipher = cipher.set_key_iv(key, nonce)?;
-    let data_len = data.len() - 16;
+    let data_len = data.len() - super::AEAD_MIC_LEN_BYTES;
     let (data, tag) = data.split_at_mut(data_len);
     cipher
         .decrypt_auth_inplace(ad, data, tag)

@@ -2,6 +2,7 @@ use super::{
     common::{create_sc_status_report, SCStatusCodes},
     spake2p::Spake2P,
 };
+use crate::crypto;
 use crate::tlv::*;
 use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
@@ -10,10 +11,8 @@ use crate::{
     proto_demux::{ProtoRx, ProtoTx},
     transport::session::SessionMode,
 };
-use hkdf::Hkdf;
 use log::error;
 use rand::prelude::*;
-use sha2::Sha256;
 
 // This file basically deals with the handlers for the PASE secure channel protocol
 // TLV extraction and encoding is done in this file.
@@ -63,9 +62,8 @@ impl PAKE {
         if status_code == SCStatusCodes::SessionEstablishmentSuccess {
             // Get the keys
             let Ke = Ke.ok_or(Error::Invalid)?;
-            let h = Hkdf::<Sha256>::new(None, Ke);
             let mut session_keys: [u8; 48] = [0; 48];
-            h.expand(&SPAKE2_SESSION_KEYS_INFO, &mut session_keys)
+            crypto::hkdf_sha256(&[], Ke, &SPAKE2_SESSION_KEYS_INFO, &mut session_keys)
                 .map_err(|_x| Error::NoSpace)?;
 
             // Create a session

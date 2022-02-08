@@ -187,6 +187,19 @@ pub fn pbkdf2_hmac(pass: &[u8], iter: usize, salt: &[u8], key: &mut [u8]) -> Res
         .map_err(|_e| Error::TLSStack)
 }
 
+pub fn hkdf_sha256(salt: &[u8], ikm: &[u8], info: &[u8], key: &mut [u8]) -> Result<(), Error> {
+    let mut ctx = PkeyCtx::new_id(Id::HKDF)?;
+    ctx.derive_init()?;
+    ctx.set_hkdf_md(Md::sha256())?;
+    ctx.set_hkdf_key(ikm)?;
+    if !salt.is_empty() {
+        ctx.set_hkdf_salt(salt)?;
+    }
+    ctx.add_hkdf_info(info)?;
+    ctx.derive(Some(key))?;
+    Ok(())
+}
+
 pub fn encrypt_in_place(
     key: &[u8],
     nonce: &[u8],

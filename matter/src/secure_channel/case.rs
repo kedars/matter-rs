@@ -1,24 +1,22 @@
 use std::sync::Arc;
 
-use hkdf::Hkdf;
 use log::{error, trace};
 use owning_ref::RwLockReadGuardRef;
 use rand::prelude::*;
 use sha2::{Digest, Sha256};
 
-use crate::cert::Cert;
-use crate::crypto;
-use crate::secure_channel::common::SCStatusCodes;
-use crate::transport::session::{CloneData, SessionMode};
 use crate::{
-    crypto::{CryptoKeyPair, KeyPair},
+    cert::Cert,
+    crypto::{self, CryptoKeyPair, KeyPair},
     error::Error,
     fabric::{Fabric, FabricMgr, FabricMgrInner},
     proto_demux::{ProtoRx, ProtoTx},
     secure_channel::common,
+    secure_channel::common::SCStatusCodes,
     tlv::get_root_node_struct,
     tlv_common::TagType,
     tlv_writer::TLVWriter,
+    transport::session::{CloneData, SessionMode},
     utils::writebuf::WriteBuf,
 };
 
@@ -320,8 +318,8 @@ impl Case {
         salt.extend_from_slice(tt_hash);
         //        println!("Session Key: salt: {:x?}, len: {}", salt, salt.len());
 
-        let h = Hkdf::<Sha256>::new(Some(salt.as_slice()), shared_secret);
-        h.expand(&SEKEYS_INFO, key).map_err(|_x| Error::NoSpace)?;
+        crypto::hkdf_sha256(salt.as_slice(), shared_secret, &SEKEYS_INFO, key)
+            .map_err(|_x| Error::NoSpace)?;
         //        println!("Session Key: key: {:x?}", key);
 
         Ok(())
@@ -369,8 +367,8 @@ impl Case {
         salt.extend_from_slice(tt_hash);
         //        println!("Sigma3Key: salt: {:x?}, len: {}", salt, salt.len());
 
-        let h = Hkdf::<Sha256>::new(Some(salt.as_slice()), shared_secret);
-        h.expand(&S3K_INFO, key).map_err(|_x| Error::NoSpace)?;
+        crypto::hkdf_sha256(salt.as_slice(), shared_secret, &S3K_INFO, key)
+            .map_err(|_x| Error::NoSpace)?;
         //        println!("Sigma3Key: key: {:x?}", key);
 
         Ok(())
@@ -397,8 +395,8 @@ impl Case {
         salt.extend_from_slice(tt_hash);
         //        println!("Sigma2Key: salt: {:x?}, len: {}", salt, salt.len());
 
-        let h = Hkdf::<Sha256>::new(Some(salt.as_slice()), &case_session.shared_secret);
-        h.expand(&S2K_INFO, key).map_err(|_x| Error::NoSpace)?;
+        crypto::hkdf_sha256(salt.as_slice(), &case_session.shared_secret, &S2K_INFO, key)
+            .map_err(|_x| Error::NoSpace)?;
         //        println!("Sigma2Key: key: {:x?}", key);
 
         Ok(())
