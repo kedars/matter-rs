@@ -1,7 +1,6 @@
 use std::sync::RwLock;
 
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
-use hkdf::Hkdf;
 use hmac::{Hmac, Mac, NewMac};
 use log::info;
 use owning_ref::RwLockReadGuardRef;
@@ -10,7 +9,7 @@ use sha2::Sha256;
 use crate::{
     cert::Cert,
     crypto::KeyPair,
-    crypto::{crypto_dummy::KeyPairDummy, CryptoKeyPair},
+    crypto::{crypto_dummy::KeyPairDummy, hkdf_sha256, CryptoKeyPair},
     error::Error,
 };
 
@@ -85,8 +84,7 @@ impl Fabric {
             0x43, 0x6f, 0x6d, 0x70, 0x72, 0x65, 0x73, 0x73, 0x65, 0x64, 0x46, 0x61, 0x62, 0x72,
             0x69, 0x63,
         ];
-        let h = Hkdf::<Sha256>::new(Some(&fabric_id_be), root_pubkey);
-        h.expand(&COMPRESSED_FABRIC_ID_INFO, out)
+        hkdf_sha256(&fabric_id_be, root_pubkey, &COMPRESSED_FABRIC_ID_INFO, out)
             .map_err(|_| Error::NoSpace)
     }
 

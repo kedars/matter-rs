@@ -5,12 +5,6 @@ use crate::utils::parsebuf::ParseBuf;
 use crate::utils::writebuf::WriteBuf;
 use crate::{crypto, error::*};
 
-use aes::Aes128;
-use ccm::aead::{generic_array::GenericArray, AeadInPlace, NewAead};
-use ccm::{
-    consts::{U13, U16},
-    Ccm,
-};
 use log::{info, trace};
 
 const EXCHANGE_FLAG_VENDOR_MASK: u8 = 0x10;
@@ -159,17 +153,20 @@ pub fn encrypt_in_place(
     // IV
     let mut iv = [0_u8; crypto::AEAD_NONCE_LEN_BYTES];
     get_iv(send_ctr, &mut iv)?;
-    let nonce = GenericArray::from_slice(&iv);
 
     // Cipher Text
+    let tag_space = [0u8; crypto::AEAD_MIC_LEN_BYTES];
+    writebuf.append(&tag_space)?;
     let cipher_text = writebuf.as_mut_slice();
 
-    type AesCcm = Ccm<Aes128, U16, U13>;
-    let cipher = AesCcm::new(GenericArray::from_slice(key));
-    let tag = cipher.encrypt_in_place_detached(nonce, plain_hdr, cipher_text)?;
-    //println!("Tag: {:x?}", tag);
+    crypto::encrypt_in_place(
+        key,
+        &iv,
+        plain_hdr,
+        cipher_text,
+        cipher_text.len() - crypto::AEAD_MIC_LEN_BYTES,
+    )?;
     //println!("Cipher Text: {:x?}", cipher_text);
-    writebuf.append(tag.as_slice())?;
 
     Ok(())
 }
@@ -187,17 +184,10 @@ fn decrypt_in_place(recvd_ctr: u32, parsebuf: &mut ParseBuf, key: &[u8]) -> Resu
         return Err(Error::InvalidAAD);
     }
 
-    // Tag:
-    //    the last AEAD_MIC_LEN_BYTES of the packet
-    let mut tag = [0_u8; crypto::AEAD_MIC_LEN_BYTES];
-    tag.copy_from_slice(parsebuf.tail(crypto::AEAD_MIC_LEN_BYTES)?);
-    let tag = GenericArray::from_slice(&tag);
-
     // IV:
     //   the specific way for creating IV is in get_iv
     let mut iv = [0_u8; crypto::AEAD_NONCE_LEN_BYTES];
     get_iv(recvd_ctr, &mut iv)?;
-    let nonce = GenericArray::from_slice(&iv);
 
     let cipher_text = parsebuf.as_borrow_slice();
     // println!("AAD: {:x?}", aad);
@@ -206,12 +196,9 @@ fn decrypt_in_place(recvd_ctr: u32, parsebuf: &mut ParseBuf, key: &[u8]) -> Resu
     // println!("IV: {:x?}", iv);
     // println!("Key: {:x?}", key);
 
-    // Matter Spec says Nonce size is 13, but the code has 12
-    type AesCcm = Ccm<Aes128, U16, U13>;
-    let cipher = AesCcm::new(GenericArray::from_slice(key));
-    cipher.decrypt_in_place_detached(nonce, &aad, cipher_text, tag)?;
+    crypto::decrypt_in_place(key, &iv, &aad, cipher_text)?;
     // println!("Plain Text: {:x?}", cipher_text);
-
+    parsebuf.tail(crypto::AEAD_MIC_LEN_BYTES)?;
     Ok(())
 }
 

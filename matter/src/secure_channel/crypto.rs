@@ -1,4 +1,4 @@
-use aes::cipher::generic_array::GenericArray;
+use generic_array::GenericArray;
 use sha2::Digest;
 
 use crate::error::Error;

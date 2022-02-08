@@ -1,19 +1,23 @@
 use crate::error::Error;
 
+use super::CryptoKeyPair;
+use foreign_types::ForeignTypeRef;
 use log::error;
 use openssl::asn1::Asn1Type;
 use openssl::bn::{BigNum, BigNumContext};
+use openssl::cipher::CipherRef;
+use openssl::cipher_ctx::{CipherCtx, CipherCtxRef};
 use openssl::derive::Deriver;
 use openssl::ec::{EcGroup, EcKey, EcPoint, EcPointRef, PointConversionForm};
 use openssl::ecdsa::EcdsaSig;
+use openssl::error::ErrorStack;
 use openssl::hash::{Hasher, MessageDigest};
+use openssl::md::Md;
 use openssl::nid::Nid;
-use openssl::pkey::PKey;
-use openssl::pkey::{self, Private};
+use openssl::pkey::{self, Id, PKey, Private};
+use openssl::pkey_ctx::PkeyCtx;
+use openssl::symm::{self};
 use openssl::x509::{X509NameBuilder, X509ReqBuilder, X509};
-
-use super::CryptoKeyPair;
-
 pub enum KeyType {
     Public(EcKey<pkey::Public>),
     Private(EcKey<pkey::Private>),
@@ -181,4 +185,128 @@ pub fn pubkey_from_der<'a>(der: &'a [u8], out_key: &mut [u8]) -> Result<(), Erro
 pub fn pbkdf2_hmac(pass: &[u8], iter: usize, salt: &[u8], key: &mut [u8]) -> Result<(), Error> {
     openssl::pkcs5::pbkdf2_hmac(pass, salt, iter, MessageDigest::sha256(), key)
         .map_err(|_e| Error::TLSStack)
+}
+
+pub fn hkdf_sha256(salt: &[u8], ikm: &[u8], info: &[u8], key: &mut [u8]) -> Result<(), Error> {
+    let mut ctx = PkeyCtx::new_id(Id::HKDF)?;
+    ctx.derive_init()?;
+    ctx.set_hkdf_md(Md::sha256())?;
+    ctx.set_hkdf_key(ikm)?;
+    if !salt.is_empty() {
+        ctx.set_hkdf_salt(salt)?;
+    }
+    ctx.add_hkdf_info(info)?;
+    ctx.derive(Some(key))?;
+    Ok(())
+}
+
+pub fn encrypt_in_place(
+    key: &[u8],
+    nonce: &[u8],
+    ad: &[u8],
+    data: &mut [u8],
+    data_len: usize,
+) -> Result<usize, Error> {
+    let (plain_text, tag) = data.split_at_mut(data_len);
+
+    let result = lowlevel_encrypt_aead(
+        key,
+        Some(nonce),
+        ad,
+        plain_text,
+        &mut tag[..super::AEAD_MIC_LEN_BYTES],
+    )?;
+    data[..data_len].copy_from_slice(result.as_slice());
+    Ok(result.len() + super::AEAD_MIC_LEN_BYTES)
+}
+
+pub fn decrypt_in_place(
+    key: &[u8],
+    nonce: &[u8],
+    ad: &[u8],
+    data: &mut [u8],
+) -> Result<usize, Error> {
+    let tag_start = data.len() - super::AEAD_MIC_LEN_BYTES;
+    let (data, tag) = data.split_at_mut(tag_start);
+    let result = lowlevel_decrypt_aead(key, Some(nonce), ad, data, &tag)?;
+    data[..result.len()].copy_from_slice(result.as_slice());
+    Ok(result.len())
+}
+
+// The default encrypt/decrypt routines in rust-mbedtls have a problem in the ordering of
+// set-tag-length. This causes the CCM tag-length to be use incorrectly.
+// Instead we use the low-level CipherCtx APIs here to get the desired behaviour.
+// More details available here: https://github.com/sfackler/rust-openssl/pull/1594/
+//   Need to pursue this PR when I get a chance
+pub fn lowlevel_encrypt_aead(
+    key: &[u8],
+    iv: Option<&[u8]>,
+    aad: &[u8],
+    data: &[u8],
+    tag: &mut [u8],
+) -> Result<Vec<u8>, ErrorStack> {
+    let t = symm::Cipher::aes_128_ccm();
+    let mut ctx = CipherCtx::new()?;
+    CipherCtxRef::encrypt_init(
+        &mut ctx,
+        Some(unsafe { CipherRef::from_ptr(t.as_ptr() as *mut _) }),
+        None,
+        None,
+    )?;
+
+    ctx.set_tag_length(tag.len())?;
+    ctx.set_key_length(key.len())?;
+    if let (Some(iv), Some(iv_len)) = (iv, t.iv_len()) {
+        if iv.len() != iv_len {
+            ctx.set_iv_length(iv.len())?;
+        }
+    }
+    CipherCtxRef::encrypt_init(&mut ctx, None, Some(key), iv)?;
+
+    let mut out = vec![0; data.len() + t.block_size()];
+    ctx.set_data_len(data.len())?;
+
+    ctx.cipher_update(aad, None)?;
+    let count = ctx.cipher_update(data, Some(&mut out))?;
+    let rest = ctx.cipher_final(&mut out[count..])?;
+    ctx.tag(tag)?;
+    out.truncate(count + rest);
+    Ok(out)
+}
+
+pub fn lowlevel_decrypt_aead(
+    key: &[u8],
+    iv: Option<&[u8]>,
+    aad: &[u8],
+    data: &[u8],
+    tag: &[u8],
+) -> Result<Vec<u8>, ErrorStack> {
+    let t = symm::Cipher::aes_128_ccm();
+    let mut ctx = CipherCtx::new()?;
+    CipherCtxRef::decrypt_init(
+        &mut ctx,
+        Some(unsafe { CipherRef::from_ptr(t.as_ptr() as *mut _) }),
+        None,
+        None,
+    )?;
+
+    ctx.set_tag_length(tag.len())?;
+    ctx.set_key_length(key.len())?;
+    if let (Some(iv), Some(iv_len)) = (iv, t.iv_len()) {
+        if iv.len() != iv_len {
+            ctx.set_iv_length(iv.len())?;
+        }
+    }
+    CipherCtxRef::decrypt_init(&mut ctx, None, Some(key), iv)?;
+
+    let mut out = vec![0; data.len() + t.block_size()];
+
+    ctx.set_tag(tag)?;
+    ctx.set_data_len(data.len())?;
+
+    ctx.cipher_update(aad, None)?;
+    let count = ctx.cipher_update(data, Some(&mut out))?;
+
+    out.truncate(count);
+    Ok(out)
 }

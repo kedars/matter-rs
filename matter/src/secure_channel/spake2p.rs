@@ -1,6 +1,6 @@
-use aes::cipher::generic_array::GenericArray;
+use crate::crypto;
 use byteorder::{ByteOrder, LittleEndian};
-use hkdf::Hkdf;
+use generic_array::GenericArray;
 use hmac::{Hmac, Mac, NewMac};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
@@ -186,14 +186,12 @@ impl Spake2P {
         }
 
         // Step 2: KcA || KcB = KDF(nil, Ka, "ConfirmationKeys")
-        let h = Hkdf::<Sha256>::new(None, Ka);
         let mut KcAKcB: [u8; 32] = [0; 32];
-        let KcAKcB_len = KcAKcB.len();
-        h.expand(&SPAKE2P_KEY_CONFIRM_INFO, &mut KcAKcB)
+        crypto::hkdf_sha256(&[], Ka, &SPAKE2P_KEY_CONFIRM_INFO, &mut KcAKcB)
             .map_err(|_x| Error::NoSpace)?;
 
-        let KcA = &KcAKcB[0..(KcAKcB_len / 2)];
-        let KcB = &KcAKcB[(KcAKcB_len / 2)..];
+        let KcA = &KcAKcB[0..(KcAKcB.len() / 2)];
+        let KcB = &KcAKcB[(KcAKcB.len() / 2)..];
 
         // Step 3: cA = HMAC(KcA, pB), cB = HMAC(KcB, pA)
         let mut mac = Hmac::<Sha256>::new_from_slice(KcA).map_err(|_x| Error::InvalidKeyLength)?;
