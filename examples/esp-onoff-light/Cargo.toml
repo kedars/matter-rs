@@ -1,0 +1,36 @@
+[package]
+name = "esp-onoff-light"
+version = "0.1.0"
+authors = ["kedars <kedars@gmail.com>"]
+edition = "2018"
+resolver = "2"
+
+[patch.crates-io]
+smol = { git = "https://github.com/esp-rs-compat/smol" }
+polling = { git = "https://github.com/esp-rs-compat/polling" }
+socket2 = { git = "https://github.com/esp-rs-compat/socket2" }
+getrandom = { version = "0.2", git = "https://github.com/esp-rs-compat/getrandom.git" }
+chrono = { git = "https://github.com/kedars/chrono" }
+
+[profile.release]
+opt-level = "s"
+
+[profile.dev]
+debug = true # Symbols are nice and they don't increase the size on Flash
+opt-level = "z"
+
+[features]
+default = ["native"]
+native = ["esp-idf-sys/native"]
+
+[dependencies]
+esp-idf-sys = { version = "0.30", features = ["binstart"] }
+esp-idf-svc = { version = "0.36", features = ["experimental"] }
+embedded-svc = { version = "0.16", features = ["experimental"] }
+matter = { path = "../../matter", default-features = false, features = ["crypto_esp_mbedtls"]}
+env_logger = "0.9.0"
+smol = "1.2"
+
+[build-dependencies]
+embuild = "0.28"
+anyhow = "1"
