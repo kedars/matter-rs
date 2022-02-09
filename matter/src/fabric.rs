@@ -1,15 +1,12 @@
 use std::sync::RwLock;
 
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
-use hmac::{Hmac, Mac, NewMac};
 use log::info;
 use owning_ref::RwLockReadGuardRef;
-use sha2::Sha256;
 
 use crate::{
     cert::Cert,
-    crypto::KeyPair,
-    crypto::{crypto_dummy::KeyPairDummy, hkdf_sha256, CryptoKeyPair},
+    crypto::{self, crypto_dummy::KeyPairDummy, hkdf_sha256, CryptoKeyPair, HmacSha256, KeyPair},
     error::Error,
 };
 
@@ -91,19 +88,20 @@ impl Fabric {
     pub fn match_dest_id(&self, random: &[u8], target: &[u8]) -> Result<(), Error> {
         // TODO: Currently chip-tool expect ipk as all zeroes
         let dummy_ipk: [u8; 16] = [0; 16];
-        let mut mac =
-            Hmac::<Sha256>::new_from_slice(&dummy_ipk).map_err(|_x| Error::InvalidKeyLength)?;
-        mac.update(random);
-        mac.update(self.root_ca.get_pubkey()?);
+        let mut mac = HmacSha256::new(&dummy_ipk)?;
+
+        mac.update(random)?;
+        mac.update(self.root_ca.get_pubkey()?)?;
 
         let mut buf: [u8; 8] = [0; 8];
         LittleEndian::write_u64(&mut buf, self.fabric_id);
-        mac.update(&buf);
+        mac.update(&buf)?;
 
         LittleEndian::write_u64(&mut buf, self.node_id);
-        mac.update(&buf);
+        mac.update(&buf)?;
 
-        let id = mac.finalize().into_bytes();
+        let mut id = [0_u8; crypto::SHA256_HASH_LEN_BYTES];
+        mac.finish(&mut id)?;
         if id.as_slice() == target {
             Ok(())
         } else {

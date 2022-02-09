@@ -18,6 +18,33 @@ use openssl::pkey::{self, Id, PKey, Private};
 use openssl::pkey_ctx::PkeyCtx;
 use openssl::symm::{self};
 use openssl::x509::{X509NameBuilder, X509ReqBuilder, X509};
+
+// We directly use the hmac crate here, there was a self-referential structure
+// problem while using OpenSSL's Signer
+// TODO: Use proper OpenSSL method for this
+use hmac::{Hmac, Mac, NewMac};
+pub struct HmacSha256 {
+    ctx: Hmac<sha2::Sha256>,
+}
+
+impl HmacSha256 {
+    pub fn new(key: &[u8]) -> Result<Self, Error> {
+        Ok(Self {
+            ctx: Hmac::<sha2::Sha256>::new_from_slice(key).map_err(|_x| Error::InvalidKeyLength)?,
+        })
+    }
+
+    pub fn update(&mut self, data: &[u8]) -> Result<(), Error> {
+        Ok(self.ctx.update(data))
+    }
+
+    pub fn finish(self, out: &mut [u8]) -> Result<(), Error> {
+        let a = self.ctx.finalize().into_bytes();
+        out.copy_from_slice(a.as_slice());
+        Ok(())
+    }
+}
+
 pub enum KeyType {
     Public(EcKey<pkey::Public>),
     Private(EcKey<pkey::Private>),

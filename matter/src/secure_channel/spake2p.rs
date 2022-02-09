@@ -1,7 +1,6 @@
-use crate::crypto;
+use crate::crypto::{self, HmacSha256};
 use byteorder::{ByteOrder, LittleEndian};
 use generic_array::GenericArray;
-use hmac::{Hmac, Mac, NewMac};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
@@ -194,19 +193,13 @@ impl Spake2P {
         let KcB = &KcAKcB[(KcAKcB.len() / 2)..];
 
         // Step 3: cA = HMAC(KcA, pB), cB = HMAC(KcB, pA)
-        let mut mac = Hmac::<Sha256>::new_from_slice(KcA).map_err(|_x| Error::InvalidKeyLength)?;
-        mac.update(pB);
-        let r = mac.finalize().into_bytes();
-        if r.len() == cA.len() {
-            cA.copy_from_slice(r.as_slice());
-        }
+        let mut mac = HmacSha256::new(KcA)?;
+        mac.update(pB)?;
+        mac.finish(cA)?;
 
-        let mut mac = Hmac::<Sha256>::new_from_slice(KcB).map_err(|_x| Error::InvalidKeyLength)?;
-        mac.update(pA);
-        let r = mac.finalize().into_bytes();
-        if r.len() == cB.len() {
-            cB.copy_from_slice(r.as_slice());
-        }
+        let mut mac = HmacSha256::new(KcB)?;
+        mac.update(pA)?;
+        mac.finish(cB)?;
         Ok(())
     }
 }

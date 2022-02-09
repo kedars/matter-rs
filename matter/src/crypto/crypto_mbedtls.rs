@@ -5,7 +5,7 @@ use mbedtls::{
     bignum::Mpi,
     cipher::{Authenticated, Cipher},
     ecp::EcPoint,
-    hash::{self, Md, Type},
+    hash::{self, Hmac, Md, Type},
     pk::{EcGroup, EcGroupId, Pk},
     rng::{CtrDrbg, OsEntropy},
     x509,
@@ -13,6 +13,27 @@ use mbedtls::{
 
 use super::CryptoKeyPair;
 use crate::error::Error;
+
+pub struct HmacSha256 {
+    inner: Hmac,
+}
+
+impl HmacSha256 {
+    pub fn new(key: &[u8]) -> Result<Self, Error> {
+        Ok(Self {
+            inner: Hmac::new(Type::Sha256, key)?,
+        })
+    }
+
+    pub fn update(&mut self, data: &[u8]) -> Result<(), Error> {
+        self.inner.update(data).map_err(|_| Error::TLSStack)
+    }
+
+    pub fn finish(self, out: &mut [u8]) -> Result<(), Error> {
+        self.inner.finish(out).map_err(|_| Error::TLSStack)?;
+        Ok(())
+    }
+}
 
 pub struct KeyPair {
     key: Pk,
