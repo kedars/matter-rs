@@ -1,9 +1,6 @@
 use crate::error::Error;
 
 use super::crypto::CryptoSpake2;
-use aes::cipher::generic_array::GenericArray;
-use byteorder::{ByteOrder, LittleEndian};
-use log::error;
 
 const MATTER_M_BIN: [u8; 65] = [
     0x04, 0x88, 0x6e, 0x2f, 0x97, 0xac, 0xe4, 0x6e, 0x55, 0xba, 0x9d, 0xd7, 0x24, 0x25, 0x79, 0xf2,
@@ -83,6 +80,7 @@ impl CryptoSpake2 for CryptoEspMbedTls {
         pB: &[u8],
         out: &mut [u8],
     ) -> Result<(), Error> {
+	Ok(())
     }
 }
 

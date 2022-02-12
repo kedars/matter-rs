@@ -4,6 +4,50 @@ use crate::error::Error;
 
 use super::CryptoKeyPair;
 
+pub fn hkdf_sha256(_salt: &[u8], _ikm: &[u8], _info: &[u8], _key: &mut [u8]) -> Result<(), Error> {
+    error!("This API should never get called");
+    Ok(())
+}
+
+#[derive(Clone)]
+pub struct Sha256{}
+
+impl Sha256 {
+    pub fn new() -> Result<Self, Error> {
+        Ok(Self {
+
+        })
+    }
+
+    pub fn update(&mut self, _data: &[u8]) -> Result<(), Error> {
+        Ok(())
+    }
+
+    pub fn finish(self, _digest: &mut [u8]) -> Result<(), Error> {
+        Ok(())
+    }
+}
+
+pub struct HmacSha256{}
+
+impl HmacSha256 {
+    pub fn new(_key: &[u8]) -> Result<Self, Error> {
+        error!("This API should never get called");
+        Ok(Self {
+        })
+    }
+
+    pub fn update(&mut self, _data: &[u8]) -> Result<(), Error> {
+        error!("This API should never get called");
+	Ok(())
+    }
+
+    pub fn finish(self, _out: &mut [u8]) -> Result<(), Error> {
+        error!("This API should never get called");
+        Ok(())
+    }
+}
+
 pub struct KeyPair {}
 
 impl KeyPair {
@@ -53,4 +97,24 @@ pub fn pbkdf2_hmac(pass: &[u8], iter: usize, salt: &[u8], key: &mut [u8]) -> Res
     error!("This API should never get called");
 
     Ok(())
+}
+
+pub fn encrypt_in_place(
+    _key: &[u8],
+    _nonce: &[u8],
+    _ad: &[u8],
+    _data: &mut [u8],
+    _data_len: usize,
+) -> Result<usize, Error> {
+    Ok(0)
+}
+
+
+pub fn decrypt_in_place(
+    _key: &[u8],
+    _nonce: &[u8],
+    _ad: &[u8],
+    _data: &mut [u8],
+) -> Result<usize, Error> {
+    Ok(0)
 }
