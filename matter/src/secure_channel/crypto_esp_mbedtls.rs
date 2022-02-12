@@ -5,8 +5,6 @@ use aes::cipher::generic_array::GenericArray;
 use byteorder::{ByteOrder, LittleEndian};
 use log::error;
 
-use sha2::{Digest, Sha256};
-
 const MATTER_M_BIN: [u8; 65] = [
     0x04, 0x88, 0x6e, 0x2f, 0x97, 0xac, 0xe4, 0x6e, 0x55, 0xba, 0x9d, 0xd7, 0x24, 0x25, 0x79, 0xf2,
     0x99, 0x3b, 0x64, 0xe1, 0x6e, 0xf3, 0xdc, 0xab, 0x95, 0xaf, 0xd4, 0x97, 0x33, 0x3d, 0x8f, 0xa1,
@@ -83,10 +81,8 @@ impl CryptoSpake2 for CryptoEspMbedTls {
         context: &[u8],
         pA: &[u8],
         pB: &[u8],
-    ) -> Result<GenericArray<u8, <sha2::Sha256 as Digest>::OutputSize>, Error> {
-        let mut TT = Sha256::new();
-
-        Ok(TT.finalize())
+        out: &mut [u8],
+    ) -> Result<(), Error> {
     }
 }
 

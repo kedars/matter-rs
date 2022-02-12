@@ -146,7 +146,7 @@ impl PAKE {
         }
         tw.put_end_container()?;
 
-        spake2p.set_context(proto_rx.buf, proto_tx.write_buf.as_slice());
+        spake2p.set_context(proto_rx.buf, proto_tx.write_buf.as_slice())?;
         proto_rx.exchange.set_exchange_data(spake2p);
         Ok(())
     }

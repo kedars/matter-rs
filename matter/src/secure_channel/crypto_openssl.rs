@@ -2,14 +2,13 @@ use crate::error::Error;
 
 use super::crypto::CryptoSpake2;
 use byteorder::{ByteOrder, LittleEndian};
-use generic_array::GenericArray;
 use log::error;
 use openssl::{
     bn::{BigNum, BigNumContext},
     ec::{EcGroup, EcPoint, EcPointRef, PointConversionForm},
+    hash::{Hasher, MessageDigest},
     nid::Nid,
 };
-use sha2::{Digest, Sha256};
 
 const MATTER_M_BIN: [u8; 65] = [
     0x04, 0x88, 0x6e, 0x2f, 0x97, 0xac, 0xe4, 0x6e, 0x55, 0xba, 0x9d, 0xd7, 0x24, 0x25, 0x79, 0xf2,
@@ -150,21 +149,22 @@ impl CryptoSpake2 for CryptoOpenSSL {
         context: &[u8],
         pA: &[u8],
         pB: &[u8],
-    ) -> Result<GenericArray<u8, <sha2::Sha256 as Digest>::OutputSize>, Error> {
-        let mut TT = Sha256::new();
+        TT_hash: &mut [u8],
+    ) -> Result<(), Error> {
+        let mut TT = Hasher::new(MessageDigest::sha256())?;
         // context
-        CryptoOpenSSL::add_to_tt(&mut TT, context);
+        CryptoOpenSSL::add_to_tt(&mut TT, context)?;
         // 2 empty identifiers
-        CryptoOpenSSL::add_to_tt(&mut TT, &[]);
-        CryptoOpenSSL::add_to_tt(&mut TT, &[]);
+        CryptoOpenSSL::add_to_tt(&mut TT, &[])?;
+        CryptoOpenSSL::add_to_tt(&mut TT, &[])?;
         // M
-        CryptoOpenSSL::add_to_tt(&mut TT, &MATTER_M_BIN);
+        CryptoOpenSSL::add_to_tt(&mut TT, &MATTER_M_BIN)?;
         // N
-        CryptoOpenSSL::add_to_tt(&mut TT, &MATTER_N_BIN);
+        CryptoOpenSSL::add_to_tt(&mut TT, &MATTER_N_BIN)?;
         // X = pA
-        CryptoOpenSSL::add_to_tt(&mut TT, pA);
+        CryptoOpenSSL::add_to_tt(&mut TT, pA)?;
         // Y = pB
-        CryptoOpenSSL::add_to_tt(&mut TT, pB);
+        CryptoOpenSSL::add_to_tt(&mut TT, pB)?;
 
         let X = EcPoint::from_bytes(&self.group, pA, &mut self.bn_ctx)?;
         let (Z, V) = CryptoOpenSSL::get_ZV_as_verifier(
@@ -185,7 +185,7 @@ impl CryptoSpake2 for CryptoOpenSSL {
             &mut self.bn_ctx,
         )?;
         let tmp = tmp.as_slice();
-        CryptoOpenSSL::add_to_tt(&mut TT, tmp);
+        CryptoOpenSSL::add_to_tt(&mut TT, tmp)?;
 
         // V
         let tmp = V.to_bytes(
@@ -194,25 +194,28 @@ impl CryptoSpake2 for CryptoOpenSSL {
             &mut self.bn_ctx,
         )?;
         let tmp = tmp.as_slice();
-        CryptoOpenSSL::add_to_tt(&mut TT, tmp);
+        CryptoOpenSSL::add_to_tt(&mut TT, tmp)?;
 
         // w0
         let tmp = self.w0.to_vec();
         let tmp = tmp.as_slice();
-        CryptoOpenSSL::add_to_tt(&mut TT, tmp);
+        CryptoOpenSSL::add_to_tt(&mut TT, tmp)?;
 
-        Ok(TT.finalize())
+        let h = TT.finish()?;
+        TT_hash.copy_from_slice(h.as_ref());
+        Ok(())
     }
 }
 
 impl CryptoOpenSSL {
-    fn add_to_tt(tt: &mut Sha256, buf: &[u8]) {
+    fn add_to_tt(tt: &mut Hasher, buf: &[u8]) -> Result<(), Error> {
         let mut len_buf: [u8; 8] = [0; 8];
         LittleEndian::write_u64(&mut len_buf, buf.len() as u64);
-        tt.update(len_buf);
+        tt.update(&len_buf)?;
         if buf.len() > 0 {
-            tt.update(buf);
+            tt.update(buf)?;
         }
+        Ok(())
     }
 
     // Do a*b + c*d

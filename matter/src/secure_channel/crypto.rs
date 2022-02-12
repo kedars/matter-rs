@@ -1,6 +1,3 @@
-use generic_array::GenericArray;
-use sha2::Digest;
-
 use crate::error::Error;
 
 // This trait allows us to switch between crypto providers like OpenSSL and mbedTLS for Spake2
@@ -33,5 +30,6 @@ pub trait CryptoSpake2 {
         context: &[u8],
         pA: &[u8],
         pB: &[u8],
-    ) -> Result<GenericArray<u8, <sha2::Sha256 as Digest>::OutputSize>, Error>;
+        out: &mut [u8],
+    ) -> Result<(), Error>;
 }

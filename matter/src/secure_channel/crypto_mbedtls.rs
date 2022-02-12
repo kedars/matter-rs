@@ -7,15 +7,14 @@ use crate::error::Error;
 
 use super::crypto::CryptoSpake2;
 use byteorder::{ByteOrder, LittleEndian};
-use generic_array::GenericArray;
 use log::error;
 use mbedtls::{
     bignum::Mpi,
     ecp::EcPoint,
+    hash::Md,
     pk::{EcGroup, EcGroupId, Pk},
     rng::{CtrDrbg, OsEntropy},
 };
-use sha2::{Digest, Sha256};
 
 const MATTER_M_BIN: [u8; 65] = [
     0x04, 0x88, 0x6e, 0x2f, 0x97, 0xac, 0xe4, 0x6e, 0x55, 0xba, 0x9d, 0xd7, 0x24, 0x25, 0x79, 0xf2,
@@ -141,21 +140,22 @@ impl CryptoSpake2 for CryptoMbedTLS {
         context: &[u8],
         pA: &[u8],
         pB: &[u8],
-    ) -> Result<GenericArray<u8, <sha2::Sha256 as Digest>::OutputSize>, Error> {
-        let mut TT = Sha256::new();
+        out: &mut [u8],
+    ) -> Result<(), Error> {
+        let mut TT = Md::new(mbedtls::hash::Type::Sha256)?;
         // context
-        CryptoMbedTLS::add_to_tt(&mut TT, context);
+        CryptoMbedTLS::add_to_tt(&mut TT, context)?;
         // 2 empty identifiers
-        CryptoMbedTLS::add_to_tt(&mut TT, &[]);
-        CryptoMbedTLS::add_to_tt(&mut TT, &[]);
+        CryptoMbedTLS::add_to_tt(&mut TT, &[])?;
+        CryptoMbedTLS::add_to_tt(&mut TT, &[])?;
         // M
-        CryptoMbedTLS::add_to_tt(&mut TT, &MATTER_M_BIN);
+        CryptoMbedTLS::add_to_tt(&mut TT, &MATTER_M_BIN)?;
         // N
-        CryptoMbedTLS::add_to_tt(&mut TT, &MATTER_N_BIN);
+        CryptoMbedTLS::add_to_tt(&mut TT, &MATTER_N_BIN)?;
         // X = pA
-        CryptoMbedTLS::add_to_tt(&mut TT, pA);
+        CryptoMbedTLS::add_to_tt(&mut TT, pA)?;
         // Y = pB
-        CryptoMbedTLS::add_to_tt(&mut TT, pB);
+        CryptoMbedTLS::add_to_tt(&mut TT, pB)?;
 
         let X = EcPoint::from_binary(&self.group, pA)?;
         let (Z, V) = CryptoMbedTLS::get_ZV_as_verifier(
@@ -171,30 +171,32 @@ impl CryptoSpake2 for CryptoMbedTLS {
         // Z
         let tmp = Z.to_binary(&self.group, false)?;
         let tmp = tmp.as_slice();
-        CryptoMbedTLS::add_to_tt(&mut TT, tmp);
+        CryptoMbedTLS::add_to_tt(&mut TT, tmp)?;
 
         // V
         let tmp = V.to_binary(&self.group, false)?;
         let tmp = tmp.as_slice();
-        CryptoMbedTLS::add_to_tt(&mut TT, tmp);
+        CryptoMbedTLS::add_to_tt(&mut TT, tmp)?;
 
         // w0
         let tmp = self.w0.to_binary()?;
         let tmp = tmp.as_slice();
-        CryptoMbedTLS::add_to_tt(&mut TT, tmp);
+        CryptoMbedTLS::add_to_tt(&mut TT, tmp)?;
 
-        Ok(TT.finalize())
+        TT.finish(out)?;
+        Ok(())
     }
 }
 
 impl CryptoMbedTLS {
-    fn add_to_tt(tt: &mut Sha256, buf: &[u8]) {
+    fn add_to_tt(tt: &mut Md, buf: &[u8]) -> Result<(), Error> {
         let mut len_buf: [u8; 8] = [0; 8];
         LittleEndian::write_u64(&mut len_buf, buf.len() as u64);
-        tt.update(len_buf);
+        tt.update(&len_buf)?;
         if !buf.is_empty() {
-            tt.update(buf);
+            tt.update(buf)?;
         }
+        Ok(())
     }
 
     #[inline(always)]

@@ -337,3 +337,26 @@ pub fn lowlevel_decrypt_aead(
     out.truncate(count);
     Ok(out)
 }
+
+#[derive(Clone)]
+pub struct Sha256 {
+    hasher: Hasher,
+}
+
+impl Sha256 {
+    pub fn new() -> Result<Self, Error> {
+        Ok(Self {
+            hasher: Hasher::new(MessageDigest::sha256())?,
+        })
+    }
+
+    pub fn update(&mut self, data: &[u8]) -> Result<(), Error> {
+        self.hasher.update(data).map_err(|_| Error::TLSStack)
+    }
+
+    pub fn finish(mut self, data: &mut [u8]) -> Result<(), Error> {
+        let h = self.hasher.finish()?;
+        data.copy_from_slice(h.as_ref());
+        Ok(())
+    }
+}

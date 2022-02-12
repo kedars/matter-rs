@@ -3,11 +3,10 @@ use std::sync::Arc;
 use log::{error, trace};
 use owning_ref::RwLockReadGuardRef;
 use rand::prelude::*;
-use sha2::{Digest, Sha256};
 
 use crate::{
     cert::Cert,
-    crypto::{self, CryptoKeyPair, KeyPair},
+    crypto::{self, CryptoKeyPair, KeyPair, Sha256},
     error::Error,
     fabric::{Fabric, FabricMgr, FabricMgrInner},
     proto_demux::{ProtoRx, ProtoTx},
@@ -42,7 +41,7 @@ impl CaseSession {
             state: State::Sigma1Rx,
             peer_sessid,
             local_sessid,
-            tt_hash: Sha256::new(),
+            tt_hash: Sha256::new()?,
             shared_secret: [0; crypto::ECDH_SHARED_SECRET_LEN_BYTES],
             our_pub_key: [0; crypto::EC_POINT_LEN_BYTES],
             peer_pub_key: [0; crypto::EC_POINT_LEN_BYTES],
@@ -130,7 +129,7 @@ impl Case {
         }
 
         // Only now do we add this message to the TT Hash
-        case_session.tt_hash.update(proto_rx.buf);
+        case_session.tt_hash.update(proto_rx.buf)?;
         let clone_data = Case::get_session_clone_data(&dummy_ipk, &case_session)?;
         proto_tx.new_session = Some(proto_rx.session.clone(&clone_data));
 
@@ -161,7 +160,7 @@ impl Case {
 
         let local_sessid = proto_rx.session.reserve_new_sess_id();
         let mut case_session = Box::new(CaseSession::new(initiator_sessid as u16, local_sessid)?);
-        case_session.tt_hash.update(proto_rx.buf);
+        case_session.tt_hash.update(proto_rx.buf)?;
         case_session.local_fabric_idx = local_fabric_idx?;
         if peer_pub_key.len() != crypto::EC_POINT_LEN_BYTES {
             error!("Invalid public key length");
@@ -229,7 +228,7 @@ impl Case {
         tw.put_str8(TagType::Context(3), &case_session.our_pub_key)?;
         tw.put_str16(TagType::Context(4), encrypted)?;
         tw.put_end_container()?;
-        case_session.tt_hash.update(proto_tx.write_buf.as_slice());
+        case_session.tt_hash.update(proto_tx.write_buf.as_slice())?;
         proto_rx.exchange.set_exchange_data(case_session);
         Ok(())
     }
@@ -300,7 +299,7 @@ impl Case {
 
     fn get_session_keys(
         ipk: &[u8],
-        tt_hash: &Sha256,
+        tt: &Sha256,
         shared_secret: &[u8],
         key: &mut [u8],
     ) -> Result<(), Error> {
@@ -312,10 +311,10 @@ impl Case {
         }
         let mut salt = Vec::<u8>::with_capacity(256);
         salt.extend_from_slice(ipk);
-        let tt_hash = tt_hash.clone();
-        let tt_hash = tt_hash.finalize();
-        let tt_hash = tt_hash.as_slice();
-        salt.extend_from_slice(tt_hash);
+        let tt = tt.clone();
+        let mut tt_hash = [0u8; crypto::SHA256_HASH_LEN_BYTES];
+        tt.finish(&mut tt_hash)?;
+        salt.extend_from_slice(&tt_hash);
         //        println!("Session Key: salt: {:x?}, len: {}", salt, salt.len());
 
         crypto::hkdf_sha256(salt.as_slice(), shared_secret, &SEKEYS_INFO, key)
@@ -350,7 +349,7 @@ impl Case {
 
     fn get_sigma3_key(
         ipk: &[u8],
-        tt_hash: &Sha256,
+        tt: &Sha256,
         shared_secret: &[u8],
         key: &mut [u8],
     ) -> Result<(), Error> {
@@ -361,10 +360,11 @@ impl Case {
         let mut salt = Vec::<u8>::with_capacity(256);
         salt.extend_from_slice(ipk);
 
-        let tt_hash = tt_hash.clone();
-        let tt_hash = tt_hash.finalize();
-        let tt_hash = tt_hash.as_slice();
-        salt.extend_from_slice(tt_hash);
+        let tt = tt.clone();
+
+        let mut tt_hash = [0u8; crypto::SHA256_HASH_LEN_BYTES];
+        tt.finish(&mut tt_hash)?;
+        salt.extend_from_slice(&tt_hash);
         //        println!("Sigma3Key: salt: {:x?}, len: {}", salt, salt.len());
 
         crypto::hkdf_sha256(salt.as_slice(), shared_secret, &S3K_INFO, key)
@@ -389,10 +389,11 @@ impl Case {
         salt.extend_from_slice(our_random);
         salt.extend_from_slice(&case_session.our_pub_key);
 
-        let tt_hash = case_session.tt_hash.clone();
-        let tt_hash = tt_hash.finalize();
-        let tt_hash = tt_hash.as_slice();
-        salt.extend_from_slice(tt_hash);
+        let tt = case_session.tt_hash.clone();
+
+        let mut tt_hash = [0u8; crypto::SHA256_HASH_LEN_BYTES];
+        tt.finish(&mut tt_hash)?;
+        salt.extend_from_slice(&tt_hash);
         //        println!("Sigma2Key: salt: {:x?}, len: {}", salt, salt.len());
 
         crypto::hkdf_sha256(salt.as_slice(), &case_session.shared_secret, &S2K_INFO, key)

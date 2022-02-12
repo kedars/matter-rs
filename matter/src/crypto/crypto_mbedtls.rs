@@ -5,7 +5,7 @@ use mbedtls::{
     bignum::Mpi,
     cipher::{Authenticated, Cipher},
     ecp::EcPoint,
-    hash::{self, Hmac, Md, Type},
+    hash::{self, Hkdf, Hmac, Md, Type},
     pk::{EcGroup, EcGroupId, Pk},
     rng::{CtrDrbg, OsEntropy},
     x509,
@@ -282,7 +282,7 @@ pub fn pbkdf2_hmac(pass: &[u8], iter: usize, salt: &[u8], key: &mut [u8]) -> Res
 }
 
 pub fn hkdf_sha256(salt: &[u8], ikm: &[u8], info: &[u8], key: &mut [u8]) -> Result<(), Error> {
-    Md::hkdf(Type::Sha256, salt, ikm, info, key).map_err(|_e| Error::TLSStack)
+    Hkdf::hkdf(Type::Sha256, salt, ikm, info, key).map_err(|_e| Error::TLSStack)
 }
 
 pub fn encrypt_in_place(
@@ -324,4 +324,27 @@ pub fn decrypt_in_place(
         .decrypt_auth_inplace(ad, data, tag)
         .map(|(len, _)| len)
         .map_err(|_e| Error::TLSStack)
+}
+
+#[derive(Clone)]
+pub struct Sha256 {
+    ctx: Md,
+}
+
+impl Sha256 {
+    pub fn new() -> Result<Self, Error> {
+        Ok(Self {
+            ctx: Md::new(Type::Sha256)?,
+        })
+    }
+
+    pub fn update(&mut self, data: &[u8]) -> Result<(), Error> {
+        self.ctx.update(data).map_err(|_| Error::TLSStack)?;
+        Ok(())
+    }
+
+    pub fn finish(self, digest: &mut [u8]) -> Result<(), Error> {
+        self.ctx.finish(digest).map_err(|_| Error::TLSStack)?;
+        Ok(())
+    }
 }

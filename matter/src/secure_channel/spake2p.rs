@@ -1,10 +1,11 @@
 use crate::crypto::{self, HmacSha256};
 use byteorder::{ByteOrder, LittleEndian};
-use generic_array::GenericArray;
-use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
-use crate::{crypto::pbkdf2_hmac, error::Error};
+use crate::{
+    crypto::{pbkdf2_hmac, Sha256},
+    error::Error,
+};
 
 #[cfg(feature = "crypto_openssl")]
 use super::crypto_openssl::CryptoOpenSSL;
@@ -98,12 +99,13 @@ impl Spake2P {
         self.app_data
     }
 
-    pub fn set_context(&mut self, buf1: &[u8], buf2: &[u8]) {
-        let mut context = Sha256::new();
-        context.update(SPAKE2P_CONTEXT_PREFIX);
-        context.update(buf1);
-        context.update(buf2);
+    pub fn set_context(&mut self, buf1: &[u8], buf2: &[u8]) -> Result<(), Error> {
+        let mut context = Sha256::new()?;
+        context.update(&SPAKE2P_CONTEXT_PREFIX)?;
+        context.update(buf1)?;
+        context.update(buf2)?;
         self.context = Some(context);
+        Ok(())
     }
 
     #[inline(always)]
@@ -137,9 +139,12 @@ impl Spake2P {
         if let Some(crypto_spake2) = &mut self.crypto_spake2 {
             crypto_spake2.get_pB(pB)?;
             if let Some(context) = self.context.take() {
-                let TT = crypto_spake2.get_TT_as_verifier(context.finalize().as_slice(), pA, pB)?;
+                let mut hash = [0u8; crypto::SHA256_HASH_LEN_BYTES];
+                context.finish(&mut hash)?;
+                let mut TT = [0u8; crypto::SHA256_HASH_LEN_BYTES];
+                crypto_spake2.get_TT_as_verifier(&hash, pA, pB, &mut TT)?;
 
-                Spake2P::get_Ke_and_cAcB(TT, pA, pB, &mut self.Ke, &mut self.cA, cB)?;
+                Spake2P::get_Ke_and_cAcB(&TT, pA, pB, &mut self.Ke, &mut self.cA, cB)?;
             }
         }
         // We are finished with using the crypto_spake2 now
@@ -165,7 +170,7 @@ impl Spake2P {
     #[allow(non_snake_case)]
     #[allow(dead_code)]
     fn get_Ke_and_cAcB(
-        TT: GenericArray<u8, <sha2::Sha256 as Digest>::OutputSize>,
+        TT: &[u8],
         pA: &[u8],
         pB: &[u8],
         Ke: &mut [u8],
@@ -174,7 +179,6 @@ impl Spake2P {
     ) -> Result<(), Error> {
         // Step 1: Ka || Ke = Hash(TT)
         let KaKe = TT;
-        let KaKe = KaKe.as_slice();
         let KaKe_len = KaKe.len();
         let Ka = &KaKe[0..KaKe_len / 2];
         let ke_internal = &KaKe[(KaKe_len / 2)..];
@@ -206,11 +210,11 @@ impl Spake2P {
 
 #[cfg(test)]
 mod tests {
-    use sha2::{Digest, Sha256};
 
     use super::Spake2P;
-    use crate::secure_channel::{
-        spake2p::CRYPTO_W_SIZE_BYTES, spake2p_test_vectors::test_vectors::*,
+    use crate::{
+        crypto,
+        secure_channel::{spake2p::CRYPTO_W_SIZE_BYTES, spake2p_test_vectors::test_vectors::*},
     };
 
     #[test]
@@ -242,15 +246,11 @@ mod tests {
             let mut Ke: [u8; 16] = [0; 16];
             let mut cA: [u8; 32] = [0; 32];
             let mut cB: [u8; 32] = [0; 32];
-            Spake2P::get_Ke_and_cAcB(
-                Sha256::digest(&t.TT[0..t.TT_len]),
-                &t.X,
-                &t.Y,
-                &mut Ke,
-                &mut cA,
-                &mut cB,
-            )
-            .unwrap();
+            let mut TT_hash = [0u8; crypto::SHA256_HASH_LEN_BYTES];
+            let mut h = crypto::Sha256::new().unwrap();
+            h.update(&t.TT[0..t.TT_len]).unwrap();
+            h.finish(&mut TT_hash).unwrap();
+            Spake2P::get_Ke_and_cAcB(&TT_hash, &t.X, &t.Y, &mut Ke, &mut cA, &mut cB).unwrap();
             assert_eq!(Ke, t.Ke);
             assert_eq!(cA, t.cA);
             assert_eq!(cB, t.cB);
