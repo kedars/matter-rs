@@ -1,10 +1,9 @@
-name: Test-ESP32 
+name: Build-ESP32
 
 on:
   push:
     branches:
       - master
-      - feature/esp32-ci
     pull_request:
       - master
 

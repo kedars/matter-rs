@@ -2,6 +2,7 @@
 
 [![Test Linux (OpenSSL)](https://github.com/kedars/matter-rs/actions/workflows/test-linux-openssl.yml/badge.svg)](https://github.com/kedars/matter-rs/actions/workflows/test-linux-openssl.yml)
 [![Test Linux (mbedTLS)](https://github.com/kedars/matter-rs/actions/workflows/test-linux-mbedtls.yml/badge.svg)](https://github.com/kedars/matter-rs/actions/workflows/test-linux-mbedtls.yml)
+[![Build-ESP32](https://github.com/kedars/matter-rs/actions/workflows/build-esp32.yml/badge.svg)](https://github.com/kedars/matter-rs/actions/workflows/build-esp32.yml)
 
 ## Build
 
