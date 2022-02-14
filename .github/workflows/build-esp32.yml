@@ -1,11 +1,8 @@
 name: Build-ESP32
 
 on:
-  push:
-    branches:
-      - master
-    pull_request:
-      - master
+    schedule:
+      - cron: "0 0 * * *"
 
 jobs:
   compile:
