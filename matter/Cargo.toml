@@ -1,7 +1,14 @@
 [package]
-name = "matter"
+name = "matter-iot"
 version = "0.1.0"
 edition = "2018"
+authors = ["Kedar Sovani <kedars@gmail.com>"]
+description = "Native RUST implementation of the Matter (Smart-Home) ecosystem"
+repository = "https://github.com/kedars/matter-rs"
+readme = "README.md"
+keywords = ["matter", "smart", "smart-home", "IoT", "ESP32"]
+categories = ["embedded", "network-programming"]
+license = "MIT"
 
 [lib]
 name = "matter"
