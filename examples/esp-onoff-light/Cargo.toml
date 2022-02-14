@@ -27,7 +27,7 @@ native = ["esp-idf-sys/native"]
 esp-idf-sys = { version = "0.30", features = ["binstart"] }
 esp-idf-svc = { version = "0.36", features = ["experimental"] }
 embedded-svc = { version = "0.16", features = ["experimental"] }
-matter-rs = { path = "../../matter", default-features = false, features = ["crypto_esp_mbedtls"]}
+matter-iot= { path = "../../matter", default-features = false, features = ["crypto_esp_mbedtls"]}
 env_logger = "0.9.0"
 smol = "1.2"
 
