@@ -59,11 +59,20 @@ impl InteractionConsumer for DataModel {
             .iter()
             .ok_or(Error::InvalidData)?;
 
-        let mut node = self.node.write().unwrap();
+        let node = self.node.read().unwrap();
         for attr_path_ib in attr_list {
             let attr_path = attr_path::Ib::from_tlv(&attr_path_ib)?;
-            let result = node.for_cluster_path(attr_path.endpoint, attr_path.cluster, |e, c| {
-                c.handle_attrs_read(e, attr_path.attribute, tw)
+            let result = node.for_attribute_path(&attr_path.path, |path, e, c, a| {
+                let attr_path = attr_path::Ib::new(path);
+                // For now, putting everything in here
+                let _ = tw.put_start_struct(TagType::Anonymous);
+                let _ = tw.put_start_struct(TagType::Context(1));
+                let _ = tw.put_object(TagType::Context(1), &attr_path);
+                // We will have to also support custom data types for encoding
+                let _ = tw.put_object(TagType::Context(2), &a.value);
+                let _ = tw.put_end_container();
+                let _ = tw.put_end_container();
+                Ok(())
             });
             if let Err(e) = result {
                 // In this case, we'll have to add the AttributeStatusIb

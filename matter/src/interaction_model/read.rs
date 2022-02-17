@@ -4,12 +4,21 @@ use crate::{
     error::Error,
     interaction_model::core::OpCode,
     proto_demux::{ProtoTx, ResponseRequired},
-    tlv::{get_root_node_struct, print_tlv_list},
+    tlv::get_root_node_struct,
     tlv_common::TagType,
     tlv_writer::TLVWriter,
 };
 
 use super::{InteractionModel, Transaction};
+
+// A generic path with endpoint, clusters, and a leaf
+// The leaf could be command, attribute, event
+#[derive(Default, Clone, Copy, Debug)]
+pub struct GenericPath {
+    pub endpoint: Option<u16>,
+    pub cluster: Option<u32>,
+    pub leaf: Option<u32>,
+}
 
 // TODO: This is different between the spec and C++
 enum Tag {
@@ -30,6 +39,8 @@ pub mod attr_path {
     };
     use log::error;
 
+    use super::GenericPath;
+
     const TAG_ENABLE_TAG_COMPRESSION: u8 = 0;
     const TAG_NODE: u8 = 1;
     const TAG_ENDPOINT: u8 = 2;
@@ -41,18 +52,14 @@ pub mod attr_path {
     pub struct Ib {
         pub tag_compression: bool,
         pub node: Option<u64>,
-        pub endpoint: Option<u16>,
-        pub cluster: Option<u32>,
-        pub attribute: Option<u16>,
+        pub path: GenericPath,
         pub list_index: Option<u16>,
     }
 
     impl Ib {
-        pub fn new(endpoint: u16, cluster: u32, attribute: u16) -> Self {
+        pub fn new(path: &GenericPath) -> Self {
             Self {
-                endpoint: Some(endpoint),
-                cluster: Some(cluster),
-                attribute: Some(attribute),
+                path: *path,
                 ..Default::default()
             }
         }
@@ -69,11 +76,13 @@ pub mod attr_path {
                     }
                     TagType::Context(TAG_NODE) => ib.node = i.get_u32().map(|a| a as u64).ok(),
                     TagType::Context(TAG_ENDPOINT) => {
-                        ib.endpoint = i.get_u8().map(|a| a as u16).ok()
+                        ib.path.endpoint = i.get_u8().map(|a| a as u16).ok()
                     }
-                    TagType::Context(TAG_CLUSTER) => ib.cluster = i.get_u8().map(|a| a as u32).ok(),
+                    TagType::Context(TAG_CLUSTER) => {
+                        ib.path.cluster = i.get_u8().map(|a| a as u32).ok()
+                    }
                     TagType::Context(TAG_ATTRIBUTE) => {
-                        ib.attribute = i.get_u8().map(|a| a as u16).ok()
+                        ib.path.leaf = i.get_u8().map(|a| a as u32).ok()
                     }
                     TagType::Context(TAG_LIST_INDEX) => ib.list_index = i.get_u16().ok(),
                     _ => (),
@@ -86,14 +95,14 @@ pub mod attr_path {
     impl ToTLV for Ib {
         fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
             tw.put_start_list(tag_type)?;
-            if let Some(v) = self.endpoint {
+            if let Some(v) = self.path.endpoint {
                 tw.put_u16(TagType::Context(TAG_ENDPOINT), v)?;
             }
-            if let Some(v) = self.cluster {
+            if let Some(v) = self.path.cluster {
                 tw.put_u32(TagType::Context(TAG_CLUSTER), v)?;
             }
-            if let Some(v) = self.attribute {
-                tw.put_u16(TagType::Context(TAG_ATTRIBUTE), v)?;
+            if let Some(v) = self.path.leaf {
+                tw.put_u16(TagType::Context(TAG_ATTRIBUTE), v as u16)?;
             }
             tw.put_end_container()
         }
@@ -121,7 +130,6 @@ impl InteractionModel {
         info!("In Read Req");
         proto_tx.proto_opcode = OpCode::ReportData as u8;
 
-        print_tlv_list(rx_buf);
         let mut tw = TLVWriter::new(&mut proto_tx.write_buf);
         let root = get_root_node_struct(rx_buf)?;
         let fab_scoped = root.find_tag(Tag::FabricFiltered as u32)?.get_bool()?;
