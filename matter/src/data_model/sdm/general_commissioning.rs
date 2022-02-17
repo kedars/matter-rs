@@ -77,7 +77,7 @@ fn handle_command_armfailsafe(
         return Err(IMStatusCode::Busy);
     }
 
-    let invoke_resp = InvokeRespIb::Command(CMD_PATH_ARMFAILSAFE_RESPONSE, |t| {
+    let invoke_resp = InvokeRespIb::CommandData(CMD_PATH_ARMFAILSAFE_RESPONSE, |t| {
         t.put_u8(TagType::Context(0), CommissioningError::Ok as u8)?;
         t.put_utf8(TagType::Context(1), b"")
     });
@@ -100,7 +100,7 @@ fn handle_command_setregulatoryconfig(
         .map_err(|_| IMStatusCode::InvalidCommand)?;
     info!("Received country code: {:?}", country_code);
 
-    let invoke_resp = InvokeRespIb::Command(CMD_PATH_SETREGULATORY_RESPONSE, |t| {
+    let invoke_resp = InvokeRespIb::CommandData(CMD_PATH_SETREGULATORY_RESPONSE, |t| {
         t.put_u8(TagType::Context(0), 0)?;
         t.put_utf8(TagType::Context(1), b"")
     });
@@ -133,7 +133,7 @@ fn handle_command_commissioningcomplete(
         status = CommissioningError::ErrInvalidAuth as u8;
     }
 
-    let invoke_resp = InvokeRespIb::Command(CMD_PATH_COMMISSIONING_COMPLETE_RESPONSE, |t| {
+    let invoke_resp = InvokeRespIb::CommandData(CMD_PATH_COMMISSIONING_COMPLETE_RESPONSE, |t| {
         t.put_u8(TagType::Context(0), status)?;
         t.put_utf8(TagType::Context(1), b"")
     });

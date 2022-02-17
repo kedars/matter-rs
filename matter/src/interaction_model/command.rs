@@ -26,8 +26,8 @@ pub enum InvokeRespIb<F>
 where
     F: Fn(&mut TLVWriter) -> Result<(), Error>,
 {
-    Command(CmdPathIb, F),
-    Status(CmdPathIb, IMStatusCode, u32, F),
+    CommandData(CmdPathIb, F),
+    CommandStatus(CmdPathIb, IMStatusCode, u32, F),
 }
 
 #[allow(non_snake_case)]
@@ -39,14 +39,14 @@ impl<F: Fn(&mut TLVWriter) -> Result<(), Error>> ToTLV for InvokeRespIb<F> {
     fn to_tlv(self: &InvokeRespIb<F>, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
         tw.put_start_struct(tag_type)?;
         match self {
-            InvokeRespIb::Command(cmd_path, data_cb) => {
+            InvokeRespIb::CommandData(cmd_path, data_cb) => {
                 tw.put_start_struct(TagType::Context(0))?;
                 tw.put_object(TagType::Context(0), cmd_path)?;
                 tw.put_start_struct(TagType::Context(1))?;
                 data_cb(tw)?;
                 tw.put_end_container()?;
             }
-            InvokeRespIb::Status(cmd_path, status, cluster_status, _) => {
+            InvokeRespIb::CommandStatus(cmd_path, status, cluster_status, _) => {
                 tw.put_start_struct(TagType::Context(1))?;
                 tw.put_object(TagType::Context(0), cmd_path)?;
                 put_status_ib(tw, TagType::Context(1), *status, *cluster_status)?;
@@ -121,9 +121,11 @@ fn put_status_ib(
     tw.put_end_container()
 }
 
-const _INVOKE_REQ_CTX_TAG_SUPPRESS_RESPONSE: u32 = 0;
-const _INVOKE_REQ_CTX_TAG_TIMED_REQ: u32 = 1;
-const INVOKE_REQ_CTX_TAG_INVOKE_REQUESTS: u32 = 2;
+enum Tag {
+    _SupressResponse = 0,
+    _TimedReq = 1,
+    InvokeRequests = 2,
+}
 
 impl InteractionModel {
     pub fn handle_invoke_req(
@@ -139,13 +141,13 @@ impl InteractionModel {
         let root = get_root_node_struct(rx_buf)?;
         // Spec says tag should be 2, but CHIP Tool sends the tag as 0
         let cmd_list_iter = root
-            .find_tag(INVOKE_REQ_CTX_TAG_INVOKE_REQUESTS)?
+            .find_tag(Tag::InvokeRequests as u32)?
             .confirm_array()?
             .iter()
             .ok_or(Error::InvalidData)?;
 
         tw.put_start_struct(TagType::Anonymous)?;
-        // Suppress Response
+        // Suppress Response -> TODO: Need to revisit this for cases where we send a command back
         tw.put_bool(TagType::Context(0), false)?;
         // Array of InvokeResponse IBs
         tw.put_start_array(TagType::Context(1))?;

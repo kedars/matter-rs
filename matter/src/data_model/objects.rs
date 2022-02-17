@@ -1,14 +1,16 @@
 use crate::{
     error::*,
-    interaction_model::{command::CommandReq, core::IMStatusCode},
+    interaction_model::{command::CommandReq, core::IMStatusCode, read::attr_path},
+    tlv_common::TagType,
+    tlv_writer::{TLVWriter, ToTLV},
 };
+use log::error;
 use std::{any::Any, fmt};
 
 /* This file needs some major revamp.
  * - instead of allocating all over the heap, we should use some kind of slab/block allocator
  * - instead of arrays, can use linked-lists to conserve space and avoid the internal fragmentation
  */
-
 pub const ENDPTS_PER_ACC: usize = 3;
 pub const CLUSTERS_PER_ENDPT: usize = 4;
 pub const ATTRS_PER_CLUSTER: usize = 4;
@@ -22,9 +24,22 @@ pub enum AttrValue {
     Bool(bool),
 }
 
+impl ToTLV for AttrValue {
+    fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
+        match self {
+            AttrValue::Bool(v) => tw.put_bool(tag_type, *v),
+            AttrValue::Uint16(v) => tw.put_u16(tag_type, *v),
+            _ => {
+                error!("Not yet supported");
+                Ok(())
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Attribute {
-    id: u32,
+    id: u16,
     value: AttrValue,
 }
 
@@ -38,7 +53,7 @@ impl Default for Attribute {
 }
 
 impl Attribute {
-    pub fn new(id: u32, val: AttrValue) -> Result<Box<Attribute>, Error> {
+    pub fn new(id: u16, val: AttrValue) -> Result<Box<Attribute>, Error> {
         let mut a = Box::new(Attribute::default());
         a.id = id;
         a.value = val;
@@ -127,6 +142,52 @@ impl Cluster {
             .ok_or(IMStatusCode::UnsupportedCommand)?;
         (cmd.cb)(self, cmd_req)
     }
+
+    fn get_attribute_index(&mut self, attr_id: u16) -> Option<usize> {
+        self.attributes
+            .iter()
+            .position(|x| x.as_ref().map_or(false, |c| c.id == attr_id))
+    }
+
+    pub fn handle_attrs_read(
+        &mut self,
+        endpoint: u16,
+        attribute: Option<u16>,
+        tw: &mut TLVWriter,
+    ) -> Result<(), IMStatusCode> {
+        let cluster_id = self.id;
+        let attributes = self.get_wildcard_attribute(attribute)?;
+
+        for a in attributes.iter_mut().flatten() {
+            let attr_path = attr_path::Ib::new(endpoint, cluster_id, a.id);
+            // For now, putting everything in here
+            let _ = tw.put_start_struct(TagType::Anonymous);
+            let _ = tw.put_start_struct(TagType::Context(1));
+            let _ = tw.put_object(TagType::Context(1), &attr_path);
+            // We will have to also support custom data types for encoding
+            let _ = tw.put_object(TagType::Context(2), &a.value);
+            let _ = tw.put_end_container();
+            let _ = tw.put_end_container();
+        }
+        Ok(())
+    }
+
+    // Returns a slice of attribute, with either a single attribute or all (wildcard)
+    pub fn get_wildcard_attribute(
+        &mut self,
+        attribute: Option<u16>,
+    ) -> Result<&mut [Option<Box<Attribute>>], IMStatusCode> {
+        let attributes = if let Some(a) = attribute {
+            if let Some(i) = self.get_attribute_index(a) {
+                &mut self.attributes[i..i + 1]
+            } else {
+                return Err(IMStatusCode::UnsupportedAttribute);
+            }
+        } else {
+            &mut self.attributes[..]
+        };
+        Ok(attributes)
+    }
 }
 
 impl std::fmt::Display for Cluster {
@@ -173,13 +234,34 @@ impl Endpoint {
         Err(Error::NoSpace)
     }
 
-    pub fn get_cluster(&mut self, cluster_id: u32) -> Result<&mut Box<Cluster>, Error> {
-        let index = self
-            .clusters
+    fn get_cluster_index(&mut self, cluster_id: u32) -> Option<usize> {
+        self.clusters
             .iter()
             .position(|x| x.as_ref().map_or(false, |c| c.id == cluster_id))
+    }
+
+    pub fn get_cluster(&mut self, cluster_id: u32) -> Result<&mut Box<Cluster>, Error> {
+        let index = self
+            .get_cluster_index(cluster_id)
             .ok_or(Error::ClusterNotFound)?;
         Ok(self.clusters[index].as_mut().unwrap())
+    }
+
+    // Returns a slice of clusters, with either a single cluster or all (wildcard)
+    pub fn get_wildcard_clusters(
+        &mut self,
+        cluster: Option<u32>,
+    ) -> Result<&mut [Option<Box<Cluster>>], IMStatusCode> {
+        let clusters = if let Some(c) = cluster {
+            if let Some(i) = self.get_cluster_index(c) {
+                &mut self.clusters[i..i + 1]
+            } else {
+                return Err(IMStatusCode::UnsupportedCluster);
+            }
+        } else {
+            &mut self.clusters[..]
+        };
+        Ok(clusters)
     }
 }
 
@@ -249,5 +331,42 @@ impl Node {
         } else {
             Err(Error::Invalid)
         }
+    }
+
+    // Returns a slice of endpoints, with either a single endpoint or all (wildcard)
+    pub fn get_wildcard_endpoints(
+        &mut self,
+        endpoint: Option<u16>,
+    ) -> Result<(&mut [Option<Box<Endpoint>>], usize), IMStatusCode> {
+        let endpoints = if let Some(e) = endpoint {
+            let e = e as usize;
+            if self.endpoints[e].is_none() {
+                return Err(IMStatusCode::UnsupportedEndpoint);
+            }
+            (&mut self.endpoints[e..e + 1], e)
+        } else {
+            (&mut self.endpoints[..], 0)
+        };
+        Ok(endpoints)
+    }
+
+    pub fn for_cluster_path<F>(
+        &mut self,
+        endpoint: Option<u16>,
+        cluster: Option<u32>,
+        mut f: F,
+    ) -> Result<(), IMStatusCode>
+    where
+        F: FnMut(u16, &mut Box<Cluster>) -> Result<(), IMStatusCode>,
+    {
+        let (endpoints, mut endpoint_id) = self.get_wildcard_endpoints(endpoint)?;
+        for e in endpoints.iter_mut().flatten() {
+            let clusters = e.get_wildcard_clusters(cluster)?;
+            for c in clusters.iter_mut().flatten() {
+                f(endpoint_id as u16, c)?;
+            }
+            endpoint_id += 1;
+        }
+        Ok(())
     }
 }

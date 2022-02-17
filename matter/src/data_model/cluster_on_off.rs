@@ -8,7 +8,7 @@ use log::info;
 
 const CLUSTER_ONOFF_ID: u32 = 0x0006;
 
-const ATTR_ON_OFF_ID: u32 = 0x0;
+const ATTR_ON_OFF_ID: u16 = 0x0;
 
 const CMD_OFF_ID: u16 = 0x00;
 const CMD_ON_ID: u16 = 0x01;
