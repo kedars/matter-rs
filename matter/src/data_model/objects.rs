@@ -1,6 +1,7 @@
 use crate::{
     error::*,
-    interaction_model::{command::CommandReq, core::IMStatusCode, read::GenericPath},
+    interaction_model::{command::CommandReq, core::IMStatusCode, messages::GenericPath},
+    // TODO: This layer shouldn't really depend on the TLV layer, should create an abstraction layer
     tlv_common::TagType,
     tlv_writer::{TLVWriter, ToTLV},
 };
@@ -24,7 +25,6 @@ pub enum AttrValue {
     Int64(i64),
     Uint16(u16),
     Bool(bool),
-    Custom(Box<dyn FnMut(&mut Cluster, u16) -> Result<(), Error>>),
 }
 
 impl Debug for AttrValue {
@@ -34,7 +34,6 @@ impl Debug for AttrValue {
             AttrValue::Int64(v) => write!(f, "{:?}", *v),
             AttrValue::Uint16(v) => write!(f, "{:?}", *v),
             AttrValue::Bool(v) => write!(f, "{:?}", *v),
-            &AttrValue::Custom(_) => write!(f, "Custom formatting not supported"),
         }?;
         Ok(())
     }
@@ -110,18 +109,30 @@ impl Command {
     }
 }
 
+pub trait ClusterType {
+    fn read_attribute(&self, tag: TagType, tw: &mut TLVWriter, attr_id: u16) -> Result<(), Error>;
+}
+
 #[derive(Default)]
 pub struct Cluster {
     id: u32,
     attributes: [Option<Box<Attribute>>; ATTRS_PER_CLUSTER],
     commands: [Option<Box<Command>>; CMDS_PER_CLUSTER],
     data: Option<Box<dyn Any>>,
+    c: Option<Box<dyn ClusterType>>,
+    custom_attributes: bool,
 }
 
 impl Cluster {
     pub fn new(id: u32) -> Result<Box<Cluster>, Error> {
         let mut a = Box::new(Cluster::default());
         a.id = id;
+        Ok(a)
+    }
+
+    pub fn new2(id: u32, c: Box<dyn ClusterType>) -> Result<Box<Cluster>, Error> {
+        let mut a = Cluster::new(id)?;
+        a.c = Some(c);
         Ok(a)
     }
 
@@ -173,6 +184,15 @@ impl Cluster {
             .position(|x| x.as_ref().map_or(false, |c| c.id == attr_id))
     }
 
+    fn get_attribute(&self, attr_id: u16) -> Option<&Box<Attribute>> {
+        for a in &self.attributes {
+            if a.as_ref().map_or(false, |c| c.id == attr_id) {
+                return a.as_ref();
+            }
+        }
+        None
+    }
+
     // Returns a slice of attribute, with either a single attribute or all (wildcard)
     pub fn get_wildcard_attribute(
         &self,
@@ -188,6 +208,25 @@ impl Cluster {
             &self.attributes[..]
         };
         Ok(attributes)
+    }
+
+    pub fn read_attribute(
+        &self,
+        tag: TagType,
+        tw: &mut TLVWriter,
+        attr_id: u16,
+    ) -> Result<(), Error> {
+        if let Some(c) = &self.c {
+            if self.custom_attributes {
+                return c.read_attribute(tag, tw, attr_id);
+            }
+        }
+
+        if let Some(a) = self.get_attribute(attr_id) {
+            tw.put_object(tag, &a.value)
+        } else {
+            Err(Error::AttributeNotFound)
+        }
     }
 }
 
@@ -351,21 +390,20 @@ impl Node {
         Ok(endpoints)
     }
 
-    pub fn for_attribute_path<F>(&self, path: &GenericPath, mut f: F) -> Result<(), IMStatusCode>
+    pub fn for_each_attribute<F>(&self, path: &GenericPath, mut f: F) -> Result<(), IMStatusCode>
     where
-        F: FnMut(&GenericPath, &Endpoint, &Cluster, &Attribute) -> Result<(), IMStatusCode>,
+        F: FnMut(&GenericPath, &Cluster) -> Result<(), IMStatusCode>,
     {
-        let mut current_path = GenericPath::default();
+        let mut current_path = *path;
         let (endpoints, mut endpoint_id) = self.get_wildcard_endpoints(path.endpoint)?;
         for e in endpoints.iter().flatten() {
             current_path.endpoint = Some(endpoint_id as u16);
             let clusters = e.get_wildcard_clusters(path.cluster)?;
             for c in clusters.iter().flatten() {
-                current_path.cluster = Some(c.id);
                 let attributes = c.get_wildcard_attribute(path.leaf.map(|at| at as u16))?;
                 for a in attributes.iter().flatten() {
                     current_path.leaf = Some(a.id as u32);
-                    f(&current_path, e, c, a)?;
+                    f(&current_path, c)?;
                 }
             }
             endpoint_id += 1;

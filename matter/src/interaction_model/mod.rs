@@ -46,4 +46,5 @@ pub struct InteractionModel {
 }
 pub mod command;
 pub mod core;
+pub mod messages;
 pub mod read;

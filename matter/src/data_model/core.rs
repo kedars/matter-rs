@@ -5,7 +5,7 @@ use crate::{
     interaction_model::{
         command::{self, CommandReq, InvokeRespIb},
         core::IMStatusCode,
-        read::attr_path,
+        messages::{attr_path, attr_response},
         CmdPathIb, InteractionConsumer, Transaction,
     },
     tlv::TLVElement,
@@ -62,31 +62,20 @@ impl InteractionConsumer for DataModel {
         let node = self.node.read().unwrap();
         for attr_path_ib in attr_list {
             let attr_path = attr_path::Ib::from_tlv(&attr_path_ib)?;
-            let result = node.for_attribute_path(&attr_path.path, |path, e, c, a| {
+            let result = node.for_each_attribute(&attr_path.path, |path, c| {
+                let attr_id = if let Some(a) = path.leaf { a } else { 0 } as u16;
                 let attr_path = attr_path::Ib::new(path);
+                let attr_value =
+                    |tag: TagType, tw: &mut TLVWriter| c.read_attribute(tag, tw, attr_id);
                 // For now, putting everything in here
-                let _ = tw.put_start_struct(TagType::Anonymous);
-                let _ = tw.put_start_struct(TagType::Context(1));
-                let _ = tw.put_object(TagType::Context(1), &attr_path);
-                // We will have to also support custom data types for encoding
-                let _ = tw.put_object(TagType::Context(2), &a.value);
-                let _ = tw.put_end_container();
-                let _ = tw.put_end_container();
+                let attr_resp = attr_response::Ib::AttrData(attr_path, attr_value);
+                let _ = tw.put_object(TagType::Anonymous, &attr_resp);
                 Ok(())
             });
             if let Err(e) = result {
-                // In this case, we'll have to add the AttributeStatusIb
-                let _ = tw.put_start_struct(TagType::Anonymous);
-                let _ = tw.put_start_struct(TagType::Context(0));
-                // Attribute Status IB
-                let _ = tw.put_object(TagType::Context(0), &attr_path);
-                // Status IB
-                let _ = tw.put_start_struct(TagType::Context(1));
-                let _ = tw.put_u16(TagType::Context(0), e as u16);
-                let _ = tw.put_u16(TagType::Context(1), 0);
-                let _ = tw.put_end_container();
-                let _ = tw.put_end_container();
-                let _ = tw.put_end_container();
+                let attr_resp =
+                    attr_response::Ib::AttrStatus(attr_path, e, 0, attr_response::dummy);
+                let _ = tw.put_object(TagType::Anonymous, &attr_resp);
             }
         }
         Ok(())
