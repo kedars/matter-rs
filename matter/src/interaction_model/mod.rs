@@ -1,7 +1,5 @@
 use std::any::Any;
 
-use std::sync::Arc;
-
 use crate::{
     error::Error, tlv::TLVElement, tlv_writer::TLVWriter, transport::session::SessionHandle,
 };
@@ -42,7 +40,7 @@ pub trait InteractionConsumer {
 }
 
 pub struct InteractionModel {
-    consumer: Arc<dyn InteractionConsumer>,
+    consumer: Box<dyn InteractionConsumer>,
 }
 pub mod command;
 pub mod core;

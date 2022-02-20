@@ -1,4 +1,9 @@
-use super::{device_types::device_type_add_root_node, objects::*, sdm::dev_att::DevAttDataFetcher};
+use super::{
+    device_types::device_type_add_root_node,
+    objects::{self, *},
+    sdm::dev_att::DevAttDataFetcher,
+    system_model::descriptor::cluster_descriptor_new,
+};
 use crate::{
     error::*,
     fabric::FabricMgr,
@@ -16,7 +21,7 @@ use log::{error, info};
 use std::sync::{Arc, RwLock};
 
 pub struct DataModel {
-    pub node: RwLock<Box<Node>>,
+    pub node: Arc<RwLock<Box<Node>>>,
 }
 
 impl DataModel {
@@ -25,10 +30,11 @@ impl DataModel {
         fabric_mgr: Arc<FabricMgr>,
     ) -> Result<Self, Error> {
         let dm = DataModel {
-            node: RwLock::new(Node::new()?),
+            node: Arc::new(RwLock::new(Node::new()?)),
         };
         {
             let mut node = dm.node.write()?;
+            node.set_changes_cb(Box::new(dm.clone()));
             device_type_add_root_node(&mut node, dev_att, fabric_mgr)?;
         }
         Ok(dm)
@@ -41,6 +47,21 @@ impl DataModel {
             .get_cluster(cmd_req.cluster)
             .map_err(|_| IMStatusCode::UnsupportedCluster)?
             .handle_command(&mut cmd_req)
+    }
+}
+
+impl Clone for DataModel {
+    fn clone(&self) -> Self {
+        DataModel {
+            node: self.node.clone(),
+        }
+    }
+}
+
+impl objects::ChangeConsumer for DataModel {
+    fn endpoint_added(&self, id: u16, endpoint: &mut Endpoint) -> Result<(), Error> {
+        endpoint.add_cluster(cluster_descriptor_new(id, self.clone())?)?;
+        Ok(())
     }
 }
 

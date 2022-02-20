@@ -6,7 +6,6 @@ use crate::transport::session::SessionHandle;
 use log::error;
 use num;
 use num_derive::FromPrimitive;
-use std::sync::Arc;
 
 use super::InteractionConsumer;
 use super::InteractionModel;
@@ -53,7 +52,7 @@ impl<'a, 'b> Transaction<'a, 'b> {
 }
 
 impl InteractionModel {
-    pub fn new(consumer: Arc<dyn InteractionConsumer>) -> InteractionModel {
+    pub fn new(consumer: Box<dyn InteractionConsumer>) -> InteractionModel {
         InteractionModel { consumer }
     }
 }
@@ -127,8 +126,7 @@ mod tests {
     use std::net::IpAddr;
     use std::net::Ipv4Addr;
     use std::net::SocketAddr;
-    use std::sync::Arc;
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
 
     struct Node {
         pub endpoint: u16,
@@ -138,16 +136,25 @@ mod tests {
     }
 
     struct DataModel {
-        node: Mutex<Node>,
+        node: Arc<Mutex<Node>>,
     }
 
     impl DataModel {
         pub fn new(node: Node) -> Self {
             DataModel {
-                node: Mutex::new(node),
+                node: Arc::new(Mutex::new(node)),
             }
         }
     }
+
+    impl Clone for DataModel {
+        fn clone(&self) -> Self {
+            Self {
+                node: self.node.clone(),
+            }
+        }
+    }
+
     impl InteractionConsumer for DataModel {
         fn consume_invoke_cmd(
             &self,
@@ -184,13 +191,13 @@ mod tests {
             0x18,
         ];
 
-        let data_model = Arc::new(DataModel::new(Node {
+        let data_model = DataModel::new(Node {
             endpoint: 0,
             cluster: 0,
             command: 0,
             variable: 0,
-        }));
-        let mut interaction_model = InteractionModel::new(data_model.clone());
+        });
+        let mut interaction_model = InteractionModel::new(Box::new(data_model.clone()));
         let mut exch: Exchange = Default::default();
         let mut sess_mgr: SessionMgr = Default::default();
         let sess = sess_mgr

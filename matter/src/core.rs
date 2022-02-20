@@ -11,7 +11,7 @@ use std::sync::Arc;
 /// The primary Matter Object
 pub struct Matter {
     transport_mgr: transport::mgr::Mgr,
-    data_model: Arc<DataModel>,
+    data_model: DataModel,
     fabric_mgr: Arc<FabricMgr>,
 }
 
@@ -24,13 +24,14 @@ impl Matter {
     /// this object to return the device attestation details when queried upon.
     pub fn new(dev_att: Box<dyn DevAttDataFetcher>) -> Result<Box<Matter>, Error> {
         let fabric_mgr = Arc::new(FabricMgr::new()?);
-        let data_model = Arc::new(DataModel::new(dev_att, fabric_mgr.clone())?);
+        let data_model = DataModel::new(dev_att, fabric_mgr.clone())?;
         let mut matter = Box::new(Matter {
             transport_mgr: transport::mgr::Mgr::new()?,
             data_model,
             fabric_mgr,
         });
-        let interaction_model = Box::new(InteractionModel::new(matter.data_model.clone()));
+        let interaction_model =
+            Box::new(InteractionModel::new(Box::new(matter.data_model.clone())));
         matter.transport_mgr.register_protocol(interaction_model)?;
         let secure_channel = Box::new(SecureChannel::new(matter.fabric_mgr.clone()));
         matter.transport_mgr.register_protocol(secure_channel)?;
@@ -42,7 +43,7 @@ impl Matter {
     /// The Data Model is where you express what is the type of your device. Typically
     /// once you gets this reference, you acquire the write lock and add your device
     /// types, clusters, attributes, commands to the data model.
-    pub fn get_data_model(&self) -> Arc<DataModel> {
+    pub fn get_data_model(&self) -> DataModel {
         self.data_model.clone()
     }
 

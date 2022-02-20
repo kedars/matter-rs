@@ -20,11 +20,13 @@ pub const CLUSTERS_PER_ENDPT: usize = 5;
 pub const ATTRS_PER_CLUSTER: usize = 4;
 pub const CMDS_PER_CLUSTER: usize = 8;
 
+#[derive(PartialEq)]
 pub enum AttrValue {
     Int8(i8),
     Int64(i64),
     Uint16(u16),
     Bool(bool),
+    Custom,
 }
 
 impl Debug for AttrValue {
@@ -34,6 +36,7 @@ impl Debug for AttrValue {
             AttrValue::Int64(v) => write!(f, "{:?}", *v),
             AttrValue::Uint16(v) => write!(f, "{:?}", *v),
             AttrValue::Bool(v) => write!(f, "{:?}", *v),
+            AttrValue::Custom => write!(f, "custom-attribute"),
         }?;
         Ok(())
     }
@@ -120,7 +123,6 @@ pub struct Cluster {
     commands: [Option<Box<Command>>; CMDS_PER_CLUSTER],
     data: Option<Box<dyn Any>>,
     c: Option<Box<dyn ClusterType>>,
-    custom_attributes: bool,
 }
 
 impl Cluster {
@@ -134,6 +136,10 @@ impl Cluster {
         let mut a = Cluster::new(id)?;
         a.c = Some(c);
         Ok(a)
+    }
+
+    pub fn id(&self) -> u32 {
+        self.id
     }
 
     pub fn set_data(&mut self, data: Box<dyn Any>) {
@@ -216,14 +222,16 @@ impl Cluster {
         tw: &mut TLVWriter,
         attr_id: u16,
     ) -> Result<(), Error> {
-        if let Some(c) = &self.c {
-            if self.custom_attributes {
-                return c.read_attribute(tag, tw, attr_id);
-            }
-        }
-
         if let Some(a) = self.get_attribute(attr_id) {
-            tw.put_object(tag, &a.value)
+            if a.value == AttrValue::Custom {
+                if let Some(c) = &self.c {
+                    c.read_attribute(tag, tw, attr_id)
+                } else {
+                    Err(Error::AttributeNotFound)
+                }
+            } else {
+                tw.put_object(tag, &a.value)
+            }
         } else {
             Err(Error::AttributeNotFound)
         }
@@ -317,9 +325,14 @@ impl std::fmt::Display for Endpoint {
     }
 }
 
+pub trait ChangeConsumer {
+    fn endpoint_added(&self, id: u16, endpoint: &mut Endpoint) -> Result<(), Error>;
+}
+
 #[derive(Default)]
 pub struct Node {
     endpoints: [Option<Box<Endpoint>>; ENDPTS_PER_ACC],
+    changes_cb: Option<Box<dyn ChangeConsumer>>,
 }
 
 impl std::fmt::Display for Node {
@@ -340,13 +353,21 @@ impl Node {
         Ok(node)
     }
 
+    pub fn set_changes_cb(&mut self, consumer: Box<dyn ChangeConsumer>) {
+        self.changes_cb = Some(consumer);
+    }
+
     pub fn add_endpoint(&mut self) -> Result<u32, Error> {
         let index = self
             .endpoints
             .iter()
             .position(|x| x.is_none())
             .ok_or(Error::NoSpace)?;
-        self.endpoints[index] = Some(Endpoint::new()?);
+        let mut endpoint = Endpoint::new()?;
+        if let Some(cb) = &self.changes_cb {
+            cb.endpoint_added(index as u16, &mut endpoint)?;
+        }
+        self.endpoints[index] = Some(endpoint);
         Ok(index as u32)
     }
 
@@ -390,9 +411,9 @@ impl Node {
         Ok(endpoints)
     }
 
-    pub fn for_each_attribute<F>(&self, path: &GenericPath, mut f: F) -> Result<(), IMStatusCode>
+    pub fn for_each_cluster<T>(&self, path: &GenericPath, mut f: T) -> Result<(), IMStatusCode>
     where
-        F: FnMut(&GenericPath, &Cluster) -> Result<(), IMStatusCode>,
+        T: FnMut(&GenericPath, &Cluster) -> Result<(), IMStatusCode>,
     {
         let mut current_path = *path;
         let (endpoints, mut endpoint_id) = self.get_wildcard_endpoints(path.endpoint)?;
@@ -400,14 +421,25 @@ impl Node {
             current_path.endpoint = Some(endpoint_id as u16);
             let clusters = e.get_wildcard_clusters(path.cluster)?;
             for c in clusters.iter().flatten() {
-                let attributes = c.get_wildcard_attribute(path.leaf.map(|at| at as u16))?;
-                for a in attributes.iter().flatten() {
-                    current_path.leaf = Some(a.id as u32);
-                    f(&current_path, c)?;
-                }
+                f(&current_path, c)?;
             }
             endpoint_id += 1;
         }
         Ok(())
+    }
+
+    pub fn for_each_attribute<T>(&self, path: &GenericPath, mut f: T) -> Result<(), IMStatusCode>
+    where
+        T: FnMut(&GenericPath, &Cluster) -> Result<(), IMStatusCode>,
+    {
+        self.for_each_cluster(path, |current_path, c| {
+            let mut current_path = *current_path;
+            let attributes = c.get_wildcard_attribute(path.leaf.map(|at| at as u16))?;
+            for a in attributes.iter().flatten() {
+                current_path.leaf = Some(a.id as u32);
+                f(&current_path, c)?;
+            }
+            Ok(())
+        })
     }
 }
