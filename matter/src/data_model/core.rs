@@ -9,9 +9,8 @@ use crate::{
     fabric::FabricMgr,
     interaction_model::{
         command::{self, CommandReq, InvokeRespIb},
-        core::IMStatusCode,
-        messages::{attr_path, attr_response},
-        CmdPathIb, InteractionConsumer, Transaction,
+        messages::{attr_path, attr_response, command_path},
+        InteractionConsumer, Transaction,
     },
     tlv::TLVElement,
     tlv_common::TagType,
@@ -38,15 +37,6 @@ impl DataModel {
             device_type_add_root_node(&mut node, dev_att, fabric_mgr)?;
         }
         Ok(dm)
-    }
-
-    fn handle_command(&self, mut cmd_req: CommandReq) -> Result<(), IMStatusCode> {
-        let mut node = self.node.write().unwrap();
-        node.get_endpoint(cmd_req.endpoint.into())
-            .map_err(|_| IMStatusCode::UnsupportedEndpoint)?
-            .get_cluster(cmd_req.cluster)
-            .map_err(|_| IMStatusCode::UnsupportedCluster)?
-            .handle_command(&mut cmd_req)
     }
 }
 
@@ -88,7 +78,7 @@ impl InteractionConsumer for DataModel {
                 let attr_path = attr_path::Ib::new(path);
                 let attr_value =
                     |tag: TagType, tw: &mut TLVWriter| c.read_attribute(tag, tw, attr_id);
-                // For now, putting everything in here
+
                 let attr_resp = attr_response::Ib::AttrData(attr_path, attr_value);
                 let _ = tw.put_object(TagType::Anonymous, &attr_resp);
                 Ok(())
@@ -104,28 +94,28 @@ impl InteractionConsumer for DataModel {
 
     fn consume_invoke_cmd(
         &self,
-        cmd_path_ib: &CmdPathIb,
+        cmd_path_ib: &command_path::Ib,
         data: TLVElement,
         trans: &mut Transaction,
         tlvwriter: &mut TLVWriter,
     ) -> Result<(), Error> {
         info!("Invoke Commmand Handler executing: {:?}", cmd_path_ib);
 
-        let cmd_req = CommandReq {
-            // TODO: Need to support wildcards
-            endpoint: cmd_path_ib.endpoint.unwrap_or(1),
-            cluster: cmd_path_ib.cluster.unwrap_or(0),
-            command: cmd_path_ib.command,
+        let mut cmd_req = CommandReq {
+            cmd: *cmd_path_ib,
             data,
             trans,
             resp: tlvwriter,
         };
-        let cmd_path_ib = cmd_req.to_cmd_path_ib();
 
-        let result = self.handle_command(cmd_req);
+        let mut node = self.node.write().unwrap();
+        let result = node.for_each_cluster_mut(&cmd_path_ib.path, |path, c| {
+            cmd_req.cmd.path = *path;
+            c.handle_command(&mut cmd_req)
+        });
         if let Err(result) = result {
             // Err return implies we must send the StatusIB with this code
-            let invoke_resp = InvokeRespIb::CommandStatus(cmd_path_ib, result, 0, command::dummy);
+            let invoke_resp = InvokeRespIb::CommandStatus(*cmd_path_ib, result, 0, command::dummy);
             tlvwriter.put_object(TagType::Anonymous, &invoke_resp)?;
         }
         Ok(())

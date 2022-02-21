@@ -114,7 +114,7 @@ pub mod attr_path {
                         ib.path.leaf = i.get_u8().map(|a| a as u32).ok()
                     }
                     TagType::Context(TAG_LIST_INDEX) => ib.list_index = i.get_u16().ok(),
-                    _ => (),
+                    _ => error!("Unsupported tag"),
                 }
             }
             Ok(ib)
@@ -138,6 +138,85 @@ pub mod attr_path {
     }
 }
 
+pub mod command_path {
+    use crate::{
+        error::Error,
+        tlv::TLVElement,
+        tlv_common::TagType,
+        tlv_writer::{TLVWriter, ToTLV},
+    };
+
+    use super::GenericPath;
+
+    use log::error;
+
+    #[derive(Default, Debug, Copy, Clone)]
+    pub struct Ib {
+        pub path: GenericPath,
+    }
+
+    const TAG_ENDPOINT: u8 = 0;
+    const TAG_CLUSTER: u8 = 1;
+    const TAG_COMMAND: u8 = 2;
+
+    #[macro_export]
+    macro_rules! command_path_ib {
+        ($endpoint:literal,$cluster:ident,$command:ident) => {{
+            use crate::interaction_model::messages::command_path::Ib;
+            Ib {
+                path: GenericPath {
+                    endpoint: Some($endpoint),
+                    cluster: Some($cluster),
+                    leaf: Some($command as u32),
+                },
+            }
+        }};
+    }
+
+    impl Ib {
+        pub fn from_tlv(cmd_path: &TLVElement) -> Result<Self, Error> {
+            let mut ib = Ib::default();
+
+            let iter = cmd_path.iter().ok_or(Error::Invalid)?;
+            for i in iter {
+                match i.get_tag() {
+                    TagType::Context(TAG_ENDPOINT) => {
+                        ib.path.endpoint = i.get_u8().map(|a| a as u16).ok()
+                    }
+                    TagType::Context(TAG_CLUSTER) => {
+                        ib.path.cluster = i.get_u8().map(|a| a as u32).ok()
+                    }
+                    TagType::Context(TAG_COMMAND) => {
+                        ib.path.leaf = i.get_u8().map(|a| a as u32).ok()
+                    }
+                    _ => error!("Unsupported tag"),
+                }
+            }
+            if ib.path.leaf.is_none() {
+                error!("Wildcard command parameter not supported");
+                Err(Error::CommandNotFound)
+            } else {
+                Ok(ib)
+            }
+        }
+    }
+
+    impl ToTLV for Ib {
+        fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
+            tw.put_start_list(tag_type)?;
+            if let Some(endpoint) = self.path.endpoint {
+                tw.put_u16(TagType::Context(TAG_ENDPOINT), endpoint)?;
+            }
+            if let Some(cluster) = self.path.cluster {
+                tw.put_u32(TagType::Context(TAG_CLUSTER), cluster)?;
+            }
+            if let Some(v) = self.path.leaf {
+                tw.put_u16(TagType::Context(TAG_COMMAND), v as u16)?;
+            }
+            tw.put_end_container()
+        }
+    }
+}
 pub mod report_data {
     // TODO: Differs from spec
     pub enum Tag {

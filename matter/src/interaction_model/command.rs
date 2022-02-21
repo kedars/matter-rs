@@ -1,6 +1,6 @@
 use super::core::IMStatusCode;
 use super::core::OpCode;
-use super::CmdPathIb;
+use super::messages::command_path;
 use super::InteractionModel;
 use super::Transaction;
 use crate::error::*;
@@ -26,8 +26,8 @@ pub enum InvokeRespIb<F>
 where
     F: Fn(&mut TLVWriter) -> Result<(), Error>,
 {
-    CommandData(CmdPathIb, F),
-    CommandStatus(CmdPathIb, IMStatusCode, u32, F),
+    CommandData(command_path::Ib, F),
+    CommandStatus(command_path::Ib, IMStatusCode, u32, F),
 }
 
 #[allow(non_snake_case)]
@@ -58,55 +58,10 @@ impl<F: Fn(&mut TLVWriter) -> Result<(), Error>> ToTLV for InvokeRespIb<F> {
 }
 
 pub struct CommandReq<'a, 'b, 'c, 'd, 'e> {
-    pub endpoint: u16,
-    pub cluster: u32,
-    pub command: u16,
+    pub cmd: command_path::Ib,
     pub data: TLVElement<'a>,
     pub resp: &'a mut TLVWriter<'b, 'c>,
     pub trans: &'a mut Transaction<'d, 'e>,
-}
-
-impl<'a, 'b, 'c, 'd, 'e> CommandReq<'a, 'b, 'c, 'd, 'e> {
-    pub fn to_cmd_path_ib(&self) -> CmdPathIb {
-        CmdPathIb {
-            endpoint: Some(self.endpoint),
-            cluster: Some(self.cluster),
-            command: self.command,
-        }
-    }
-}
-
-impl CmdPathIb {
-    fn from_tlv(cmd_path: &TLVElement) -> Result<Self, Error> {
-        Ok(Self {
-            endpoint: cmd_path
-                .find_tag(0)
-                .and_then(|x| x.get_u8())
-                .ok()
-                .map(|e| e as u16),
-            cluster: cmd_path
-                .find_tag(1)
-                .and_then(|x| x.get_u8())
-                .ok()
-                .map(|c| c as u32),
-            command: cmd_path.find_tag(2)?.get_u8()? as u16,
-        })
-    }
-}
-
-impl ToTLV for CmdPathIb {
-    fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
-        tw.put_start_list(tag_type)?;
-        if let Some(endpoint) = self.endpoint {
-            tw.put_u16(TagType::Context(0), endpoint)?;
-        }
-        if let Some(cluster) = self.cluster {
-            tw.put_u32(TagType::Context(1), cluster)?;
-        }
-        tw.put_u16(TagType::Context(2), self.command)?;
-
-        tw.put_end_container()
-    }
 }
 
 fn put_status_ib(
@@ -153,7 +108,8 @@ impl InteractionModel {
         tw.put_start_array(TagType::Context(1))?;
         for cmd_data_ib in cmd_list_iter {
             // CommandDataIB has CommandPath(0) + Data(1)
-            let cmd_path_ib = CmdPathIb::from_tlv(&cmd_data_ib.find_tag(0)?.confirm_list()?)?;
+            let cmd_path_ib =
+                command_path::Ib::from_tlv(&cmd_data_ib.find_tag(0)?.confirm_list()?)?;
             let data = cmd_data_ib.find_tag(1)?;
 
             self.consumer

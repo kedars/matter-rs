@@ -23,11 +23,13 @@ fn handle_command_on_off(
     _cluster: &mut Cluster,
     cmd_req: &mut CommandReq,
 ) -> Result<(), IMStatusCode> {
-    match cmd_req.command as u16 {
-        CMD_OFF_ID => cmd_enter!("Off"),
-        CMD_ON_ID => cmd_enter!("On"),
-        CMD_TOGGLE_ID => cmd_enter!("Toggle"),
-        _ => info!("Command not supported"),
+    if let Some(cmd) = cmd_req.cmd.path.leaf {
+        match cmd as u16 {
+            CMD_OFF_ID => cmd_enter!("Off"),
+            CMD_ON_ID => cmd_enter!("On"),
+            CMD_TOGGLE_ID => cmd_enter!("Toggle"),
+            _ => info!("Command not supported"),
+        }
     }
 
     // Always mark complete for now

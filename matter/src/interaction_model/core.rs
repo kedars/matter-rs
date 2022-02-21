@@ -117,7 +117,7 @@ pub enum IMStatusCode {
 #[cfg(test)]
 mod tests {
     use crate::interaction_model::core::*;
-    use crate::interaction_model::CmdPathIb;
+    use crate::interaction_model::messages::command_path;
     use crate::proto_demux::HandleProto;
     use crate::tlv::TLVElement;
     use crate::tlv_writer::TLVWriter;
@@ -158,15 +158,15 @@ mod tests {
     impl InteractionConsumer for DataModel {
         fn consume_invoke_cmd(
             &self,
-            cmd_path_ib: &CmdPathIb,
+            cmd_path_ib: &command_path::Ib,
             data: TLVElement,
             _trans: &mut Transaction,
             _tlvwriter: &mut TLVWriter,
         ) -> Result<(), Error> {
             let mut common_data = self.node.lock().unwrap();
-            common_data.endpoint = cmd_path_ib.endpoint.unwrap_or(1);
-            common_data.cluster = cmd_path_ib.cluster.unwrap_or(0);
-            common_data.command = cmd_path_ib.command;
+            common_data.endpoint = cmd_path_ib.path.endpoint.unwrap_or(1);
+            common_data.cluster = cmd_path_ib.path.cluster.unwrap_or(0);
+            common_data.command = cmd_path_ib.path.leaf.unwrap_or(0) as u16;
             data.confirm_struct().unwrap();
             common_data.variable = data.find_tag(0).unwrap().get_u8().unwrap();
             Ok(())

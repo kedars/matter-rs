@@ -1,9 +1,10 @@
 use crate::cmd_enter;
+use crate::command_path_ib;
 use crate::data_model::objects::*;
 use crate::data_model::sdm::failsafe::FailSafe;
 use crate::interaction_model::command::InvokeRespIb;
 use crate::interaction_model::core::IMStatusCode;
-use crate::interaction_model::CmdPathIb;
+use crate::interaction_model::messages::{command_path, GenericPath};
 use crate::tlv::TLVElement;
 use crate::tlv_common::TagType;
 use crate::{error::*, interaction_model::command::CommandReq};
@@ -28,23 +29,23 @@ const CMD_SETREGULATORYCONFIG_RESPONSE_ID: u16 = 0x03;
 const CMD_COMMISSIONING_COMPLETE_ID: u16 = 0x04;
 const CMD_COMMISSIONING_COMPLETE_RESPONSE_ID: u16 = 0x05;
 
-const CMD_PATH_ARMFAILSAFE_RESPONSE: CmdPathIb = CmdPathIb {
-    endpoint: Some(0),
-    cluster: Some(CLUSTER_GENERAL_COMMISSIONING_ID),
-    command: CMD_ARMFAILSAFE_RESPONSE_ID,
-};
+const CMD_PATH_ARMFAILSAFE_RESPONSE: command_path::Ib = command_path_ib!(
+    0,
+    CLUSTER_GENERAL_COMMISSIONING_ID,
+    CMD_ARMFAILSAFE_RESPONSE_ID
+);
 
-const CMD_PATH_SETREGULATORY_RESPONSE: CmdPathIb = CmdPathIb {
-    endpoint: Some(0),
-    cluster: Some(CLUSTER_GENERAL_COMMISSIONING_ID),
-    command: CMD_SETREGULATORYCONFIG_RESPONSE_ID,
-};
+const CMD_PATH_SETREGULATORY_RESPONSE: command_path::Ib = command_path_ib!(
+    0,
+    CLUSTER_GENERAL_COMMISSIONING_ID,
+    CMD_SETREGULATORYCONFIG_RESPONSE_ID
+);
 
-const CMD_PATH_COMMISSIONING_COMPLETE_RESPONSE: CmdPathIb = CmdPathIb {
-    endpoint: Some(0),
-    cluster: Some(CLUSTER_GENERAL_COMMISSIONING_ID),
-    command: CMD_COMMISSIONING_COMPLETE_RESPONSE_ID,
-};
+const CMD_PATH_COMMISSIONING_COMPLETE_RESPONSE: command_path::Ib = command_path_ib!(
+    0,
+    CLUSTER_GENERAL_COMMISSIONING_ID,
+    CMD_COMMISSIONING_COMPLETE_RESPONSE_ID
+);
 
 fn get_armfailsafe_params(data: &TLVElement) -> Result<(u8, u8), Error> {
     // These data types don't match the spec

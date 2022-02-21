@@ -8,13 +8,13 @@ use crate::data_model::sdm::dev_att;
 use crate::fabric::{Fabric, FabricMgr};
 use crate::interaction_model::command::{CommandReq, InvokeRespIb};
 use crate::interaction_model::core::IMStatusCode;
-use crate::interaction_model::CmdPathIb;
+use crate::interaction_model::messages::{command_path, GenericPath};
 use crate::tlv::TLVElement;
 use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
 use crate::transport::session::SessionMode;
 use crate::utils::writebuf::WriteBuf;
-use crate::{cmd_enter, error::*};
+use crate::{cmd_enter, command_path_ib, error::*};
 use log::{error, info};
 
 use super::dev_att::{DataType, DevAttDataFetcher};
@@ -78,29 +78,20 @@ const CMD_ADDNOC_ID: u16 = 0x06;
 const CMD_NOCRESPONSE_ID: u16 = 0x08;
 const CMD_ADDTRUSTEDROOTCERT_ID: u16 = 0x0b;
 
-const CMD_PATH_CSRRESPONSE: CmdPathIb = CmdPathIb {
-    endpoint: Some(0),
-    cluster: Some(CLUSTER_OPERATIONAL_CREDENTIALS_ID),
-    command: CMD_CSRRESPONSE_ID,
-};
+const CMD_PATH_CSRRESPONSE: command_path::Ib =
+    command_path_ib!(0, CLUSTER_OPERATIONAL_CREDENTIALS_ID, CMD_CSRRESPONSE_ID);
 
-const CMD_PATH_NOCRESPONSE: CmdPathIb = CmdPathIb {
-    endpoint: Some(0),
-    cluster: Some(CLUSTER_OPERATIONAL_CREDENTIALS_ID),
-    command: CMD_NOCRESPONSE_ID,
-};
+const CMD_PATH_NOCRESPONSE: command_path::Ib =
+    command_path_ib!(0, CLUSTER_OPERATIONAL_CREDENTIALS_ID, CMD_NOCRESPONSE_ID);
 
-const CMD_PATH_CERTCHAINRESPONSE: CmdPathIb = CmdPathIb {
-    endpoint: Some(0),
-    cluster: Some(CLUSTER_OPERATIONAL_CREDENTIALS_ID),
-    command: CMD_CERTCHAINRESPONSE_ID,
-};
+const CMD_PATH_CERTCHAINRESPONSE: command_path::Ib = command_path_ib!(
+    0,
+    CLUSTER_OPERATIONAL_CREDENTIALS_ID,
+    CMD_CERTCHAINRESPONSE_ID
+);
 
-const CMD_PATH_ATTRESPONSE: CmdPathIb = CmdPathIb {
-    endpoint: Some(0),
-    cluster: Some(CLUSTER_OPERATIONAL_CREDENTIALS_ID),
-    command: CMD_ATTRESPONSE_ID,
-};
+const CMD_PATH_ATTRESPONSE: command_path::Ib =
+    command_path_ib!(0, CLUSTER_OPERATIONAL_CREDENTIALS_ID, CMD_ATTRESPONSE_ID);
 
 struct NocData {
     pub key_pair: KeyPair,

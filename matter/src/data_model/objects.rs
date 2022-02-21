@@ -175,13 +175,18 @@ impl Cluster {
     }
 
     pub fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
-        let cmd = self
-            .commands
-            .iter()
-            .flatten()
-            .find(|x| x.id == cmd_req.command)
-            .ok_or(IMStatusCode::UnsupportedCommand)?;
-        (cmd.cb)(self, cmd_req)
+        if let Some(cmd) = cmd_req.cmd.path.leaf {
+            let cmd = self
+                .commands
+                .iter()
+                .flatten()
+                .find(|x| x.id == cmd as u16)
+                .ok_or(IMStatusCode::UnsupportedCommand)?;
+            (cmd.cb)(self, cmd_req)
+        } else {
+            error!("Wildcard command not supported");
+            Err(IMStatusCode::UnsupportedCommand)
+        }
     }
 
     fn get_attribute_index(&self, attr_id: u16) -> Option<usize> {
@@ -311,6 +316,23 @@ impl Endpoint {
         };
         Ok(clusters)
     }
+
+    // Returns a slice of clusters, with either a single cluster or all (wildcard)
+    pub fn get_wildcard_clusters_mut(
+        &mut self,
+        cluster: Option<u32>,
+    ) -> Result<&mut [Option<Box<Cluster>>], IMStatusCode> {
+        let clusters = if let Some(c) = cluster {
+            if let Some(i) = self.get_cluster_index(c) {
+                &mut self.clusters[i..i + 1]
+            } else {
+                return Err(IMStatusCode::UnsupportedCluster);
+            }
+        } else {
+            &mut self.clusters[..]
+        };
+        Ok(clusters)
+    }
 }
 
 impl std::fmt::Display for Endpoint {
@@ -411,6 +433,22 @@ impl Node {
         Ok(endpoints)
     }
 
+    pub fn get_wildcard_endpoints_mut(
+        &mut self,
+        endpoint: Option<u16>,
+    ) -> Result<(&mut [Option<Box<Endpoint>>], usize), IMStatusCode> {
+        let endpoints = if let Some(e) = endpoint {
+            let e = e as usize;
+            if self.endpoints[e].is_none() {
+                return Err(IMStatusCode::UnsupportedEndpoint);
+            }
+            (&mut self.endpoints[e..e + 1], e)
+        } else {
+            (&mut self.endpoints[..], 0)
+        };
+        Ok(endpoints)
+    }
+
     pub fn for_each_cluster<T>(&self, path: &GenericPath, mut f: T) -> Result<(), IMStatusCode>
     where
         T: FnMut(&GenericPath, &Cluster) -> Result<(), IMStatusCode>,
@@ -421,6 +459,27 @@ impl Node {
             current_path.endpoint = Some(endpoint_id as u16);
             let clusters = e.get_wildcard_clusters(path.cluster)?;
             for c in clusters.iter().flatten() {
+                f(&current_path, c)?;
+            }
+            endpoint_id += 1;
+        }
+        Ok(())
+    }
+
+    pub fn for_each_cluster_mut<T>(
+        &mut self,
+        path: &GenericPath,
+        mut f: T,
+    ) -> Result<(), IMStatusCode>
+    where
+        T: FnMut(&GenericPath, &mut Cluster) -> Result<(), IMStatusCode>,
+    {
+        let mut current_path = *path;
+        let (endpoints, mut endpoint_id) = self.get_wildcard_endpoints_mut(path.endpoint)?;
+        for e in endpoints.iter_mut().flatten() {
+            current_path.endpoint = Some(endpoint_id as u16);
+            let clusters = e.get_wildcard_clusters_mut(path.cluster)?;
+            for c in clusters.iter_mut().flatten() {
                 f(&current_path, c)?;
             }
             endpoint_id += 1;
