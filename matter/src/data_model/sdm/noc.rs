@@ -39,26 +39,6 @@ enum NocStatus {
     InvalidFabricIndex = 11,
 }
 
-pub struct NocCluster {
-    dev_att: Box<dyn DevAttDataFetcher>,
-    fabric_mgr: Arc<FabricMgr>,
-    failsafe: Arc<FailSafe>,
-}
-
-impl NocCluster {
-    pub fn new(
-        dev_att: Box<dyn DevAttDataFetcher>,
-        fabric_mgr: Arc<FabricMgr>,
-        failsafe: Arc<FailSafe>,
-    ) -> Self {
-        Self {
-            dev_att,
-            fabric_mgr,
-            failsafe,
-        }
-    }
-}
-
 // Some placeholder value for now
 const MAX_CERT_DECLARATION_LEN: usize = 300;
 // Some placeholder value for now
@@ -93,6 +73,11 @@ const CMD_PATH_CERTCHAINRESPONSE: command_path::Ib = command_path_ib!(
 const CMD_PATH_ATTRESPONSE: command_path::Ib =
     command_path_ib!(0, CLUSTER_OPERATIONAL_CREDENTIALS_ID, CMD_ATTRESPONSE_ID);
 
+pub struct NocCluster {
+    dev_att: Box<dyn DevAttDataFetcher>,
+    fabric_mgr: Arc<FabricMgr>,
+    failsafe: Arc<FailSafe>,
+}
 struct NocData {
     pub key_pair: KeyPair,
     pub root_ca: Cert,
@@ -103,6 +88,230 @@ impl NocData {
         Self {
             key_pair,
             root_ca: Cert::default(),
+        }
+    }
+}
+
+impl NocCluster {
+    pub fn new(
+        dev_att: Box<dyn DevAttDataFetcher>,
+        fabric_mgr: Arc<FabricMgr>,
+        failsafe: Arc<FailSafe>,
+    ) -> Self {
+        Self {
+            dev_att,
+            fabric_mgr,
+            failsafe,
+        }
+    }
+
+    fn _handle_command_addnoc(&mut self, cmd_req: &mut CommandReq) -> Result<(), NocStatus> {
+        let noc_data = cmd_req
+            .trans
+            .session
+            .take_data::<NocData>()
+            .ok_or(NocStatus::MissingCsr)?;
+
+        if !self
+            .failsafe
+            .allow_noc_change()
+            .map_err(|_| NocStatus::InsufficientPrivlege)?
+        {
+            error!("AddNOC not allowed by Fail Safe");
+            return Err(NocStatus::InsufficientPrivlege);
+        }
+
+        let r = AddNocReq::new(&cmd_req.data).map_err(|_| NocStatus::InvalidNOC)?;
+
+        let noc_value = Cert::new(r.noc_value);
+        info!("Received NOC as: {}", noc_value);
+        let icac_value = Cert::new(r.icac_value);
+        info!("Received ICAC as: {}", icac_value);
+
+        let fabric = Fabric::new(
+            noc_data.key_pair,
+            noc_data.root_ca,
+            icac_value,
+            noc_value,
+            Cert::new(r.ipk_value),
+        )
+        .map_err(|_| NocStatus::TableFull)?;
+        let fab_idx = self
+            .fabric_mgr
+            .add(fabric)
+            .map_err(|_| NocStatus::TableFull)?;
+
+        if self.failsafe.record_add_noc(fab_idx).is_err() {
+            error!("Failed to record NoC in the FailSafe, what to do?");
+        }
+        let invoke_resp = InvokeRespIb::CommandData(CMD_PATH_NOCRESPONSE, |t| {
+            // Status
+            t.put_u8(TagType::Context(0), 0)?;
+            // Fabric Index  - hard-coded for now
+            t.put_u8(TagType::Context(1), fab_idx)?;
+            // Debug string
+            t.put_utf8(TagType::Context(2), b"")
+        });
+        let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
+        cmd_req.trans.complete();
+        Ok(())
+    }
+
+    fn handle_command_addnoc(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
+        cmd_enter!("AddNOC");
+        if let Err(e) = self._handle_command_addnoc(cmd_req) {
+            let invoke_resp = InvokeRespIb::CommandData(CMD_PATH_NOCRESPONSE, |t| {
+                // Status
+                t.put_u8(TagType::Context(0), e as u8)
+            });
+            let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
+            cmd_req.trans.complete();
+        }
+        Ok(())
+    }
+
+    fn handle_command_attrequest(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
+        cmd_enter!("AttestationRequest");
+
+        let att_nonce = cmd_req
+            .data
+            .find_tag(0)
+            .map_err(|_| IMStatusCode::InvalidCommand)?
+            .get_slice()
+            .map_err(|_| IMStatusCode::InvalidCommand)?;
+        info!("Received Attestation Nonce:{:?}", att_nonce);
+
+        let mut attest_challenge = [0u8; crypto::SYMM_KEY_LEN_BYTES];
+        attest_challenge.copy_from_slice(cmd_req.trans.session.get_att_challenge());
+
+        let invoke_resp = InvokeRespIb::CommandData(CMD_PATH_ATTRESPONSE, |t| {
+            let mut buf: [u8; RESP_MAX] = [0; RESP_MAX];
+            let mut attest_element = WriteBuf::new(&mut buf, RESP_MAX);
+
+            add_attestation_element(&self.dev_att, att_nonce, &mut attest_element, t)?;
+            add_attestation_signature(&self.dev_att, &mut attest_element, &attest_challenge, t)
+        });
+        let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
+        cmd_req.trans.complete();
+        Ok(())
+    }
+
+    fn handle_command_certchainrequest(
+        &mut self,
+        cmd_req: &mut CommandReq,
+    ) -> Result<(), IMStatusCode> {
+        cmd_enter!("CertChainRequest");
+
+        info!("Received data: {}", cmd_req.data);
+        let cert_type =
+            get_certchainrequest_params(&cmd_req.data).map_err(|_| IMStatusCode::InvalidCommand)?;
+
+        let mut buf: [u8; RESP_MAX] = [0; RESP_MAX];
+        let len = self
+            .dev_att
+            .get_devatt_data(cert_type, &mut buf)
+            .map_err(|_| IMStatusCode::Failure)?;
+        let buf = &buf[0..len];
+
+        let invoke_resp = InvokeRespIb::CommandData(CMD_PATH_CERTCHAINRESPONSE, |t| {
+            t.put_str16(TagType::Context(0), buf)
+        });
+        let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
+        cmd_req.trans.complete();
+        Ok(())
+    }
+
+    fn handle_command_csrrequest(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
+        cmd_enter!("CSRRequest");
+
+        let csr_nonce = cmd_req
+            .data
+            .find_tag(0)
+            .map_err(|_| IMStatusCode::InvalidCommand)?
+            .get_slice()
+            .map_err(|_| IMStatusCode::InvalidCommand)?;
+        info!("Received CSR Nonce:{:?}", csr_nonce);
+
+        if !self.failsafe.is_armed() {
+            return Err(IMStatusCode::UnsupportedAccess);
+        }
+
+        let noc_keypair = KeyPair::new().map_err(|_| IMStatusCode::Failure)?;
+        let mut attest_challenge = [0u8; crypto::SYMM_KEY_LEN_BYTES];
+        attest_challenge.copy_from_slice(cmd_req.trans.session.get_att_challenge());
+
+        let invoke_resp = InvokeRespIb::CommandData(CMD_PATH_CSRRESPONSE, |t| {
+            let mut buf: [u8; RESP_MAX] = [0; RESP_MAX];
+            let mut nocsr_element = WriteBuf::new(&mut buf, RESP_MAX);
+
+            add_nocsrelement(&noc_keypair, csr_nonce, &mut nocsr_element, t)?;
+            add_attestation_signature(&self.dev_att, &mut nocsr_element, &attest_challenge, t)
+        });
+
+        let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
+        let noc_data = Box::new(NocData::new(noc_keypair));
+        // Store this in the session data instead of cluster data, so it gets cleared
+        // if the session goes away for some reason
+        cmd_req.trans.session.set_data(noc_data);
+        cmd_req.trans.complete();
+        Ok(())
+    }
+
+    fn handle_command_addtrustedrootcert(
+        &mut self,
+        cmd_req: &mut CommandReq,
+    ) -> Result<(), IMStatusCode> {
+        cmd_enter!("AddTrustedRootCert");
+        if !self.failsafe.is_armed() {
+            return Err(IMStatusCode::UnsupportedAccess);
+        }
+
+        // This may happen on CASE or PASE. For PASE, the existence of NOC Data is necessary
+        match cmd_req.trans.session.get_session_mode() {
+            SessionMode::Case(_) => error!("CASE: AddTrustedRootCert handling pending"), // For a CASE Session, we just return success for now,
+            SessionMode::Pase => {
+                let noc_data = cmd_req
+                    .trans
+                    .session
+                    .get_data::<NocData>()
+                    .ok_or(IMStatusCode::Failure)?;
+
+                let root_cert = cmd_req
+                    .data
+                    .find_tag(0)
+                    .map_err(|_| IMStatusCode::InvalidCommand)?
+                    .get_slice()
+                    .map_err(|_| IMStatusCode::InvalidCommand)?;
+                info!("Received Trusted Cert:{:x?}", root_cert);
+
+                noc_data.root_ca = Cert::new(root_cert);
+            }
+            _ => (),
+        }
+        Err(IMStatusCode::Sucess)
+    }
+}
+
+impl ClusterType for NocCluster {
+    fn read_attribute(
+        &self,
+        _tag: TagType,
+        _tw: &mut TLVWriter,
+        _attr_id: u16,
+    ) -> Result<(), Error> {
+        // No custom attributes
+        Ok(())
+    }
+
+    fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
+        let cmd = cmd_req.cmd.path.leaf.map(|a| a as u16);
+        match cmd {
+            Some(CMD_ADDNOC_ID) => self.handle_command_addnoc(cmd_req),
+            Some(CMD_CSRREQUEST_ID) => self.handle_command_csrrequest(cmd_req),
+            Some(CMD_ADDTRUSTEDROOTCERT_ID) => self.handle_command_addtrustedrootcert(cmd_req),
+            Some(CMD_ATTREQUEST_ID) => self.handle_command_attrequest(cmd_req),
+            Some(CMD_CERTCHAINREQUEST_ID) => self.handle_command_certchainrequest(cmd_req),
+            _ => Err(IMStatusCode::UnsupportedCommand),
         }
     }
 }
@@ -210,259 +419,11 @@ fn get_certchainrequest_params(data: &TLVElement) -> Result<DataType, Error> {
     }
 }
 
-fn handle_command_attrequest(
-    cluster: &mut Cluster,
-    cmd_req: &mut CommandReq,
-) -> Result<(), IMStatusCode> {
-    cmd_enter!("AttestationRequest");
-
-    let att_nonce = cmd_req
-        .data
-        .find_tag(0)
-        .map_err(|_| IMStatusCode::InvalidCommand)?
-        .get_slice()
-        .map_err(|_| IMStatusCode::InvalidCommand)?;
-    info!("Received Attestation Nonce:{:?}", att_nonce);
-
-    let noc = cluster
-        .get_data::<NocCluster>()
-        .ok_or(IMStatusCode::Failure)?;
-    let mut attest_challenge = [0u8; crypto::SYMM_KEY_LEN_BYTES];
-    attest_challenge.copy_from_slice(cmd_req.trans.session.get_att_challenge());
-
-    let invoke_resp = InvokeRespIb::CommandData(CMD_PATH_ATTRESPONSE, |t| {
-        let mut buf: [u8; RESP_MAX] = [0; RESP_MAX];
-        let mut attest_element = WriteBuf::new(&mut buf, RESP_MAX);
-
-        add_attestation_element(&noc.dev_att, att_nonce, &mut attest_element, t)?;
-        add_attestation_signature(&noc.dev_att, &mut attest_element, &attest_challenge, t)
-    });
-    let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
-    cmd_req.trans.complete();
-    Ok(())
-}
-
-fn handle_command_certchainrequest(
-    cluster: &mut Cluster,
-    cmd_req: &mut CommandReq,
-) -> Result<(), IMStatusCode> {
-    cmd_enter!("CertChainRequest");
-
-    info!("Received data: {}", cmd_req.data);
-    let cert_type =
-        get_certchainrequest_params(&cmd_req.data).map_err(|_| IMStatusCode::InvalidCommand)?;
-    let noc = cluster
-        .get_data::<NocCluster>()
-        .ok_or(IMStatusCode::Failure)?;
-
-    let mut buf: [u8; RESP_MAX] = [0; RESP_MAX];
-    let len = noc
-        .dev_att
-        .get_devatt_data(cert_type, &mut buf)
-        .map_err(|_| IMStatusCode::Failure)?;
-    let buf = &buf[0..len];
-
-    let invoke_resp = InvokeRespIb::CommandData(CMD_PATH_CERTCHAINRESPONSE, |t| {
-        t.put_str16(TagType::Context(0), buf)
-    });
-    let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
-    cmd_req.trans.complete();
-    Ok(())
-}
-
-fn handle_command_csrrequest(
-    cluster: &mut Cluster,
-    cmd_req: &mut CommandReq,
-) -> Result<(), IMStatusCode> {
-    cmd_enter!("CSRRequest");
-
-    let csr_nonce = cmd_req
-        .data
-        .find_tag(0)
-        .map_err(|_| IMStatusCode::InvalidCommand)?
-        .get_slice()
-        .map_err(|_| IMStatusCode::InvalidCommand)?;
-    info!("Received CSR Nonce:{:?}", csr_nonce);
-
-    let noc_cluster = cluster
-        .get_data::<NocCluster>()
-        .ok_or(IMStatusCode::Failure)?;
-    if !noc_cluster.failsafe.is_armed() {
-        return Err(IMStatusCode::UnsupportedAccess);
-    }
-
-    let noc_keypair = KeyPair::new().map_err(|_| IMStatusCode::Failure)?;
-    let mut attest_challenge = [0u8; crypto::SYMM_KEY_LEN_BYTES];
-    attest_challenge.copy_from_slice(cmd_req.trans.session.get_att_challenge());
-
-    let invoke_resp = InvokeRespIb::CommandData(CMD_PATH_CSRRESPONSE, |t| {
-        let mut buf: [u8; RESP_MAX] = [0; RESP_MAX];
-        let mut nocsr_element = WriteBuf::new(&mut buf, RESP_MAX);
-
-        add_nocsrelement(&noc_keypair, csr_nonce, &mut nocsr_element, t)?;
-        add_attestation_signature(
-            &noc_cluster.dev_att,
-            &mut nocsr_element,
-            &attest_challenge,
-            t,
-        )
-    });
-
-    let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
-    let noc_data = Box::new(NocData::new(noc_keypair));
-    // Store this in the session data instead of cluster data, so it gets cleared
-    // if the session goes away for some reason
-    cmd_req.trans.session.set_data(noc_data);
-    cmd_req.trans.complete();
-    Ok(())
-}
-
-fn handle_command_addtrustedrootcert(
-    cluster: &mut Cluster,
-    cmd_req: &mut CommandReq,
-) -> Result<(), IMStatusCode> {
-    cmd_enter!("AddTrustedRootCert");
-    let noc_cluster = cluster
-        .get_data::<NocCluster>()
-        .ok_or(IMStatusCode::Failure)?;
-
-    if !noc_cluster.failsafe.is_armed() {
-        return Err(IMStatusCode::UnsupportedAccess);
-    }
-
-    // This may happen on CASE or PASE. For PASE, the existence of NOC Data is necessary
-    match cmd_req.trans.session.get_session_mode() {
-        SessionMode::Case(_) => error!("CASE: AddTrustedRootCert handling pending"), // For a CASE Session, we just return success for now,
-        SessionMode::Pase => {
-            let noc_data = cmd_req
-                .trans
-                .session
-                .get_data::<NocData>()
-                .ok_or(IMStatusCode::Failure)?;
-
-            let root_cert = cmd_req
-                .data
-                .find_tag(0)
-                .map_err(|_| IMStatusCode::InvalidCommand)?
-                .get_slice()
-                .map_err(|_| IMStatusCode::InvalidCommand)?;
-            info!("Received Trusted Cert:{:x?}", root_cert);
-
-            noc_data.root_ca = Cert::new(root_cert);
-        }
-        _ => (),
-    }
-    Err(IMStatusCode::Sucess)
-}
-
-fn _handle_command_addnoc(
-    cluster: &mut Cluster,
-    cmd_req: &mut CommandReq,
-) -> Result<(), NocStatus> {
-    let noc_data = cmd_req
-        .trans
-        .session
-        .take_data::<NocData>()
-        .ok_or(NocStatus::MissingCsr)?;
-
-    let noc_cluster = cluster
-        .get_data::<NocCluster>()
-        .ok_or(NocStatus::TableFull)?;
-
-    if !noc_cluster
-        .failsafe
-        .allow_noc_change()
-        .map_err(|_| NocStatus::InsufficientPrivlege)?
-    {
-        error!("AddNOC not allowed by Fail Safe");
-        return Err(NocStatus::InsufficientPrivlege);
-    }
-
-    let r = AddNocReq::new(&cmd_req.data).map_err(|_| NocStatus::InvalidNOC)?;
-
-    let noc_value = Cert::new(r.noc_value);
-    info!("Received NOC as: {}", noc_value);
-    let icac_value = Cert::new(r.icac_value);
-    info!("Received ICAC as: {}", icac_value);
-
-    let fabric = Fabric::new(
-        noc_data.key_pair,
-        noc_data.root_ca,
-        icac_value,
-        noc_value,
-        Cert::new(r.ipk_value),
-    )
-    .map_err(|_| NocStatus::TableFull)?;
-    let fab_idx = noc_cluster
-        .fabric_mgr
-        .add(fabric)
-        .map_err(|_| NocStatus::TableFull)?;
-
-    if noc_cluster.failsafe.record_add_noc(fab_idx).is_err() {
-        error!("Failed to record NoC in the FailSafe, what to do?");
-    }
-    let invoke_resp = InvokeRespIb::CommandData(CMD_PATH_NOCRESPONSE, |t| {
-        // Status
-        t.put_u8(TagType::Context(0), 0)?;
-        // Fabric Index  - hard-coded for now
-        t.put_u8(TagType::Context(1), fab_idx)?;
-        // Debug string
-        t.put_utf8(TagType::Context(2), b"")
-    });
-    let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
-    cmd_req.trans.complete();
-    Ok(())
-}
-
-fn handle_command_addnoc(
-    cluster: &mut Cluster,
-    cmd_req: &mut CommandReq,
-) -> Result<(), IMStatusCode> {
-    cmd_enter!("AddNOC");
-    if let Err(e) = _handle_command_addnoc(cluster, cmd_req) {
-        let invoke_resp = InvokeRespIb::CommandData(CMD_PATH_NOCRESPONSE, |t| {
-            // Status
-            t.put_u8(TagType::Context(0), e as u8)
-        });
-        let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
-        cmd_req.trans.complete();
-    }
-    Ok(())
-}
-
-fn command_attrequest_new() -> Result<Box<Command>, Error> {
-    Command::new(CMD_ATTREQUEST_ID, handle_command_attrequest)
-}
-
-fn command_certchainrequest_new() -> Result<Box<Command>, Error> {
-    Command::new(CMD_CERTCHAINREQUEST_ID, handle_command_certchainrequest)
-}
-
-fn command_csrrequest_new() -> Result<Box<Command>, Error> {
-    Command::new(CMD_CSRREQUEST_ID, handle_command_csrrequest)
-}
-
-fn command_addtrustedrootcert_new() -> Result<Box<Command>, Error> {
-    Command::new(CMD_ADDTRUSTEDROOTCERT_ID, handle_command_addtrustedrootcert)
-}
-
-fn command_addnoc_new() -> Result<Box<Command>, Error> {
-    Command::new(CMD_ADDNOC_ID, handle_command_addnoc)
-}
-
 pub fn cluster_operational_credentials_new(
     dev_att: Box<dyn DevAttDataFetcher>,
     fabric_mgr: Arc<FabricMgr>,
     failsafe: Arc<FailSafe>,
 ) -> Result<Box<Cluster>, Error> {
-    let mut cluster = Cluster::new(CLUSTER_OPERATIONAL_CREDENTIALS_ID)?;
-    cluster.add_command(command_attrequest_new()?)?;
-    cluster.add_command(command_certchainrequest_new()?)?;
-    cluster.add_command(command_csrrequest_new()?)?;
-    cluster.add_command(command_addtrustedrootcert_new()?)?;
-    cluster.add_command(command_addnoc_new()?)?;
-
     let noc = Box::new(NocCluster::new(dev_att, fabric_mgr, failsafe));
-    cluster.set_data(noc);
-    Ok(cluster)
+    Ok(Cluster::new(CLUSTER_OPERATIONAL_CREDENTIALS_ID, noc))
 }

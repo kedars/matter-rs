@@ -3,6 +3,8 @@ use crate::{
     cmd_enter,
     error::*,
     interaction_model::{command::CommandReq, core::IMStatusCode},
+    tlv_common::TagType,
+    tlv_writer::TLVWriter,
 };
 use log::info;
 
@@ -19,41 +21,45 @@ fn attr_on_off_new() -> Result<Box<Attribute>, Error> {
     Attribute::new(ATTR_ON_OFF_ID, AttrValue::Bool(false))
 }
 
-fn handle_command_on_off(
-    _cluster: &mut Cluster,
-    cmd_req: &mut CommandReq,
-) -> Result<(), IMStatusCode> {
-    if let Some(cmd) = cmd_req.cmd.path.leaf {
-        match cmd as u16 {
-            CMD_OFF_ID => cmd_enter!("Off"),
-            CMD_ON_ID => cmd_enter!("On"),
-            CMD_TOGGLE_ID => cmd_enter!("Toggle"),
-            _ => info!("Command not supported"),
-        }
+pub struct OnOffCluster {}
+
+impl ClusterType for OnOffCluster {
+    fn read_attribute(
+        &self,
+        _tag: TagType,
+        _tw: &mut TLVWriter,
+        _attr_id: u16,
+    ) -> Result<(), Error> {
+        // No custom attributes
+        Ok(())
     }
 
-    // Always mark complete for now
-    cmd_req.trans.complete();
-    Err(IMStatusCode::Sucess)
-}
-
-fn command_on_new() -> Result<Box<Command>, Error> {
-    Command::new(CMD_ON_ID, handle_command_on_off)
-}
-
-fn command_off_new() -> Result<Box<Command>, Error> {
-    Command::new(CMD_OFF_ID, handle_command_on_off)
-}
-
-fn command_toggle_new() -> Result<Box<Command>, Error> {
-    Command::new(CMD_TOGGLE_ID, handle_command_on_off)
+    fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
+        let cmd = cmd_req.cmd.path.leaf.map(|a| a as u16);
+        println!("Received command: {:?}", cmd);
+        match cmd {
+            Some(CMD_OFF_ID) => {
+                cmd_enter!("Off");
+                cmd_req.trans.complete();
+                Err(IMStatusCode::Sucess)
+            }
+            Some(CMD_ON_ID) => {
+                cmd_enter!("On");
+                cmd_req.trans.complete();
+                Err(IMStatusCode::Sucess)
+            }
+            Some(CMD_TOGGLE_ID) => {
+                cmd_enter!("Toggle");
+                cmd_req.trans.complete();
+                Err(IMStatusCode::Sucess)
+            }
+            _ => Err(IMStatusCode::UnsupportedCommand),
+        }
+    }
 }
 
 pub fn cluster_on_off_new() -> Result<Box<Cluster>, Error> {
-    let mut cluster = Cluster::new(CLUSTER_ONOFF_ID)?;
+    let mut cluster = Cluster::new(CLUSTER_ONOFF_ID, Box::new(OnOffCluster {}));
     cluster.add_attribute(attr_on_off_new()?)?;
-    cluster.add_command(command_on_new()?)?;
-    cluster.add_command(command_off_new()?)?;
-    cluster.add_command(command_toggle_new()?)?;
     Ok(cluster)
 }

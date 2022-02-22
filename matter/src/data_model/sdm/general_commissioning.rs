@@ -7,6 +7,7 @@ use crate::interaction_model::core::IMStatusCode;
 use crate::interaction_model::messages::{command_path, GenericPath};
 use crate::tlv::TLVElement;
 use crate::tlv_common::TagType;
+use crate::tlv_writer::TLVWriter;
 use crate::{error::*, interaction_model::command::CommandReq};
 use log::info;
 use std::sync::Arc;
@@ -59,114 +60,122 @@ fn get_armfailsafe_params(data: &TLVElement) -> Result<(u8, u8), Error> {
     Ok((expiry_len, bread_crumb))
 }
 
-fn handle_command_armfailsafe(
-    cluster: &mut Cluster,
-    cmd_req: &mut CommandReq,
-) -> Result<(), IMStatusCode> {
-    cmd_enter!("ARM Fail Safe");
+pub struct GenCommCluster {
+    failsafe: Arc<FailSafe>,
+}
 
-    let (expiry_len, _) =
-        get_armfailsafe_params(&cmd_req.data).map_err(|_| IMStatusCode::InvalidCommand)?;
-
-    let failsafe = cluster
-        .get_data::<Arc<FailSafe>>()
-        .ok_or(IMStatusCode::Failure)?;
-    if failsafe
-        .arm(expiry_len, cmd_req.trans.session.get_session_mode())
-        .is_err()
-    {
-        return Err(IMStatusCode::Busy);
+impl ClusterType for GenCommCluster {
+    fn read_attribute(
+        &self,
+        _tag: TagType,
+        _tw: &mut TLVWriter,
+        _attr_id: u16,
+    ) -> Result<(), Error> {
+        // No custom attributes
+        Ok(())
     }
 
-    let invoke_resp = InvokeRespIb::CommandData(CMD_PATH_ARMFAILSAFE_RESPONSE, |t| {
-        t.put_u8(TagType::Context(0), CommissioningError::Ok as u8)?;
-        t.put_utf8(TagType::Context(1), b"")
-    });
-    let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
-    cmd_req.trans.complete();
-    Ok(())
+    fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
+        let cmd = cmd_req.cmd.path.leaf.map(|a| a as u16);
+        println!("Received command: {:?}", cmd);
+        match cmd {
+            Some(CMD_ARMFAILSAFE_ID) => self.handle_command_armfailsafe(cmd_req),
+            Some(CMD_SETREGULATORYCONFIG_ID) => self.handle_command_setregulatoryconfig(cmd_req),
+            Some(CMD_COMMISSIONING_COMPLETE_ID) => {
+                self.handle_command_commissioningcomplete(cmd_req)
+            }
+            _ => Err(IMStatusCode::UnsupportedCommand),
+        }
+    }
 }
 
-fn handle_command_setregulatoryconfig(
-    _cluster: &mut Cluster,
-    cmd_req: &mut CommandReq,
-) -> Result<(), IMStatusCode> {
-    cmd_enter!("Set Regulatory Config");
-    // These data types don't match the spec
-    let country_code = cmd_req
-        .data
-        .find_tag(1)
-        .map_err(|_| IMStatusCode::InvalidCommand)?
-        .get_slice()
-        .map_err(|_| IMStatusCode::InvalidCommand)?;
-    info!("Received country code: {:?}", country_code);
+impl GenCommCluster {
+    fn handle_command_armfailsafe(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
+        cmd_enter!("ARM Fail Safe");
 
-    let invoke_resp = InvokeRespIb::CommandData(CMD_PATH_SETREGULATORY_RESPONSE, |t| {
-        t.put_u8(TagType::Context(0), 0)?;
-        t.put_utf8(TagType::Context(1), b"")
-    });
-    let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
-    cmd_req.trans.complete();
-    Ok(())
-}
+        let (expiry_len, _) =
+            get_armfailsafe_params(&cmd_req.data).map_err(|_| IMStatusCode::InvalidCommand)?;
 
-fn handle_command_commissioningcomplete(
-    cluster: &mut Cluster,
-    cmd_req: &mut CommandReq,
-) -> Result<(), IMStatusCode> {
-    cmd_enter!("Commissioning Complete");
-    let mut status: u8 = CommissioningError::Ok as u8;
+        if self
+            .failsafe
+            .arm(expiry_len, cmd_req.trans.session.get_session_mode())
+            .is_err()
+        {
+            return Err(IMStatusCode::Busy);
+        }
 
-    // Has to be a Case Session
-    if cmd_req.trans.session.get_local_fabric_idx().is_none() {
-        status = CommissioningError::ErrInvalidAuth as u8;
+        let invoke_resp = InvokeRespIb::CommandData(CMD_PATH_ARMFAILSAFE_RESPONSE, |t| {
+            t.put_u8(TagType::Context(0), CommissioningError::Ok as u8)?;
+            t.put_utf8(TagType::Context(1), b"")
+        });
+        let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
+        cmd_req.trans.complete();
+        Ok(())
     }
 
-    // AddNOC or UpdateNOC must have happened, and that too for the same fabric
-    // scope that is for this session
-    let failsafe = cluster
-        .get_data::<Arc<FailSafe>>()
-        .ok_or(IMStatusCode::Failure)?;
-    if failsafe
-        .disarm(cmd_req.trans.session.get_session_mode())
-        .is_err()
-    {
-        status = CommissioningError::ErrInvalidAuth as u8;
+    fn handle_command_setregulatoryconfig(
+        &mut self,
+        cmd_req: &mut CommandReq,
+    ) -> Result<(), IMStatusCode> {
+        cmd_enter!("Set Regulatory Config");
+        // These data types don't match the spec
+        let country_code = cmd_req
+            .data
+            .find_tag(1)
+            .map_err(|_| IMStatusCode::InvalidCommand)?
+            .get_slice()
+            .map_err(|_| IMStatusCode::InvalidCommand)?;
+        info!("Received country code: {:?}", country_code);
+
+        let invoke_resp = InvokeRespIb::CommandData(CMD_PATH_SETREGULATORY_RESPONSE, |t| {
+            t.put_u8(TagType::Context(0), 0)?;
+            t.put_utf8(TagType::Context(1), b"")
+        });
+        let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
+        cmd_req.trans.complete();
+        Ok(())
     }
 
-    let invoke_resp = InvokeRespIb::CommandData(CMD_PATH_COMMISSIONING_COMPLETE_RESPONSE, |t| {
-        t.put_u8(TagType::Context(0), status)?;
-        t.put_utf8(TagType::Context(1), b"")
-    });
-    let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
-    cmd_req.trans.complete();
-    Ok(())
-}
+    fn handle_command_commissioningcomplete(
+        &mut self,
+        cmd_req: &mut CommandReq,
+    ) -> Result<(), IMStatusCode> {
+        cmd_enter!("Commissioning Complete");
+        let mut status: u8 = CommissioningError::Ok as u8;
 
-fn command_armfailsafe_new() -> Result<Box<Command>, Error> {
-    Command::new(CMD_ARMFAILSAFE_ID, handle_command_armfailsafe)
-}
+        // Has to be a Case Session
+        if cmd_req.trans.session.get_local_fabric_idx().is_none() {
+            status = CommissioningError::ErrInvalidAuth as u8;
+        }
 
-fn command_setregulatoryconfig_new() -> Result<Box<Command>, Error> {
-    Command::new(
-        CMD_SETREGULATORYCONFIG_ID,
-        handle_command_setregulatoryconfig,
-    )
-}
+        // AddNOC or UpdateNOC must have happened, and that too for the same fabric
+        // scope that is for this session
+        if self
+            .failsafe
+            .disarm(cmd_req.trans.session.get_session_mode())
+            .is_err()
+        {
+            status = CommissioningError::ErrInvalidAuth as u8;
+        }
 
-fn command_commissioningcomplete_new() -> Result<Box<Command>, Error> {
-    Command::new(
-        CMD_COMMISSIONING_COMPLETE_ID,
-        handle_command_commissioningcomplete,
-    )
+        let invoke_resp =
+            InvokeRespIb::CommandData(CMD_PATH_COMMISSIONING_COMPLETE_RESPONSE, |t| {
+                t.put_u8(TagType::Context(0), status)?;
+                t.put_utf8(TagType::Context(1), b"")
+            });
+        let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
+        cmd_req.trans.complete();
+        Ok(())
+    }
 }
 
 pub fn cluster_general_commissioning_new() -> Result<(Box<Cluster>, Arc<FailSafe>), Error> {
-    let mut cluster = Cluster::new(CLUSTER_GENERAL_COMMISSIONING_ID)?;
-    cluster.add_command(command_armfailsafe_new()?)?;
-    cluster.add_command(command_setregulatoryconfig_new()?)?;
-    cluster.add_command(command_commissioningcomplete_new()?)?;
     let failsafe = Arc::new(FailSafe::new());
-    cluster.set_data(Box::new(failsafe.clone()));
+    let gen_cluster = Box::new(GenCommCluster {
+        failsafe: failsafe.clone(),
+    });
+
+    let cluster = Cluster::new(CLUSTER_GENERAL_COMMISSIONING_ID, gen_cluster);
+
     Ok((cluster, failsafe))
 }

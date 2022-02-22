@@ -6,10 +6,7 @@ use crate::{
     tlv_writer::{TLVWriter, ToTLV},
 };
 use log::error;
-use std::{
-    any::Any,
-    fmt::{self, Debug, Formatter},
-};
+use std::fmt::{self, Debug, Formatter};
 
 /* This file needs some major revamp.
  * - instead of allocating all over the heap, we should use some kind of slab/block allocator
@@ -93,65 +90,28 @@ impl std::fmt::Display for Attribute {
     }
 }
 
-pub type CommandCb = fn(&mut Cluster, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode>;
-
-pub struct Command {
-    id: u16,
-    cb: CommandCb,
-}
-
-impl std::fmt::Display for Command {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "id:{}", self.id)
-    }
-}
-
-impl Command {
-    pub fn new(id: u16, cb: CommandCb) -> Result<Box<Command>, Error> {
-        Ok(Box::new(Command { id, cb }))
-    }
-}
-
 pub trait ClusterType {
     fn read_attribute(&self, tag: TagType, tw: &mut TLVWriter, attr_id: u16) -> Result<(), Error>;
+    fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode>;
 }
 
-#[derive(Default)]
 pub struct Cluster {
     id: u32,
     attributes: [Option<Box<Attribute>>; ATTRS_PER_CLUSTER],
-    commands: [Option<Box<Command>>; CMDS_PER_CLUSTER],
-    data: Option<Box<dyn Any>>,
-    c: Option<Box<dyn ClusterType>>,
+    c: Box<dyn ClusterType>,
 }
 
 impl Cluster {
-    pub fn new(id: u32) -> Result<Box<Cluster>, Error> {
-        let mut a = Box::new(Cluster::default());
-        a.id = id;
-        Ok(a)
-    }
-
-    pub fn new2(id: u32, c: Box<dyn ClusterType>) -> Result<Box<Cluster>, Error> {
-        let mut a = Cluster::new(id)?;
-        a.c = Some(c);
-        Ok(a)
+    pub fn new(id: u32, c: Box<dyn ClusterType>) -> Box<Cluster> {
+        Box::new(Cluster {
+            id,
+            attributes: Default::default(),
+            c,
+        })
     }
 
     pub fn id(&self) -> u32 {
         self.id
-    }
-
-    pub fn set_data(&mut self, data: Box<dyn Any>) {
-        self.data = Some(data);
-    }
-
-    pub fn get_data<T: Any>(&mut self) -> Option<&mut T> {
-        self.data.as_mut()?.downcast_mut::<T>()
-    }
-
-    pub fn clear_data(&mut self) {
-        self.data = None;
     }
 
     pub fn add_attribute(&mut self, attr: Box<Attribute>) -> Result<(), Error> {
@@ -164,29 +124,8 @@ impl Cluster {
         Err(Error::NoSpace)
     }
 
-    pub fn add_command(&mut self, command: Box<Command>) -> Result<(), Error> {
-        for c in self.commands.iter_mut() {
-            if c.is_none() {
-                *c = Some(command);
-                return Ok(());
-            }
-        }
-        Err(Error::NoSpace)
-    }
-
     pub fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
-        if let Some(cmd) = cmd_req.cmd.path.leaf {
-            let cmd = self
-                .commands
-                .iter()
-                .flatten()
-                .find(|x| x.id == cmd as u16)
-                .ok_or(IMStatusCode::UnsupportedCommand)?;
-            (cmd.cb)(self, cmd_req)
-        } else {
-            error!("Wildcard command not supported");
-            Err(IMStatusCode::UnsupportedCommand)
-        }
+        self.c.handle_command(cmd_req)
     }
 
     fn get_attribute_index(&self, attr_id: u16) -> Option<usize> {
@@ -229,11 +168,7 @@ impl Cluster {
     ) -> Result<(), Error> {
         if let Some(a) = self.get_attribute(attr_id) {
             if a.value == AttrValue::Custom {
-                if let Some(c) = &self.c {
-                    c.read_attribute(tag, tw, attr_id)
-                } else {
-                    Err(Error::AttributeNotFound)
-                }
+                self.c.read_attribute(tag, tw, attr_id)
             } else {
                 tw.put_object(tag, &a.value)
             }
@@ -254,16 +189,7 @@ impl std::fmt::Display for Cluster {
             }
             comma = ",";
         }
-        write!(f, " ], ")?;
-        write!(f, "cmds[")?;
-        let mut comma = "";
-        for element in self.commands.iter() {
-            if let Some(e) = element {
-                write!(f, "{} {}", comma, e)?;
-            }
-            comma = ",";
-        }
-        write!(f, " ]")
+        write!(f, " ], ")
     }
 }
 

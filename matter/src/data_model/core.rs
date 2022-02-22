@@ -111,12 +111,18 @@ impl InteractionConsumer for DataModel {
         let mut node = self.node.write().unwrap();
         let result = node.for_each_cluster_mut(&cmd_path_ib.path, |path, c| {
             cmd_req.cmd.path = *path;
-            c.handle_command(&mut cmd_req)
+            let result = c.handle_command(&mut cmd_req);
+            if let Err(e) = result {
+                let invoke_resp = InvokeRespIb::CommandStatus(cmd_req.cmd, e, 0, command::dummy);
+                let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
+            }
+            Ok(())
         });
         if let Err(result) = result {
             // Err return implies we must send the StatusIB with this code
             let invoke_resp = InvokeRespIb::CommandStatus(*cmd_path_ib, result, 0, command::dummy);
             tlvwriter.put_object(TagType::Anonymous, &invoke_resp)?;
+            trans.complete();
         }
         Ok(())
     }

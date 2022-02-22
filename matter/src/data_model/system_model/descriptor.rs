@@ -3,6 +3,8 @@ use num_derive::FromPrimitive;
 use crate::data_model::core::DataModel;
 use crate::data_model::objects::*;
 use crate::error::*;
+use crate::interaction_model::command::CommandReq;
+use crate::interaction_model::core::IMStatusCode;
 use crate::interaction_model::messages::GenericPath;
 use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
@@ -48,6 +50,11 @@ impl ClusterType for DescriptorCluster {
         }
         Ok(())
     }
+
+    fn handle_command(&mut self, _cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
+        // NocCommand to handle
+        Ok(())
+    }
 }
 
 fn attr_serverlist_new() -> Result<Box<Attribute>, Error> {
@@ -62,7 +69,7 @@ pub fn cluster_descriptor_new(
         endpoint_id,
         data_model,
     });
-    let mut cluster = Cluster::new2(CLUSTER_DESCRIPTOR_ID, descriptor)?;
+    let mut cluster = Cluster::new(CLUSTER_DESCRIPTOR_ID, descriptor);
 
     cluster.add_attribute(attr_serverlist_new()?)?;
     Ok(cluster)
