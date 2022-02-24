@@ -74,6 +74,7 @@ const CMD_PATH_ATTRESPONSE: command_path::Ib =
     command_path_ib!(0, CLUSTER_OPERATIONAL_CREDENTIALS_ID, CMD_ATTRESPONSE_ID);
 
 pub struct NocCluster {
+    base: Cluster,
     dev_att: Box<dyn DevAttDataFetcher>,
     fabric_mgr: Arc<FabricMgr>,
     failsafe: Arc<FailSafe>,
@@ -97,12 +98,13 @@ impl NocCluster {
         dev_att: Box<dyn DevAttDataFetcher>,
         fabric_mgr: Arc<FabricMgr>,
         failsafe: Arc<FailSafe>,
-    ) -> Self {
-        Self {
+    ) -> Result<Box<Self>, Error> {
+        Ok(Box::new(Self {
             dev_att,
             fabric_mgr,
             failsafe,
-        }
+            base: Cluster::new(CLUSTER_OPERATIONAL_CREDENTIALS_ID),
+        }))
     }
 
     fn _handle_command_addnoc(&mut self, cmd_req: &mut CommandReq) -> Result<(), NocStatus> {
@@ -293,14 +295,15 @@ impl NocCluster {
 }
 
 impl ClusterType for NocCluster {
-    fn read_attribute(
-        &self,
-        _tag: TagType,
-        _tw: &mut TLVWriter,
-        _attr_id: u16,
-    ) -> Result<(), Error> {
-        // No custom attributes
-        Ok(())
+    fn base(&self) -> &Cluster {
+        &self.base
+    }
+    fn base_mut(&mut self) -> &mut Cluster {
+        &mut self.base
+    }
+
+    fn read_attribute(&self, tag: TagType, tw: &mut TLVWriter, attr_id: u16) -> Result<(), Error> {
+        self.base.read_attribute(tag, tw, attr_id)
     }
 
     fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
@@ -417,13 +420,4 @@ fn get_certchainrequest_params(data: &TLVElement) -> Result<DataType, Error> {
         CERT_TYPE_PAI => Ok(dev_att::DataType::PAI),
         _ => Err(Error::Invalid),
     }
-}
-
-pub fn cluster_operational_credentials_new(
-    dev_att: Box<dyn DevAttDataFetcher>,
-    fabric_mgr: Arc<FabricMgr>,
-    failsafe: Arc<FailSafe>,
-) -> Result<Box<Cluster>, Error> {
-    let noc = Box::new(NocCluster::new(dev_att, fabric_mgr, failsafe));
-    Ok(Cluster::new(CLUSTER_OPERATIONAL_CREDENTIALS_ID, noc))
 }

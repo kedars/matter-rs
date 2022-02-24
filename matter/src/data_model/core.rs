@@ -2,7 +2,7 @@ use super::{
     device_types::device_type_add_root_node,
     objects::{self, *},
     sdm::dev_att::DevAttDataFetcher,
-    system_model::descriptor::cluster_descriptor_new,
+    system_model::descriptor::DescriptorCluster,
 };
 use crate::{
     error::*,
@@ -50,7 +50,7 @@ impl Clone for DataModel {
 
 impl objects::ChangeConsumer for DataModel {
     fn endpoint_added(&self, id: u16, endpoint: &mut Endpoint) -> Result<(), Error> {
-        endpoint.add_cluster(cluster_descriptor_new(id, self.clone())?)?;
+        endpoint.add_cluster(DescriptorCluster::new(id, self.clone())?)?;
         Ok(())
     }
 }

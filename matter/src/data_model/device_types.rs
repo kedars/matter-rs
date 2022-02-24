@@ -1,9 +1,9 @@
-use super::cluster_basic_information::*;
-use super::cluster_on_off::*;
+use super::cluster_basic_information::BasicInfoCluster;
+use super::cluster_on_off::OnOffCluster;
 use super::objects::*;
 use super::sdm::dev_att::DevAttDataFetcher;
-use super::sdm::general_commissioning::cluster_general_commissioning_new;
-use super::sdm::noc::cluster_operational_credentials_new;
+use super::sdm::general_commissioning::GenCommCluster;
+use super::sdm::noc::NocCluster;
 use crate::error::*;
 use crate::fabric::FabricMgr;
 use std::sync::Arc;
@@ -23,18 +23,16 @@ pub fn device_type_add_root_node(
         return Err(Error::Invalid);
     };
     // Add the mandatory clusters
-    node.add_cluster(0, cluster_basic_information_new()?)?;
-    let (general_commissioning, failsafe) = cluster_general_commissioning_new()?;
+    node.add_cluster(0, BasicInfoCluster::new()?)?;
+    let general_commissioning = GenCommCluster::new()?;
+    let failsafe = general_commissioning.failsafe();
     node.add_cluster(0, general_commissioning)?;
-    node.add_cluster(
-        0,
-        cluster_operational_credentials_new(dev_att, fabric_mgr, failsafe)?,
-    )?;
+    node.add_cluster(0, NocCluster::new(dev_att, fabric_mgr, failsafe)?)?;
     Ok(endpoint)
 }
 
 pub fn device_type_add_on_off_light(node: &mut WriteNode) -> Result<u32, Error> {
     let endpoint = node.add_endpoint()?;
-    node.add_cluster(endpoint, cluster_on_off_new()?)?;
+    node.add_cluster(endpoint, OnOffCluster::new()?)?;
     Ok(endpoint)
 }

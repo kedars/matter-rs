@@ -21,17 +21,30 @@ fn attr_on_off_new() -> Result<Box<Attribute>, Error> {
     Attribute::new(ATTR_ON_OFF_ID, AttrValue::Bool(false))
 }
 
-pub struct OnOffCluster {}
+pub struct OnOffCluster {
+    base: Cluster,
+}
+
+impl OnOffCluster {
+    pub fn new() -> Result<Box<Self>, Error> {
+        let mut cluster = Box::new(OnOffCluster {
+            base: Cluster::new(CLUSTER_ONOFF_ID),
+        });
+        cluster.base.add_attribute(attr_on_off_new()?)?;
+        Ok(cluster)
+    }
+}
 
 impl ClusterType for OnOffCluster {
-    fn read_attribute(
-        &self,
-        _tag: TagType,
-        _tw: &mut TLVWriter,
-        _attr_id: u16,
-    ) -> Result<(), Error> {
-        // No custom attributes
-        Ok(())
+    fn base(&self) -> &Cluster {
+        &self.base
+    }
+    fn base_mut(&mut self) -> &mut Cluster {
+        &mut self.base
+    }
+
+    fn read_attribute(&self, tag: TagType, tw: &mut TLVWriter, attr_id: u16) -> Result<(), Error> {
+        self.base.read_attribute(tag, tw, attr_id)
     }
 
     fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
@@ -57,10 +70,4 @@ impl ClusterType for OnOffCluster {
             _ => Err(IMStatusCode::UnsupportedCommand),
         }
     }
-}
-
-pub fn cluster_on_off_new() -> Result<Box<Cluster>, Error> {
-    let mut cluster = Cluster::new(CLUSTER_ONOFF_ID, Box::new(OnOffCluster {}));
-    cluster.add_attribute(attr_on_off_new()?)?;
-    Ok(cluster)
 }

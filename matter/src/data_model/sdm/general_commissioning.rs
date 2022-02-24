@@ -62,17 +62,19 @@ fn get_armfailsafe_params(data: &TLVElement) -> Result<(u8, u8), Error> {
 
 pub struct GenCommCluster {
     failsafe: Arc<FailSafe>,
+    base: Cluster,
 }
 
 impl ClusterType for GenCommCluster {
-    fn read_attribute(
-        &self,
-        _tag: TagType,
-        _tw: &mut TLVWriter,
-        _attr_id: u16,
-    ) -> Result<(), Error> {
-        // No custom attributes
-        Ok(())
+    fn base(&self) -> &Cluster {
+        &self.base
+    }
+    fn base_mut(&mut self) -> &mut Cluster {
+        &mut self.base
+    }
+
+    fn read_attribute(&self, tag: TagType, tw: &mut TLVWriter, attr_id: u16) -> Result<(), Error> {
+        self.base.read_attribute(tag, tw, attr_id)
     }
 
     fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
@@ -90,6 +92,19 @@ impl ClusterType for GenCommCluster {
 }
 
 impl GenCommCluster {
+    pub fn new() -> Result<Box<Self>, Error> {
+        let failsafe = Arc::new(FailSafe::new());
+
+        Ok(Box::new(GenCommCluster {
+            failsafe: failsafe,
+            base: Cluster::new(CLUSTER_GENERAL_COMMISSIONING_ID),
+        }))
+    }
+
+    pub fn failsafe(&self) -> Arc<FailSafe> {
+        self.failsafe.clone()
+    }
+
     fn handle_command_armfailsafe(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
         cmd_enter!("ARM Fail Safe");
 
@@ -167,15 +182,4 @@ impl GenCommCluster {
         cmd_req.trans.complete();
         Ok(())
     }
-}
-
-pub fn cluster_general_commissioning_new() -> Result<(Box<Cluster>, Arc<FailSafe>), Error> {
-    let failsafe = Arc::new(FailSafe::new());
-    let gen_cluster = Box::new(GenCommCluster {
-        failsafe: failsafe.clone(),
-    });
-
-    let cluster = Cluster::new(CLUSTER_GENERAL_COMMISSIONING_ID, gen_cluster);
-
-    Ok((cluster, failsafe))
 }
