@@ -37,6 +37,7 @@ impl ClusterType for OnOffCluster {
     fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
         let cmd = cmd_req.cmd.path.leaf.map(|a| a as u16);
         println!("Received command: {:?}", cmd);
+
         match cmd {
             Some(CMD_OFF_ID) => {
                 cmd_enter!("Off");

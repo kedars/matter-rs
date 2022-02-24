@@ -2,6 +2,7 @@ use crate::{
     error::*,
     interaction_model::{command::CommandReq, core::IMStatusCode, messages::GenericPath},
     // TODO: This layer shouldn't really depend on the TLV layer, should create an abstraction layer
+    tlv::TLVElement,
     tlv_common::TagType,
     tlv_writer::{TLVWriter, ToTLV},
 };
@@ -41,14 +42,29 @@ impl Debug for AttrValue {
 
 impl ToTLV for AttrValue {
     fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
+        // What is the time complexity of such long match statements?
         match self {
             AttrValue::Bool(v) => tw.put_bool(tag_type, *v),
             AttrValue::Uint16(v) => tw.put_u16(tag_type, *v),
             _ => {
-                error!("Not yet supported");
-                Ok(())
+                error!("Attribute type not yet supported");
+                Err(Error::AttributeNotFound)
             }
         }
+    }
+}
+
+impl AttrValue {
+    fn update_from_tlv(&mut self, tr: TLVElement) -> Result<(), Error> {
+        match self {
+            AttrValue::Bool(v) => *v = tr.get_bool()?,
+            AttrValue::Uint16(v) => *v = tr.get_u16()?,
+            _ => {
+                error!("Attribute type not yet supported");
+                return Err(Error::AttributeNotFound);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -143,6 +159,15 @@ impl Cluster {
         None
     }
 
+    fn get_attribute_mut(&mut self, attr_id: u16) -> Option<&mut Box<Attribute>> {
+        for a in &mut self.attributes {
+            if a.as_mut().map_or(false, |c| c.id == attr_id) {
+                return a.as_mut();
+            }
+        }
+        None
+    }
+
     // Returns a slice of attribute, with either a single attribute or all (wildcard)
     pub fn get_wildcard_attribute(
         &self,
@@ -166,15 +191,46 @@ impl Cluster {
         tw: &mut TLVWriter,
         attr_id: u16,
     ) -> Result<(), Error> {
-        if let Some(a) = self.get_attribute(attr_id) {
-            if a.value == AttrValue::Custom {
-                self.c.read_attribute(tag, tw, attr_id)
-            } else {
-                tw.put_object(tag, &a.value)
-            }
+        let a = self
+            .get_attribute(attr_id)
+            .ok_or(Error::AttributeNotFound)?;
+        if a.value == AttrValue::Custom {
+            self.c.read_attribute(tag, tw, attr_id)
         } else {
-            Err(Error::AttributeNotFound)
+            tw.put_object(tag, &a.value)
         }
+    }
+
+    pub fn read_attribute_raw(&self, attr_id: u16) -> Result<&AttrValue, IMStatusCode> {
+        let a = self
+            .get_attribute(attr_id)
+            .ok_or(IMStatusCode::UnsupportedAttribute)?;
+        Ok(&a.value)
+    }
+
+    pub fn write_attribute(&mut self, data: TLVElement, attr_id: u16) -> Result<(), IMStatusCode> {
+        let a = self
+            .get_attribute_mut(attr_id)
+            .ok_or(IMStatusCode::UnsupportedAttribute)?;
+        if a.value == AttrValue::Custom {
+            Ok(())
+        } else {
+            a.value
+                .update_from_tlv(data)
+                .map_err(|_| IMStatusCode::UnsupportedWrite)
+        }
+    }
+
+    pub fn write_attribute_raw(
+        &mut self,
+        attr_id: u16,
+        value: AttrValue,
+    ) -> Result<(), IMStatusCode> {
+        let a = self
+            .get_attribute_mut(attr_id)
+            .ok_or(IMStatusCode::UnsupportedAttribute)?;
+        a.value = value;
+        Ok(())
     }
 }
 
