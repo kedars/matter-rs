@@ -115,14 +115,14 @@ pub trait ClusterType {
 
 pub struct Cluster {
     id: u32,
-    attributes: [Option<Box<Attribute>>; ATTRS_PER_CLUSTER],
+    attributes: Vec<Box<Attribute>>,
 }
 
 impl Cluster {
     pub fn new(id: u32) -> Cluster {
         Cluster {
             id,
-            attributes: Default::default(),
+            attributes: Vec::with_capacity(ATTRS_PER_CLUSTER),
         }
     }
 
@@ -131,44 +131,37 @@ impl Cluster {
     }
 
     pub fn add_attribute(&mut self, attr: Box<Attribute>) -> Result<(), Error> {
-        for c in self.attributes.iter_mut() {
-            if c.is_none() {
-                *c = Some(attr);
-                return Ok(());
-            }
+        if self.attributes.len() < self.attributes.capacity() {
+            self.attributes.push(attr);
+            Ok(())
+        } else {
+            Err(Error::NoSpace)
         }
-        Err(Error::NoSpace)
     }
 
     fn get_attribute_index(&self, attr_id: u16) -> Option<usize> {
-        self.attributes
-            .iter()
-            .position(|x| x.as_ref().map_or(false, |c| c.id == attr_id))
+        self.attributes.iter().position(|c| c.id == attr_id)
     }
 
-    fn get_attribute(&self, attr_id: u16) -> Option<&Box<Attribute>> {
-        for a in &self.attributes {
-            if a.as_ref().map_or(false, |c| c.id == attr_id) {
-                return a.as_ref();
-            }
-        }
-        None
+    fn get_attribute(&self, attr_id: u16) -> Result<&Attribute, Error> {
+        let index = self
+            .get_attribute_index(attr_id)
+            .ok_or(Error::AttributeNotFound)?;
+        Ok(self.attributes[index].as_ref())
     }
 
-    fn get_attribute_mut(&mut self, attr_id: u16) -> Option<&mut Box<Attribute>> {
-        for a in &mut self.attributes {
-            if a.as_mut().map_or(false, |c| c.id == attr_id) {
-                return a.as_mut();
-            }
-        }
-        None
+    fn get_attribute_mut(&mut self, attr_id: u16) -> Result<&mut Attribute, Error> {
+        let index = self
+            .get_attribute_index(attr_id)
+            .ok_or(Error::AttributeNotFound)?;
+        Ok(self.attributes[index].as_mut())
     }
 
     // Returns a slice of attribute, with either a single attribute or all (wildcard)
     pub fn get_wildcard_attribute(
         &self,
         attribute: Option<u16>,
-    ) -> Result<&[Option<Box<Attribute>>], IMStatusCode> {
+    ) -> Result<&[Box<Attribute>], IMStatusCode> {
         let attributes = if let Some(a) = attribute {
             if let Some(i) = self.get_attribute_index(a) {
                 &self.attributes[i..i + 1]
@@ -189,7 +182,7 @@ impl Cluster {
     ) -> Result<(), Error> {
         let a = self
             .get_attribute(attr_id)
-            .ok_or(Error::AttributeNotFound)?;
+            .map_err(|_| Error::AttributeNotFound)?;
         if a.value != AttrValue::Custom {
             tw.put_object(tag, &a.value)
         } else {
@@ -200,14 +193,14 @@ impl Cluster {
     pub fn read_attribute_raw(&self, attr_id: u16) -> Result<&AttrValue, IMStatusCode> {
         let a = self
             .get_attribute(attr_id)
-            .ok_or(IMStatusCode::UnsupportedAttribute)?;
+            .map_err(|_| IMStatusCode::UnsupportedAttribute)?;
         Ok(&a.value)
     }
 
     pub fn write_attribute(&mut self, data: TLVElement, attr_id: u16) -> Result<(), IMStatusCode> {
         let a = self
             .get_attribute_mut(attr_id)
-            .ok_or(IMStatusCode::UnsupportedAttribute)?;
+            .map_err(|_| IMStatusCode::UnsupportedAttribute)?;
         if a.value == AttrValue::Custom {
             Ok(())
         } else {
@@ -224,7 +217,7 @@ impl Cluster {
     ) -> Result<(), IMStatusCode> {
         let a = self
             .get_attribute_mut(attr_id)
-            .ok_or(IMStatusCode::UnsupportedAttribute)?;
+            .map_err(|_| IMStatusCode::UnsupportedAttribute)?;
         a.value = value;
         Ok(())
     }
@@ -236,53 +229,49 @@ impl std::fmt::Display for Cluster {
         write!(f, "attrs[")?;
         let mut comma = "";
         for element in self.attributes.iter() {
-            if let Some(e) = element {
-                write!(f, "{} {}", comma, e)?;
-            }
+            write!(f, "{} {}", comma, element)?;
             comma = ",";
         }
         write!(f, " ], ")
     }
 }
 
-#[derive(Default)]
 pub struct Endpoint {
-    clusters: [Option<Box<dyn ClusterType>>; CLUSTERS_PER_ENDPT],
+    clusters: Vec<Box<dyn ClusterType>>,
 }
 
 impl Endpoint {
     pub fn new() -> Result<Box<Endpoint>, Error> {
-        Ok(Box::new(Endpoint::default()))
+        Ok(Box::new(Endpoint {
+            clusters: Vec::with_capacity(CLUSTERS_PER_ENDPT),
+        }))
     }
 
     pub fn add_cluster(&mut self, cluster: Box<dyn ClusterType>) -> Result<(), Error> {
-        for c in self.clusters.iter_mut() {
-            if c.is_none() {
-                *c = Some(cluster);
-                return Ok(());
-            }
+        if self.clusters.len() < self.clusters.capacity() {
+            self.clusters.push(cluster);
+            Ok(())
+        } else {
+            Err(Error::NoSpace)
         }
-        Err(Error::NoSpace)
     }
 
     fn get_cluster_index(&self, cluster_id: u32) -> Option<usize> {
-        self.clusters
-            .iter()
-            .position(|x| x.as_ref().map_or(false, |c| c.base().id == cluster_id))
+        self.clusters.iter().position(|c| c.base().id == cluster_id)
     }
 
-    pub fn get_cluster(&mut self, cluster_id: u32) -> Result<&mut Box<dyn ClusterType>, Error> {
+    pub fn get_cluster(&mut self, cluster_id: u32) -> Result<&mut dyn ClusterType, Error> {
         let index = self
             .get_cluster_index(cluster_id)
             .ok_or(Error::ClusterNotFound)?;
-        Ok(self.clusters[index].as_mut().unwrap())
+        Ok(self.clusters[index].as_mut())
     }
 
     // Returns a slice of clusters, with either a single cluster or all (wildcard)
     pub fn get_wildcard_clusters(
         &self,
         cluster: Option<u32>,
-    ) -> Result<&[Option<Box<dyn ClusterType>>], IMStatusCode> {
+    ) -> Result<&[Box<dyn ClusterType>], IMStatusCode> {
         let clusters = if let Some(c) = cluster {
             if let Some(i) = self.get_cluster_index(c) {
                 &self.clusters[i..i + 1]
@@ -290,7 +279,7 @@ impl Endpoint {
                 return Err(IMStatusCode::UnsupportedCluster);
             }
         } else {
-            &self.clusters[..]
+            &self.clusters.as_slice()
         };
         Ok(clusters)
     }
@@ -299,7 +288,7 @@ impl Endpoint {
     pub fn get_wildcard_clusters_mut(
         &mut self,
         cluster: Option<u32>,
-    ) -> Result<&mut [Option<Box<dyn ClusterType>>], IMStatusCode> {
+    ) -> Result<&mut [Box<dyn ClusterType>], IMStatusCode> {
         let clusters = if let Some(c) = cluster {
             if let Some(i) = self.get_cluster_index(c) {
                 &mut self.clusters[i..i + 1]
@@ -317,7 +306,7 @@ impl std::fmt::Display for Endpoint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "clusters:[")?;
         let mut comma = "";
-        for element in self.clusters.iter().flatten() {
+        for element in self.clusters.iter() {
             write!(f, "{} {{ {} }}", comma, element.base())?;
             comma = ", ";
         }
@@ -440,7 +429,7 @@ impl Node {
         for e in endpoints.iter().flatten() {
             current_path.endpoint = Some(endpoint_id as u16);
             let clusters = e.get_wildcard_clusters(path.cluster)?;
-            for c in clusters.iter().flatten() {
+            for c in clusters.iter() {
                 f(&current_path, c.as_ref())?;
             }
             endpoint_id += 1;
@@ -461,7 +450,7 @@ impl Node {
         for e in endpoints.iter_mut().flatten() {
             current_path.endpoint = Some(endpoint_id as u16);
             let clusters = e.get_wildcard_clusters_mut(path.cluster)?;
-            for c in clusters.iter_mut().flatten() {
+            for c in clusters.iter_mut() {
                 f(&current_path, c.as_mut())?;
             }
             endpoint_id += 1;
@@ -478,7 +467,7 @@ impl Node {
             let attributes = c
                 .base()
                 .get_wildcard_attribute(path.leaf.map(|at| at as u16))?;
-            for a in attributes.iter().flatten() {
+            for a in attributes.iter() {
                 current_path.leaf = Some(a.id as u32);
                 f(&current_path, c)?;
             }
