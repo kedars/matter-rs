@@ -50,20 +50,36 @@ impl ClusterType for OnOffCluster {
     fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
         let cmd = cmd_req.cmd.path.leaf.map(|a| a as u16);
         println!("Received command: {:?}", cmd);
-
         match cmd {
             Some(CMD_OFF_ID) => {
                 cmd_enter!("Off");
+                let value = self.base.read_attribute_raw(ATTR_ON_OFF_ID).unwrap();
+                if AttrValue::Bool(true) == *value {
+                    self.base
+                        .write_attribute_raw(ATTR_ON_OFF_ID, AttrValue::Bool(false))?;
+                }
                 cmd_req.trans.complete();
                 Err(IMStatusCode::Sucess)
             }
             Some(CMD_ON_ID) => {
                 cmd_enter!("On");
+                let value = self.base.read_attribute_raw(ATTR_ON_OFF_ID).unwrap();
+                if AttrValue::Bool(false) == *value {
+                    self.base
+                        .write_attribute_raw(ATTR_ON_OFF_ID, AttrValue::Bool(true))?;
+                }
+
                 cmd_req.trans.complete();
                 Err(IMStatusCode::Sucess)
             }
             Some(CMD_TOGGLE_ID) => {
                 cmd_enter!("Toggle");
+                let value = match self.base.read_attribute_raw(ATTR_ON_OFF_ID).unwrap() {
+                    &AttrValue::Bool(v) => v,
+                    _ => false,
+                };
+                self.base
+                    .write_attribute_raw(ATTR_ON_OFF_ID, AttrValue::Bool(!value))?;
                 cmd_req.trans.complete();
                 Err(IMStatusCode::Sucess)
             }
