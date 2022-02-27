@@ -447,11 +447,13 @@ impl Node {
     {
         let mut current_path = *path;
         let (endpoints, mut endpoint_id) = self.get_wildcard_endpoints(path.endpoint)?;
-        for e in endpoints.iter().flatten() {
-            current_path.endpoint = Some(endpoint_id as u16);
-            let clusters = e.get_wildcard_clusters(path.cluster)?;
-            for c in clusters.iter() {
-                f(&current_path, c.as_ref())?;
+        for e in endpoints.iter() {
+            if let Some(e) = e {
+                current_path.endpoint = Some(endpoint_id as u16);
+                let clusters = e.get_wildcard_clusters(path.cluster)?;
+                for c in clusters.iter() {
+                    f(&current_path, c.as_ref())?;
+                }
             }
             endpoint_id += 1;
         }
@@ -468,11 +470,13 @@ impl Node {
     {
         let mut current_path = *path;
         let (endpoints, mut endpoint_id) = self.get_wildcard_endpoints_mut(path.endpoint)?;
-        for e in endpoints.iter_mut().flatten() {
-            current_path.endpoint = Some(endpoint_id as u16);
-            let clusters = e.get_wildcard_clusters_mut(path.cluster)?;
-            for c in clusters.iter_mut() {
-                f(&current_path, c.as_mut())?;
+        for e in endpoints.iter_mut() {
+            if let Some(e) = e {
+                current_path.endpoint = Some(endpoint_id as u16);
+                let clusters = e.get_wildcard_clusters_mut(path.cluster)?;
+                for c in clusters.iter_mut() {
+                    f(&current_path, c.as_mut())?;
+                }
             }
             endpoint_id += 1;
         }
