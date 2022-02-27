@@ -32,6 +32,13 @@ pub trait InteractionConsumer {
         fab_scoped: bool,
         tlvwriter: &mut TLVWriter,
     ) -> Result<(), Error>;
+
+    fn consume_write_attr(
+        &self,
+        attr_list: TLVElement,
+        fab_scoped: bool,
+        tlvwriter: &mut TLVWriter,
+    ) -> Result<(), Error>;
 }
 
 pub struct InteractionModel {
@@ -41,3 +48,4 @@ pub mod command;
 pub mod core;
 pub mod messages;
 pub mod read;
+pub mod write;

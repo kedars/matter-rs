@@ -6,6 +6,7 @@ use crate::error::*;
 use crate::interaction_model::command::CommandReq;
 use crate::interaction_model::core::IMStatusCode;
 use crate::interaction_model::messages::GenericPath;
+use crate::tlv::TLVElement;
 use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
 use log::error;
@@ -69,6 +70,10 @@ impl ClusterType for DescriptorCluster {
             }
         }
         Ok(())
+    }
+
+    fn write_attribute(&mut self, data: &TLVElement, attr_id: u16) -> Result<(), IMStatusCode> {
+        self.base.write_attribute(data, attr_id)
     }
 
     fn handle_command(&mut self, _cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {

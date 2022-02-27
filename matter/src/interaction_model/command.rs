@@ -1,4 +1,3 @@
-use super::core::IMStatusCode;
 use super::core::OpCode;
 use super::messages::command_path;
 use super::InteractionModel;
@@ -9,7 +8,6 @@ use crate::proto_demux::ResponseRequired;
 use crate::tlv::*;
 use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
-use crate::tlv_writer::ToTLV;
 use log::error;
 use log::info;
 
@@ -21,59 +19,11 @@ macro_rules! cmd_enter {
     }};
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum InvokeRespIb<F>
-where
-    F: Fn(&mut TLVWriter) -> Result<(), Error>,
-{
-    CommandData(command_path::Ib, F),
-    CommandStatus(command_path::Ib, IMStatusCode, u32, F),
-}
-
-#[allow(non_snake_case)]
-pub fn dummy(_t: &mut TLVWriter) -> Result<(), Error> {
-    Ok(())
-}
-
-impl<F: Fn(&mut TLVWriter) -> Result<(), Error>> ToTLV for InvokeRespIb<F> {
-    fn to_tlv(self: &InvokeRespIb<F>, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
-        tw.put_start_struct(tag_type)?;
-        match self {
-            InvokeRespIb::CommandData(cmd_path, data_cb) => {
-                tw.put_start_struct(TagType::Context(0))?;
-                tw.put_object(TagType::Context(0), cmd_path)?;
-                tw.put_start_struct(TagType::Context(1))?;
-                data_cb(tw)?;
-                tw.put_end_container()?;
-            }
-            InvokeRespIb::CommandStatus(cmd_path, status, cluster_status, _) => {
-                tw.put_start_struct(TagType::Context(1))?;
-                tw.put_object(TagType::Context(0), cmd_path)?;
-                put_status_ib(tw, TagType::Context(1), *status, *cluster_status)?;
-            }
-        }
-        tw.put_end_container()?;
-        tw.put_end_container()
-    }
-}
-
 pub struct CommandReq<'a, 'b, 'c, 'd, 'e> {
     pub cmd: command_path::Ib,
     pub data: TLVElement<'a>,
     pub resp: &'a mut TLVWriter<'b, 'c>,
     pub trans: &'a mut Transaction<'d, 'e>,
-}
-
-fn put_status_ib(
-    tw: &mut TLVWriter,
-    tag_type: TagType,
-    status: IMStatusCode,
-    cluster_status: u32,
-) -> Result<(), Error> {
-    tw.put_start_struct(tag_type)?;
-    tw.put_u32(TagType::Context(0), status as u32)?;
-    tw.put_u32(TagType::Context(1), cluster_status)?;
-    tw.put_end_container()
 }
 
 enum Tag {

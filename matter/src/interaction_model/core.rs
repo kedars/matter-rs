@@ -71,6 +71,7 @@ impl proto_demux::HandleProto for InteractionModel {
         let result = match proto_opcode {
             OpCode::InvokeRequest => self.handle_invoke_req(&mut trans, proto_rx.buf, proto_tx)?,
             OpCode::ReadRequest => self.handle_read_req(&mut trans, proto_rx.buf, proto_tx)?,
+            OpCode::WriteRequest => self.handle_write_req(&mut trans, proto_rx.buf, proto_tx)?,
             _ => {
                 error!("Opcode Not Handled: {:?}", proto_opcode);
                 return Err(Error::InvalidOpcode);
@@ -173,6 +174,15 @@ mod tests {
         }
 
         fn consume_read_attr(
+            &self,
+            _attr_list: TLVElement,
+            _fab_scoped: bool,
+            _tlvwriter: &mut TLVWriter,
+        ) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn consume_write_attr(
             &self,
             _attr_list: TLVElement,
             _fab_scoped: bool,

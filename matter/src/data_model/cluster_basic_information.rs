@@ -2,6 +2,7 @@ use super::objects::*;
 use crate::{
     error::*,
     interaction_model::{command::CommandReq, core::IMStatusCode},
+    tlv::TLVElement,
     tlv_common::TagType,
     tlv_writer::TLVWriter,
 };
@@ -39,6 +40,10 @@ impl ClusterType for BasicInfoCluster {
 
     fn read_attribute(&self, tag: TagType, tw: &mut TLVWriter, attr_id: u16) -> Result<(), Error> {
         self.base.read_attribute(tag, tw, attr_id)
+    }
+
+    fn write_attribute(&mut self, data: &TLVElement, attr_id: u16) -> Result<(), IMStatusCode> {
+        self.base.write_attribute(data, attr_id)
     }
 
     fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {

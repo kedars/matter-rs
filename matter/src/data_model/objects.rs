@@ -55,7 +55,7 @@ impl ToTLV for AttrValue {
 }
 
 impl AttrValue {
-    fn update_from_tlv(&mut self, tr: TLVElement) -> Result<(), Error> {
+    fn update_from_tlv(&mut self, tr: &TLVElement) -> Result<(), Error> {
         match self {
             AttrValue::Bool(v) => *v = tr.get_bool()?,
             AttrValue::Uint16(v) => *v = tr.get_u16()?,
@@ -111,6 +111,7 @@ pub trait ClusterType {
     fn base_mut(&mut self) -> &mut Cluster;
     fn read_attribute(&self, tag: TagType, tw: &mut TLVWriter, attr_id: u16) -> Result<(), Error>;
     fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode>;
+    fn write_attribute(&mut self, data: &TLVElement, attr_id: u16) -> Result<(), IMStatusCode>;
 }
 
 pub struct Cluster {
@@ -197,16 +198,16 @@ impl Cluster {
         Ok(&a.value)
     }
 
-    pub fn write_attribute(&mut self, data: TLVElement, attr_id: u16) -> Result<(), IMStatusCode> {
+    pub fn write_attribute(&mut self, data: &TLVElement, attr_id: u16) -> Result<(), IMStatusCode> {
         let a = self
             .get_attribute_mut(attr_id)
             .map_err(|_| IMStatusCode::UnsupportedAttribute)?;
-        if a.value == AttrValue::Custom {
-            Ok(())
-        } else {
+        if a.value != AttrValue::Custom {
             a.value
                 .update_from_tlv(data)
                 .map_err(|_| IMStatusCode::UnsupportedWrite)
+        } else {
+            Err(IMStatusCode::UnsupportedAttribute)
         }
     }
 
@@ -418,6 +419,26 @@ impl Node {
             (&mut self.endpoints[..], 0)
         };
         Ok(endpoints)
+    }
+
+    pub fn for_each_endpoint_mut<T>(
+        &mut self,
+        path: &GenericPath,
+        mut f: T,
+    ) -> Result<(), IMStatusCode>
+    where
+        T: FnMut(&GenericPath, &mut Endpoint) -> Result<(), IMStatusCode>,
+    {
+        let mut current_path = *path;
+        let (endpoints, mut endpoint_id) = self.get_wildcard_endpoints_mut(path.endpoint)?;
+        for e in endpoints.iter_mut() {
+            if let Some(e) = e {
+                current_path.endpoint = Some(endpoint_id as u16);
+                f(&current_path, e.as_mut())?;
+            }
+            endpoint_id += 1;
+        }
+        Ok(())
     }
 
     pub fn for_each_cluster<T>(&self, path: &GenericPath, mut f: T) -> Result<(), IMStatusCode>
