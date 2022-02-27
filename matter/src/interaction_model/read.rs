@@ -9,7 +9,7 @@ use crate::{
     tlv_writer::TLVWriter,
 };
 
-use super::{messages::report_data, InteractionModel, Transaction};
+use super::{messages::ib, InteractionModel, Transaction};
 
 // TODO: This is different between the spec and C++
 enum Tag {
@@ -38,7 +38,7 @@ impl InteractionModel {
 
         let attr_list_iter = root.find_tag(Tag::AttrRequests as u32);
         if attr_list_iter.is_ok() {
-            tw.put_start_array(TagType::Context(report_data::Tag::AttributeReportIb as u8))?;
+            tw.put_start_array(TagType::Context(ib::ReportDataTag::AttributeReportIb as u8))?;
             self.consumer
                 .consume_read_attr(attr_list_iter?, fab_scoped, &mut tw)?;
             tw.put_end_container()?;
@@ -46,7 +46,7 @@ impl InteractionModel {
 
         // Supress response always true for read interaction
         tw.put_bool(
-            TagType::Context(report_data::Tag::SupressResponse as u8),
+            TagType::Context(ib::ReportDataTag::SupressResponse as u8),
             true,
         )?;
         tw.put_end_container()?;

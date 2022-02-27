@@ -8,7 +8,7 @@ use crate::data_model::sdm::dev_att;
 use crate::fabric::{Fabric, FabricMgr};
 use crate::interaction_model::command::CommandReq;
 use crate::interaction_model::core::IMStatusCode;
-use crate::interaction_model::messages::{command_path, command_response, GenericPath};
+use crate::interaction_model::messages::{ib, GenericPath};
 use crate::tlv::TLVElement;
 use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
@@ -58,19 +58,19 @@ const CMD_ADDNOC_ID: u16 = 0x06;
 const CMD_NOCRESPONSE_ID: u16 = 0x08;
 const CMD_ADDTRUSTEDROOTCERT_ID: u16 = 0x0b;
 
-const CMD_PATH_CSRRESPONSE: command_path::Ib =
+const CMD_PATH_CSRRESPONSE: ib::CmdPath =
     command_path_ib!(0, CLUSTER_OPERATIONAL_CREDENTIALS_ID, CMD_CSRRESPONSE_ID);
 
-const CMD_PATH_NOCRESPONSE: command_path::Ib =
+const CMD_PATH_NOCRESPONSE: ib::CmdPath =
     command_path_ib!(0, CLUSTER_OPERATIONAL_CREDENTIALS_ID, CMD_NOCRESPONSE_ID);
 
-const CMD_PATH_CERTCHAINRESPONSE: command_path::Ib = command_path_ib!(
+const CMD_PATH_CERTCHAINRESPONSE: ib::CmdPath = command_path_ib!(
     0,
     CLUSTER_OPERATIONAL_CREDENTIALS_ID,
     CMD_CERTCHAINRESPONSE_ID
 );
 
-const CMD_PATH_ATTRESPONSE: command_path::Ib =
+const CMD_PATH_ATTRESPONSE: ib::CmdPath =
     command_path_ib!(0, CLUSTER_OPERATIONAL_CREDENTIALS_ID, CMD_ATTRESPONSE_ID);
 
 pub struct NocCluster {
@@ -146,7 +146,7 @@ impl NocCluster {
         if self.failsafe.record_add_noc(fab_idx).is_err() {
             error!("Failed to record NoC in the FailSafe, what to do?");
         }
-        let invoke_resp = command_response::Ib::CommandData(CMD_PATH_NOCRESPONSE, |t| {
+        let invoke_resp = ib::CmdResponse::Data(CMD_PATH_NOCRESPONSE, |t| {
             // Status
             t.put_u8(TagType::Context(0), 0)?;
             // Fabric Index  - hard-coded for now
@@ -162,7 +162,7 @@ impl NocCluster {
     fn handle_command_addnoc(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
         cmd_enter!("AddNOC");
         if let Err(e) = self._handle_command_addnoc(cmd_req) {
-            let invoke_resp = command_response::Ib::CommandData(CMD_PATH_NOCRESPONSE, |t| {
+            let invoke_resp = ib::CmdResponse::Data(CMD_PATH_NOCRESPONSE, |t| {
                 // Status
                 t.put_u8(TagType::Context(0), e as u8)
             });
@@ -186,7 +186,7 @@ impl NocCluster {
         let mut attest_challenge = [0u8; crypto::SYMM_KEY_LEN_BYTES];
         attest_challenge.copy_from_slice(cmd_req.trans.session.get_att_challenge());
 
-        let invoke_resp = command_response::Ib::CommandData(CMD_PATH_ATTRESPONSE, |t| {
+        let invoke_resp = ib::CmdResponse::Data(CMD_PATH_ATTRESPONSE, |t| {
             let mut buf: [u8; RESP_MAX] = [0; RESP_MAX];
             let mut attest_element = WriteBuf::new(&mut buf, RESP_MAX);
 
@@ -215,7 +215,7 @@ impl NocCluster {
             .map_err(|_| IMStatusCode::Failure)?;
         let buf = &buf[0..len];
 
-        let invoke_resp = command_response::Ib::CommandData(CMD_PATH_CERTCHAINRESPONSE, |t| {
+        let invoke_resp = ib::CmdResponse::Data(CMD_PATH_CERTCHAINRESPONSE, |t| {
             t.put_str16(TagType::Context(0), buf)
         });
         let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
@@ -242,7 +242,7 @@ impl NocCluster {
         let mut attest_challenge = [0u8; crypto::SYMM_KEY_LEN_BYTES];
         attest_challenge.copy_from_slice(cmd_req.trans.session.get_att_challenge());
 
-        let invoke_resp = command_response::Ib::CommandData(CMD_PATH_CSRRESPONSE, |t| {
+        let invoke_resp = ib::CmdResponse::Data(CMD_PATH_CSRRESPONSE, |t| {
             let mut buf: [u8; RESP_MAX] = [0; RESP_MAX];
             let mut nocsr_element = WriteBuf::new(&mut buf, RESP_MAX);
 

@@ -118,7 +118,7 @@ pub enum IMStatusCode {
 #[cfg(test)]
 mod tests {
     use crate::interaction_model::core::*;
-    use crate::interaction_model::messages::command_path;
+    use crate::interaction_model::messages::ib;
     use crate::proto_demux::HandleProto;
     use crate::tlv::TLVElement;
     use crate::tlv_writer::TLVWriter;
@@ -159,7 +159,7 @@ mod tests {
     impl InteractionConsumer for DataModel {
         fn consume_invoke_cmd(
             &self,
-            cmd_path_ib: &command_path::Ib,
+            cmd_path_ib: &ib::CmdPath,
             data: TLVElement,
             _trans: &mut Transaction,
             _tlvwriter: &mut TLVWriter,

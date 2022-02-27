@@ -8,13 +8,7 @@ use crate::{
     error::*,
     fabric::FabricMgr,
     interaction_model::{
-        command::CommandReq,
-        core::IMStatusCode,
-        messages::{
-            attr_data, attr_path, attr_response, attr_status, command_path, command_response,
-            status,
-        },
-        InteractionConsumer, Transaction,
+        command::CommandReq, core::IMStatusCode, messages::ib, InteractionConsumer, Transaction,
     },
     tlv::TLVElement,
     tlv_common::TagType,
@@ -76,12 +70,12 @@ impl InteractionConsumer for DataModel {
 
         let mut node = self.node.write().unwrap();
         for attr_data_ib in attr_list {
-            let attr_data = attr_data::IbIn::from_tlv(&attr_data_ib)?;
+            let attr_data = ib::AttrDataIn::from_tlv(&attr_data_ib)?;
             error!("Received attr data {:?}", attr_data);
 
             if attr_data.path.path.cluster.is_none() || attr_data.path.path.leaf.is_none() {
                 error!("Cluster/Attribute cannot be wildcard in Write Interaction");
-                let attr_status = attr_status::Ib::new(
+                let attr_status = ib::AttrStatus::new(
                     &attr_data.path.path,
                     IMStatusCode::UnsupportedAttribute,
                     0,
@@ -94,13 +88,13 @@ impl InteractionConsumer for DataModel {
                 let attr_id = if let Some(a) = path.leaf { a } else { 0 } as u16;
                 let result = c.write_attribute(&attr_data.data, attr_id);
                 if let Err(e) = result {
-                    let attr_status = attr_status::Ib::new(path, e, 0);
+                    let attr_status = ib::AttrStatus::new(path, e, 0);
                     let _ = tw.put_object(TagType::Anonymous, &attr_status);
                 }
                 Ok(())
             });
             if let Err(e) = result {
-                let attr_status = attr_status::Ib::new(&attr_data.path.path, e, 0);
+                let attr_status = ib::AttrStatus::new(&attr_data.path.path, e, 0);
                 let _ = tw.put_object(TagType::Anonymous, &attr_status);
             }
         }
@@ -123,19 +117,19 @@ impl InteractionConsumer for DataModel {
 
         let node = self.node.read().unwrap();
         for attr_path_ib in attr_list {
-            let attr_path = attr_path::Ib::from_tlv(&attr_path_ib)?;
+            let attr_path = ib::AttrPath::from_tlv(&attr_path_ib)?;
             let result = node.for_each_attribute(&attr_path.path, |path, c| {
                 let attr_id = if let Some(a) = path.leaf { a } else { 0 } as u16;
-                let path = attr_path::Ib::new(path);
+                let path = ib::AttrPath::new(path);
                 let data = |tag: TagType, tw: &mut TLVWriter| c.read_attribute(tag, tw, attr_id);
 
-                let attr_resp = attr_response::Ib::AttrData(attr_data::IbOut::new(path, data));
+                let attr_resp = ib::AttrResp::Data(ib::AttrDataOut::new(path, data));
                 let _ = tw.put_object(TagType::Anonymous, &attr_resp);
                 Ok(())
             });
             if let Err(e) = result {
-                let attr_status = attr_status::Ib::new(&attr_path.path, e, 0);
-                let attr_resp = attr_response::Ib::AttrStatus(attr_status, attr_response::dummy);
+                let attr_status = ib::AttrStatus::new(&attr_path.path, e, 0);
+                let attr_resp = ib::AttrResp::Status(attr_status, ib::attr_resp_dummy);
                 let _ = tw.put_object(TagType::Anonymous, &attr_resp);
             }
         }
@@ -144,7 +138,7 @@ impl InteractionConsumer for DataModel {
 
     fn consume_invoke_cmd(
         &self,
-        cmd_path_ib: &command_path::Ib,
+        cmd_path_ib: &ib::CmdPath,
         data: TLVElement,
         trans: &mut Transaction,
         tlvwriter: &mut TLVWriter,
@@ -163,21 +157,16 @@ impl InteractionConsumer for DataModel {
             cmd_req.cmd.path = *path;
             let result = c.handle_command(&mut cmd_req);
             if let Err(e) = result {
-                let status = status::Ib::new(e, 0);
-                let invoke_resp = command_response::Ib::CommandStatus(
-                    cmd_req.cmd,
-                    status,
-                    command_response::dummy,
-                );
+                let status = ib::Status::new(e, 0);
+                let invoke_resp = ib::CmdResponse::Status(cmd_req.cmd, status, ib::cmd_resp_dummy);
                 let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
             }
             Ok(())
         });
         if let Err(result) = result {
             // Err return implies we must send the StatusIB with this code
-            let status = status::Ib::new(result, 0);
-            let invoke_resp =
-                command_response::Ib::CommandStatus(*cmd_path_ib, status, command_response::dummy);
+            let status = ib::Status::new(result, 0);
+            let invoke_resp = ib::CmdResponse::Status(*cmd_path_ib, status, ib::cmd_resp_dummy);
             tlvwriter.put_object(TagType::Anonymous, &invoke_resp)?;
             trans.complete();
         }

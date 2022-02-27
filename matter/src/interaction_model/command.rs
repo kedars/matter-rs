@@ -1,5 +1,5 @@
 use super::core::OpCode;
-use super::messages::command_path;
+use super::messages::ib;
 use super::InteractionModel;
 use super::Transaction;
 use crate::error::*;
@@ -20,7 +20,7 @@ macro_rules! cmd_enter {
 }
 
 pub struct CommandReq<'a, 'b, 'c, 'd, 'e> {
-    pub cmd: command_path::Ib,
+    pub cmd: ib::CmdPath,
     pub data: TLVElement<'a>,
     pub resp: &'a mut TLVWriter<'b, 'c>,
     pub trans: &'a mut Transaction<'d, 'e>,
@@ -58,8 +58,7 @@ impl InteractionModel {
         tw.put_start_array(TagType::Context(1))?;
         for cmd_data_ib in cmd_list_iter {
             // CommandDataIB has CommandPath(0) + Data(1)
-            let cmd_path_ib =
-                command_path::Ib::from_tlv(&cmd_data_ib.find_tag(0)?.confirm_list()?)?;
+            let cmd_path_ib = ib::CmdPath::from_tlv(&cmd_data_ib.find_tag(0)?.confirm_list()?)?;
             let data = cmd_data_ib.find_tag(1)?;
 
             self.consumer

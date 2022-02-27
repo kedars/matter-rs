@@ -3,7 +3,8 @@ use crate::command_path_ib;
 use crate::data_model::objects::*;
 use crate::data_model::sdm::failsafe::FailSafe;
 use crate::interaction_model::core::IMStatusCode;
-use crate::interaction_model::messages::{command_path, command_response, GenericPath};
+use crate::interaction_model::messages::ib;
+use crate::interaction_model::messages::GenericPath;
 use crate::tlv::TLVElement;
 use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
@@ -29,19 +30,19 @@ const CMD_SETREGULATORYCONFIG_RESPONSE_ID: u16 = 0x03;
 const CMD_COMMISSIONING_COMPLETE_ID: u16 = 0x04;
 const CMD_COMMISSIONING_COMPLETE_RESPONSE_ID: u16 = 0x05;
 
-const CMD_PATH_ARMFAILSAFE_RESPONSE: command_path::Ib = command_path_ib!(
+const CMD_PATH_ARMFAILSAFE_RESPONSE: ib::CmdPath = command_path_ib!(
     0,
     CLUSTER_GENERAL_COMMISSIONING_ID,
     CMD_ARMFAILSAFE_RESPONSE_ID
 );
 
-const CMD_PATH_SETREGULATORY_RESPONSE: command_path::Ib = command_path_ib!(
+const CMD_PATH_SETREGULATORY_RESPONSE: ib::CmdPath = command_path_ib!(
     0,
     CLUSTER_GENERAL_COMMISSIONING_ID,
     CMD_SETREGULATORYCONFIG_RESPONSE_ID
 );
 
-const CMD_PATH_COMMISSIONING_COMPLETE_RESPONSE: command_path::Ib = command_path_ib!(
+const CMD_PATH_COMMISSIONING_COMPLETE_RESPONSE: ib::CmdPath = command_path_ib!(
     0,
     CLUSTER_GENERAL_COMMISSIONING_ID,
     CMD_COMMISSIONING_COMPLETE_RESPONSE_ID
@@ -122,7 +123,7 @@ impl GenCommCluster {
             return Err(IMStatusCode::Busy);
         }
 
-        let invoke_resp = command_response::Ib::CommandData(CMD_PATH_ARMFAILSAFE_RESPONSE, |t| {
+        let invoke_resp = ib::CmdResponse::Data(CMD_PATH_ARMFAILSAFE_RESPONSE, |t| {
             t.put_u8(TagType::Context(0), CommissioningError::Ok as u8)?;
             t.put_utf8(TagType::Context(1), b"")
         });
@@ -145,7 +146,7 @@ impl GenCommCluster {
             .map_err(|_| IMStatusCode::InvalidCommand)?;
         info!("Received country code: {:?}", country_code);
 
-        let invoke_resp = command_response::Ib::CommandData(CMD_PATH_SETREGULATORY_RESPONSE, |t| {
+        let invoke_resp = ib::CmdResponse::Data(CMD_PATH_SETREGULATORY_RESPONSE, |t| {
             t.put_u8(TagType::Context(0), 0)?;
             t.put_utf8(TagType::Context(1), b"")
         });
@@ -176,11 +177,10 @@ impl GenCommCluster {
             status = CommissioningError::ErrInvalidAuth as u8;
         }
 
-        let invoke_resp =
-            command_response::Ib::CommandData(CMD_PATH_COMMISSIONING_COMPLETE_RESPONSE, |t| {
-                t.put_u8(TagType::Context(0), status)?;
-                t.put_utf8(TagType::Context(1), b"")
-            });
+        let invoke_resp = ib::CmdResponse::Data(CMD_PATH_COMMISSIONING_COMPLETE_RESPONSE, |t| {
+            t.put_u8(TagType::Context(0), status)?;
+            t.put_utf8(TagType::Context(1), b"")
+        });
         let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
         cmd_req.trans.complete();
         Ok(())

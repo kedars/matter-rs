@@ -4,7 +4,7 @@ use crate::{
     error::Error, tlv::TLVElement, tlv_writer::TLVWriter, transport::session::SessionHandle,
 };
 
-use self::messages::command_path;
+use self::messages::ib;
 
 #[derive(PartialEq)]
 pub enum TransactionState {
@@ -20,7 +20,7 @@ pub struct Transaction<'a, 'b> {
 pub trait InteractionConsumer {
     fn consume_invoke_cmd(
         &self,
-        cmd_path_ib: &command_path::Ib,
+        cmd_path_ib: &ib::CmdPath,
         data: TLVElement,
         trans: &mut Transaction,
         tlvwriter: &mut TLVWriter,
