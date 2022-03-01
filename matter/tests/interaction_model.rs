@@ -97,6 +97,7 @@ fn handle_data(action: OpCode, data_in: &[u8], data_out: &mut [u8]) -> DataModel
         .get_or_add(
             0,
             SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 5542),
+            None,
             false,
         )
         .unwrap();

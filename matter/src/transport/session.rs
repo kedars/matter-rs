@@ -11,6 +11,7 @@ use crate::{
     utils::{parsebuf::ParseBuf, writebuf::WriteBuf},
 };
 use log::{info, trace};
+use rand::Rng;
 
 use super::{plain_hdr::PlainHdr, proto_hdr::ProtoHdr};
 
@@ -33,6 +34,7 @@ impl Default for SessionMode {
 #[derive(Debug)]
 pub struct Session {
     peer_addr: std::net::SocketAddr,
+    peer_nodeid: Option<u64>,
     // I find the session initiator/responder role getting confused with exchange initiator/responder
     // So, we might keep this as enc_key and dec_key for now
     dec_key: [u8; MATTER_AES128_KEY_SIZE],
@@ -67,16 +69,19 @@ impl CloneData {
     }
 }
 
+const MATTER_MSG_CTR_RANGE: u32 = 0x0fffffff;
+
 impl Session {
-    pub fn new(peer_addr: std::net::SocketAddr) -> Session {
+    pub fn new(peer_addr: std::net::SocketAddr, peer_nodeid: Option<u64>) -> Session {
         Session {
             peer_addr,
+            peer_nodeid,
             dec_key: [0; MATTER_AES128_KEY_SIZE],
             enc_key: [0; MATTER_AES128_KEY_SIZE],
             att_challenge: [0; MATTER_AES128_KEY_SIZE],
             peer_sess_id: 0,
             local_sess_id: 0,
-            msg_ctr: 1,
+            msg_ctr: rand::thread_rng().gen_range(0..MATTER_MSG_CTR_RANGE),
             mode: SessionMode::PlainText,
             data: None,
         }
@@ -86,12 +91,13 @@ impl Session {
     pub fn clone(&mut self, clone_from: &CloneData) -> Session {
         Session {
             peer_addr: self.peer_addr,
+            peer_nodeid: self.peer_nodeid,
             dec_key: clone_from.dec_key,
             enc_key: clone_from.enc_key,
             att_challenge: clone_from.att_challenge,
             local_sess_id: clone_from.local_sess_id,
             peer_sess_id: clone_from.peer_sess_id,
-            msg_ctr: 1,
+            msg_ctr: rand::thread_rng().gen_range(0..MATTER_MSG_CTR_RANGE),
             mode: clone_from.mode,
             data: None,
         }
@@ -203,6 +209,9 @@ impl Session {
         packet_buf.prepend(write_buf.as_slice())?;
 
         // Generate plain-text header
+        if let Some(d) = self.peer_nodeid {
+            plain_hdr.set_dest_u64(d);
+        }
         let mut tmp_buf: [u8; plain_hdr::max_plain_hdr_len()] = [0; plain_hdr::max_plain_hdr_len()];
         let mut write_buf = WriteBuf::new(&mut tmp_buf[..], plain_hdr::max_plain_hdr_len());
         plain_hdr.encode(&mut write_buf)?;
@@ -273,8 +282,12 @@ impl SessionMgr {
         self.sessions.iter().position(|x| x.is_none())
     }
 
-    pub fn add(&mut self, peer_addr: std::net::SocketAddr) -> Result<SessionHandle, Error> {
-        let session = Session::new(peer_addr);
+    pub fn add(
+        &mut self,
+        peer_addr: std::net::SocketAddr,
+        peer_nodeid: Option<u64>,
+    ) -> Result<SessionHandle, Error> {
+        let session = Session::new(peer_addr, peer_nodeid);
         self.add_session(session)
     }
 
@@ -288,13 +301,20 @@ impl SessionMgr {
         &self,
         sess_id: u16,
         peer_addr: std::net::SocketAddr,
+        peer_nodeid: Option<u64>,
         is_encrypted: bool,
     ) -> Option<usize> {
         self.sessions.iter().position(|x| {
             if let Some(x) = x {
+                let mut nodeid_matches = true;
+                if x.peer_nodeid.is_some() && peer_nodeid.is_some() && x.peer_nodeid != peer_nodeid
+                {
+                    nodeid_matches = false;
+                }
                 x.local_sess_id == sess_id
                     && x.peer_addr == peer_addr
                     && x.is_encrypted() == is_encrypted
+                    && nodeid_matches
             } else {
                 false
             }
@@ -313,14 +333,15 @@ impl SessionMgr {
         &mut self,
         sess_id: u16,
         peer_addr: std::net::SocketAddr,
+        peer_nodeid: Option<u64>,
         is_encrypted: bool,
     ) -> Option<SessionHandle> {
-        if let Some(index) = self._get(sess_id, peer_addr, is_encrypted) {
+        if let Some(index) = self._get(sess_id, peer_addr, peer_nodeid, is_encrypted) {
             Some(self.get_session_handle(index))
         } else if sess_id == 0 && !is_encrypted {
             // We must create a new session for this case
             info!("Creating new session");
-            self.add(peer_addr).ok()
+            self.add(peer_addr, peer_nodeid).ok()
         } else {
             None
         }
@@ -334,10 +355,15 @@ impl SessionMgr {
     ) -> Result<SessionHandle, Error> {
         // Read unencrypted packet header
         plain_hdr.decode(parse_buf)?;
-
+        let peer_nodeid = plain_hdr.get_src_u64();
         // Get session
-        self.get_or_add(plain_hdr.sess_id, src, plain_hdr.is_encrypted())
-            .ok_or(Error::NoSession)
+        self.get_or_add(
+            plain_hdr.sess_id,
+            src,
+            peer_nodeid,
+            plain_hdr.is_encrypted(),
+        )
+        .ok_or(Error::NoSession)
     }
 
     fn get_session_handle(&mut self, sess_idx: usize) -> SessionHandle {
@@ -395,19 +421,19 @@ mod tests {
     fn test_next_sess_id_doesnt_reuse() {
         let mut sm = SessionMgr::new();
         let mut sess = sm
-            .add(SocketAddr::new(
-                std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-                8080,
-            ))
+            .add(
+                SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
+                None,
+            )
             .unwrap();
         sess.set_local_sess_id(1);
         assert_eq!(sm.get_next_sess_id(), 2);
         assert_eq!(sm.get_next_sess_id(), 3);
         let mut sess = sm
-            .add(SocketAddr::new(
-                std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-                8080,
-            ))
+            .add(
+                SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
+                None,
+            )
             .unwrap();
         sess.set_local_sess_id(4);
         assert_eq!(sm.get_next_sess_id(), 5);
@@ -417,10 +443,10 @@ mod tests {
     fn test_next_sess_id_overflows() {
         let mut sm = SessionMgr::new();
         let mut sess = sm
-            .add(SocketAddr::new(
-                std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-                8080,
-            ))
+            .add(
+                SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
+                None,
+            )
             .unwrap();
         sess.set_local_sess_id(1);
         assert_eq!(sm.get_next_sess_id(), 2);

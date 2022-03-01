@@ -40,7 +40,7 @@ enum NocStatus {
 }
 
 // Some placeholder value for now
-const MAX_CERT_DECLARATION_LEN: usize = 300;
+const MAX_CERT_DECLARATION_LEN: usize = 600;
 // Some placeholder value for now
 const MAX_CSR_LEN: usize = 300;
 // As defined in the Matter Spec
@@ -336,7 +336,7 @@ fn add_attestation_element(
     let epoch = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as u32;
     let mut writer = TLVWriter::new(write_buf);
     writer.put_start_struct(TagType::Anonymous)?;
-    writer.put_str8(TagType::Context(1), cert_dec)?;
+    writer.put_str16(TagType::Context(1), cert_dec)?;
     writer.put_str8(TagType::Context(2), att_nonce)?;
     writer.put_u32(TagType::Context(3), epoch)?;
     writer.put_end_container()?;

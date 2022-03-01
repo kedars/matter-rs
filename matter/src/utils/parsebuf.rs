@@ -68,6 +68,10 @@ impl<'a> ParseBuf<'a> {
     pub fn le_u32(&mut self) -> Result<u32, Error> {
         self.parse_head_with(4, |x| LittleEndian::read_u32(&x.buf[x.read_off..]))
     }
+
+    pub fn le_u64(&mut self) -> Result<u64, Error> {
+        self.parse_head_with(8, |x| LittleEndian::read_u64(&x.buf[x.read_off..]))
+    }
 }
 
 #[cfg(test)]

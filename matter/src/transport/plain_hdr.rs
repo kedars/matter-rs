@@ -22,8 +22,29 @@ pub struct PlainHdr {
     pub sess_type: SessionType,
     pub sess_id: u16,
     pub ctr: u32,
+    peer_nodeid: Option<u64>,
 }
 
+// A 64-bit nodeid is present
+const DSIZ_UNICAST_NODEID: u8 = 0x01;
+const _DSIZ_GROUPCAST_NODEID: u8 = 0x02;
+
+impl PlainHdr {
+    pub fn set_dest_u64(&mut self, id: u64) {
+        self.flags |= DSIZ_UNICAST_NODEID;
+        self.peer_nodeid = Some(id);
+    }
+
+    pub fn get_src_u64(&self) -> Option<u64> {
+        if (self.flags & FLAG_SRC_ADDR_PRESENT) != 0 {
+            self.peer_nodeid
+        } else {
+            None
+        }
+    }
+}
+
+const FLAG_SRC_ADDR_PRESENT: u8 = 0x04;
 impl PlainHdr {
     // it will have an additional 'message length' field first
     pub fn decode(&mut self, msg: &mut ParseBuf) -> Result<(), Error> {
@@ -37,6 +58,10 @@ impl PlainHdr {
         };
         self.ctr = msg.le_u32()?;
 
+        if (self.flags & FLAG_SRC_ADDR_PRESENT) != 0 {
+            self.peer_nodeid = Some(msg.le_u64()?);
+        }
+
         info!(
             "[decode] flags: {:x}, session type: {:#?}, sess_id: {}, ctr: {}",
             self.flags, self.sess_type, self.sess_id, self.ctr
@@ -49,6 +74,9 @@ impl PlainHdr {
         resp_buf.le_u16(self.sess_id)?;
         resp_buf.le_u8(0)?;
         resp_buf.le_u32(self.ctr)?;
+        if let Some(d) = self.peer_nodeid {
+            resp_buf.le_u64(d)?;
+        }
         Ok(())
     }
 
