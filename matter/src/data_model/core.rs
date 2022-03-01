@@ -1,4 +1,5 @@
 use super::{
+    cluster_basic_information::BasicInfoConfig,
     device_types::device_type_add_root_node,
     objects::{self, *},
     sdm::dev_att::DevAttDataFetcher,
@@ -23,6 +24,7 @@ pub struct DataModel {
 
 impl DataModel {
     pub fn new(
+        dev_details: BasicInfoConfig,
         dev_att: Box<dyn DevAttDataFetcher>,
         fabric_mgr: Arc<FabricMgr>,
     ) -> Result<Self, Error> {
@@ -32,7 +34,7 @@ impl DataModel {
         {
             let mut node = dm.node.write()?;
             node.set_changes_cb(Box::new(dm.clone()));
-            device_type_add_root_node(&mut node, dev_att, fabric_mgr)?;
+            device_type_add_root_node(&mut node, dev_details, dev_att, fabric_mgr)?;
         }
         Ok(dm)
     }

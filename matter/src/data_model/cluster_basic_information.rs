@@ -8,10 +8,34 @@ use crate::{
 };
 
 const CLUSTER_BASIC_INFORMATION_ID: u32 = 0x0028;
+enum Attributes {
+    VendorId = 2,
+    ProductId = 4,
+    HwVer = 7,
+    SwVer = 9,
+}
 
-fn attr_interaction_model_version_new() -> Result<Box<Attribute>, Error> {
-    // Id: 0, Value: 1
-    Attribute::new(0, AttrValue::Uint16(1))
+pub struct BasicInfoConfig {
+    pub vid: u16,
+    pub pid: u16,
+    pub hw_ver: u16,
+    pub sw_ver: u32,
+}
+
+fn attr_vid_new(vid: u16) -> Result<Box<Attribute>, Error> {
+    Attribute::new(Attributes::VendorId as u16, AttrValue::Uint16(vid))
+}
+
+fn attr_pid_new(pid: u16) -> Result<Box<Attribute>, Error> {
+    Attribute::new(Attributes::ProductId as u16, AttrValue::Uint16(pid))
+}
+
+fn attr_hw_ver_new(hw_ver: u16) -> Result<Box<Attribute>, Error> {
+    Attribute::new(Attributes::HwVer as u16, AttrValue::Uint16(hw_ver))
+}
+
+fn attr_sw_ver_new(sw_ver: u32) -> Result<Box<Attribute>, Error> {
+    Attribute::new(Attributes::SwVer as u16, AttrValue::Uint32(sw_ver))
 }
 
 pub struct BasicInfoCluster {
@@ -19,13 +43,14 @@ pub struct BasicInfoCluster {
 }
 
 impl BasicInfoCluster {
-    pub fn new() -> Result<Box<Self>, Error> {
+    pub fn new(cfg: BasicInfoConfig) -> Result<Box<Self>, Error> {
         let mut cluster = Box::new(BasicInfoCluster {
             base: Cluster::new(CLUSTER_BASIC_INFORMATION_ID),
         });
-        cluster
-            .base
-            .add_attribute(attr_interaction_model_version_new()?)?;
+        cluster.base.add_attribute(attr_vid_new(cfg.vid)?)?;
+        cluster.base.add_attribute(attr_pid_new(cfg.pid)?)?;
+        cluster.base.add_attribute(attr_hw_ver_new(cfg.hw_ver)?)?;
+        cluster.base.add_attribute(attr_sw_ver_new(cfg.sw_ver)?)?;
         Ok(cluster)
     }
 }

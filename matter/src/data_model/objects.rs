@@ -23,6 +23,7 @@ pub enum AttrValue {
     Int8(i8),
     Int64(i64),
     Uint16(u16),
+    Uint32(u32),
     Bool(bool),
     Custom,
 }
@@ -33,6 +34,7 @@ impl Debug for AttrValue {
             AttrValue::Int8(v) => write!(f, "{:?}", *v),
             AttrValue::Int64(v) => write!(f, "{:?}", *v),
             AttrValue::Uint16(v) => write!(f, "{:?}", *v),
+            AttrValue::Uint32(v) => write!(f, "{:?}", *v),
             AttrValue::Bool(v) => write!(f, "{:?}", *v),
             AttrValue::Custom => write!(f, "custom-attribute"),
         }?;
@@ -46,6 +48,7 @@ impl ToTLV for AttrValue {
         match self {
             AttrValue::Bool(v) => tw.put_bool(tag_type, *v),
             AttrValue::Uint16(v) => tw.put_u16(tag_type, *v),
+            AttrValue::Uint32(v) => tw.put_u32(tag_type, *v),
             _ => {
                 error!("Attribute type not yet supported");
                 Err(Error::AttributeNotFound)
@@ -59,6 +62,7 @@ impl AttrValue {
         match self {
             AttrValue::Bool(v) => *v = tr.get_bool()?,
             AttrValue::Uint16(v) => *v = tr.get_u16()?,
+            AttrValue::Uint32(v) => *v = tr.get_u32()?,
             _ => {
                 error!("Attribute type not yet supported");
                 return Err(Error::AttributeNotFound);

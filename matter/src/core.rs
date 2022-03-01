@@ -1,5 +1,8 @@
 use crate::{
-    data_model::{core::DataModel, sdm::dev_att::DevAttDataFetcher},
+    data_model::{
+        cluster_basic_information::BasicInfoConfig, core::DataModel,
+        sdm::dev_att::DevAttDataFetcher,
+    },
     error::*,
     fabric::FabricMgr,
     interaction_model::InteractionModel,
@@ -22,9 +25,12 @@ impl Matter {
     /// * dev_att: An object that implements the trait [DevAttDataFetcher]. Any Matter device
     /// requires a set of device attestation certificates and keys. It is the responsibility of
     /// this object to return the device attestation details when queried upon.
-    pub fn new(dev_att: Box<dyn DevAttDataFetcher>) -> Result<Box<Matter>, Error> {
+    pub fn new(
+        dev_det: BasicInfoConfig,
+        dev_att: Box<dyn DevAttDataFetcher>,
+    ) -> Result<Box<Matter>, Error> {
         let fabric_mgr = Arc::new(FabricMgr::new()?);
-        let data_model = DataModel::new(dev_att, fabric_mgr.clone())?;
+        let data_model = DataModel::new(dev_det, dev_att, fabric_mgr.clone())?;
         let mut matter = Box::new(Matter {
             transport_mgr: transport::mgr::Mgr::new()?,
             data_model,

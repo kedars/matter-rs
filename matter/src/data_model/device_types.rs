@@ -1,4 +1,5 @@
 use super::cluster_basic_information::BasicInfoCluster;
+use super::cluster_basic_information::BasicInfoConfig;
 use super::cluster_on_off::OnOffCluster;
 use super::objects::*;
 use super::sdm::dev_att::DevAttDataFetcher;
@@ -13,6 +14,7 @@ type WriteNode<'a> = RwLockWriteGuard<'a, Box<Node>>;
 
 pub fn device_type_add_root_node(
     node: &mut WriteNode,
+    dev_info: BasicInfoConfig,
     dev_att: Box<dyn DevAttDataFetcher>,
     fabric_mgr: Arc<FabricMgr>,
 ) -> Result<u32, Error> {
@@ -23,7 +25,7 @@ pub fn device_type_add_root_node(
         return Err(Error::Invalid);
     };
     // Add the mandatory clusters
-    node.add_cluster(0, BasicInfoCluster::new()?)?;
+    node.add_cluster(0, BasicInfoCluster::new(dev_info)?)?;
     let general_commissioning = GenCommCluster::new()?;
     let failsafe = general_commissioning.failsafe();
     node.add_cluster(0, general_commissioning)?;
