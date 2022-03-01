@@ -304,6 +304,16 @@ pub mod ib {
     }
 
     impl CmdPath {
+        pub fn new(endpoint: Option<u16>, cluster: Option<u32>, command: Option<u16>) -> Self {
+            Self {
+                path: GenericPath {
+                    endpoint,
+                    cluster,
+                    leaf: command.map(|a| a as u32),
+                },
+            }
+        }
+
         pub fn from_tlv(cmd_path: &TLVElement) -> Result<Self, Error> {
             let mut ib = CmdPath::default();
 

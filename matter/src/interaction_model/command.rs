@@ -26,9 +26,9 @@ pub struct CommandReq<'a, 'b, 'c, 'd, 'e> {
     pub trans: &'a mut Transaction<'d, 'e>,
 }
 
-enum Tag {
-    _SupressResponse = 0,
-    _TimedReq = 1,
+pub enum Tag {
+    SupressResponse = 0,
+    TimedReq = 1,
     InvokeRequests = 2,
 }
 
