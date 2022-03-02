@@ -32,7 +32,7 @@ impl DescriptorCluster {
         let mut c = Box::new(DescriptorCluster {
             endpoint_id,
             data_model,
-            base: Cluster::new(CLUSTER_DESCRIPTOR_ID),
+            base: Cluster::new(CLUSTER_DESCRIPTOR_ID)?,
         });
         c.base.add_attribute(attr_serverlist_new()?)?;
         Ok(c)

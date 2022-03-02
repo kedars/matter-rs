@@ -103,7 +103,7 @@ impl NocCluster {
             dev_att,
             fabric_mgr,
             failsafe,
-            base: Cluster::new(CLUSTER_OPERATIONAL_CREDENTIALS_ID),
+            base: Cluster::new(CLUSTER_OPERATIONAL_CREDENTIALS_ID)?,
         }))
     }
 

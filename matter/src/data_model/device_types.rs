@@ -5,6 +5,7 @@ use super::objects::*;
 use super::sdm::dev_att::DevAttDataFetcher;
 use super::sdm::general_commissioning::GenCommCluster;
 use super::sdm::noc::NocCluster;
+use super::sdm::nw_commissioning::NwCommCluster;
 use crate::error::*;
 use crate::fabric::FabricMgr;
 use std::sync::Arc;
@@ -29,6 +30,7 @@ pub fn device_type_add_root_node(
     let general_commissioning = GenCommCluster::new()?;
     let failsafe = general_commissioning.failsafe();
     node.add_cluster(0, general_commissioning)?;
+    node.add_cluster(0, NwCommCluster::new()?)?;
     node.add_cluster(0, NocCluster::new(dev_att, fabric_mgr, failsafe)?)?;
     Ok(endpoint)
 }

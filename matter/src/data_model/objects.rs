@@ -7,6 +7,7 @@ use crate::{
     tlv_writer::{TLVWriter, ToTLV},
 };
 use log::error;
+use num_derive::FromPrimitive;
 use std::fmt::{self, Debug, Formatter};
 
 /* This file needs some major revamp.
@@ -14,8 +15,8 @@ use std::fmt::{self, Debug, Formatter};
  * - instead of arrays, can use linked-lists to conserve space and avoid the internal fragmentation
  */
 pub const ENDPTS_PER_ACC: usize = 3;
-pub const CLUSTERS_PER_ENDPT: usize = 5;
-pub const ATTRS_PER_CLUSTER: usize = 4;
+pub const CLUSTERS_PER_ENDPT: usize = 7;
+pub const ATTRS_PER_CLUSTER: usize = 8;
 pub const CMDS_PER_CLUSTER: usize = 8;
 
 #[derive(PartialEq)]
@@ -116,6 +117,17 @@ impl std::fmt::Display for Attribute {
     }
 }
 
+#[derive(FromPrimitive, Debug)]
+enum GlobalAttributes {
+    _ClusterRevision = 0xFFFD,
+    FeatureMap = 0xFFFC,
+    AttributeList = 0xFFFB,
+    _EventList = 0xFFFA,
+    _ClientGenCmd = 0xFFF9,
+    _ServerGenCmd = 0xFFF8,
+    _FabricIndex = 0xFE,
+}
+
 pub trait ClusterType {
     fn base(&self) -> &Cluster;
     fn base_mut(&mut self) -> &mut Cluster;
@@ -127,18 +139,43 @@ pub trait ClusterType {
 pub struct Cluster {
     id: u32,
     attributes: Vec<Box<Attribute>>,
+    feature_map: Option<u32>,
 }
 
 impl Cluster {
-    pub fn new(id: u32) -> Cluster {
-        Cluster {
+    pub fn new(id: u32) -> Result<Cluster, Error> {
+        let mut c = Cluster {
             id,
             attributes: Vec::with_capacity(ATTRS_PER_CLUSTER),
-        }
+            feature_map: None,
+        };
+        c.add_default_attributes()?;
+        Ok(c)
     }
 
     pub fn id(&self) -> u32 {
         self.id
+    }
+
+    pub fn set_feature_map(&mut self, map: u32) -> Result<(), Error> {
+        if self.feature_map.is_none() {
+            self.add_attribute(Attribute::new(
+                GlobalAttributes::FeatureMap as u16,
+                AttrValue::Uint32(map),
+            )?)?;
+        } else {
+            self.write_attribute_raw(GlobalAttributes::FeatureMap as u16, AttrValue::Uint32(map))
+                .map_err(|_| Error::Invalid)?;
+        }
+        self.feature_map = Some(map);
+        Ok(())
+    }
+
+    fn add_default_attributes(&mut self) -> Result<(), Error> {
+        self.add_attribute(Attribute::new(
+            GlobalAttributes::AttributeList as u16,
+            AttrValue::Custom,
+        )?)
     }
 
     pub fn add_attribute(&mut self, attr: Box<Attribute>) -> Result<(), Error> {
@@ -191,13 +228,34 @@ impl Cluster {
         tw: &mut TLVWriter,
         attr_id: u16,
     ) -> Result<(), Error> {
-        let a = self
-            .get_attribute(attr_id)
-            .map_err(|_| Error::AttributeNotFound)?;
-        if a.value != AttrValue::Custom {
-            tw.put_object(tag, &a.value)
+        let global_attr: Option<GlobalAttributes> = num::FromPrimitive::from_u16(attr_id);
+        if let Some(global_attr) = global_attr {
+            match global_attr {
+                GlobalAttributes::AttributeList => {
+                    tw.put_start_array(tag)?;
+                    for a in &self.attributes {
+                        tw.put_u16(TagType::Anonymous, a.id)?;
+                    }
+                    tw.put_end_container()
+                }
+                GlobalAttributes::FeatureMap => {
+                    let val = if let Some(m) = self.feature_map { m } else { 0 };
+                    tw.put_u32(tag, val)
+                }
+                _ => {
+                    error!("This attribute not yet handled {:?}", global_attr);
+                    Err(Error::Invalid)
+                }
+            }
         } else {
-            Err(Error::Invalid)
+            let a = self
+                .get_attribute(attr_id)
+                .map_err(|_| Error::AttributeNotFound)?;
+            if a.value != AttrValue::Custom {
+                tw.put_object(tag, &a.value)
+            } else {
+                Err(Error::Invalid)
+            }
         }
     }
 

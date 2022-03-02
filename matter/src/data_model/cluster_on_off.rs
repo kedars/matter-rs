@@ -29,7 +29,7 @@ pub struct OnOffCluster {
 impl OnOffCluster {
     pub fn new() -> Result<Box<Self>, Error> {
         let mut cluster = Box::new(OnOffCluster {
-            base: Cluster::new(CLUSTER_ONOFF_ID),
+            base: Cluster::new(CLUSTER_ONOFF_ID)?,
         });
         cluster.base.add_attribute(attr_on_off_new()?)?;
         Ok(cluster)

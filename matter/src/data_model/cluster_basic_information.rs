@@ -45,7 +45,7 @@ pub struct BasicInfoCluster {
 impl BasicInfoCluster {
     pub fn new(cfg: BasicInfoConfig) -> Result<Box<Self>, Error> {
         let mut cluster = Box::new(BasicInfoCluster {
-            base: Cluster::new(CLUSTER_BASIC_INFORMATION_ID),
+            base: Cluster::new(CLUSTER_BASIC_INFORMATION_ID)?,
         });
         cluster.base.add_attribute(attr_vid_new(cfg.vid)?)?;
         cluster.base.add_attribute(attr_pid_new(cfg.pid)?)?;

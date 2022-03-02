@@ -8,8 +8,8 @@ fn main() {
 
     // vid/pid should match those in the DAC
     let dev_info = BasicInfoConfig {
-        vid: 0x8002,
-        pid: 0xFFF1,
+        vid: 0xFFF1,
+        pid: 0x8002,
         hw_ver: 2,
         sw_ver: 1,
     };
