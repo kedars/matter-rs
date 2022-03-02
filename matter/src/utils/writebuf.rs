@@ -79,6 +79,10 @@ impl<'a> WriteBuf<'a> {
         })
     }
 
+    pub fn le_i8(&mut self, data: i8) -> Result<(), Error> {
+        self.le_u8(data as u8)
+    }
+
     pub fn le_u8(&mut self, data: u8) -> Result<(), Error> {
         self.append_with(1, |x| {
             x.buf[x.end] = data;

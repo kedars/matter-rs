@@ -302,6 +302,13 @@ impl<'a> TLVElement<'a> {
         })
     }
 
+    pub fn get_i8(&self) -> Result<i8, Error> {
+        match self.element_type {
+            ElementType::S8(a) => Ok(a),
+            _ => Err(Error::TLVTypeMismatch),
+        }
+    }
+
     pub fn get_u8(&self) -> Result<u8, Error> {
         match self.element_type {
             ElementType::U8(a) => Ok(a),
@@ -311,6 +318,7 @@ impl<'a> TLVElement<'a> {
 
     pub fn get_u16(&self) -> Result<u16, Error> {
         match self.element_type {
+            ElementType::U8(a) => Ok(a.into()),
             ElementType::U16(a) => Ok(a),
             _ => Err(Error::TLVTypeMismatch),
         }
@@ -318,6 +326,8 @@ impl<'a> TLVElement<'a> {
 
     pub fn get_u32(&self) -> Result<u32, Error> {
         match self.element_type {
+            ElementType::U8(a) => Ok(a.into()),
+            ElementType::U16(a) => Ok(a.into()),
             ElementType::U32(a) => Ok(a),
             _ => Err(Error::TLVTypeMismatch),
         }
@@ -325,6 +335,9 @@ impl<'a> TLVElement<'a> {
 
     pub fn get_u64(&self) -> Result<u64, Error> {
         match self.element_type {
+            ElementType::U8(a) => Ok(a.into()),
+            ElementType::U16(a) => Ok(a.into()),
+            ElementType::U32(a) => Ok(a.into()),
             ElementType::U64(a) => Ok(a),
             _ => Err(Error::TLVTypeMismatch),
         }
@@ -599,9 +612,9 @@ pub fn get_root_node_list(b: &[u8]) -> Result<TLVElement, Error> {
 pub fn print_tlv_list(b: &[u8]) {
     let tlvlist = TLVList::new(b, b.len());
 
-    const MAX_DEPTH: usize = 6;
+    const MAX_DEPTH: usize = 8;
     info!("TLV list:");
-    let space_buf = "                    ";
+    let space_buf = "                            ";
     let space: [&str; MAX_DEPTH] = [
         &space_buf[0..0],
         &space_buf[0..4],
@@ -609,6 +622,8 @@ pub fn print_tlv_list(b: &[u8]) {
         &space_buf[0..12],
         &space_buf[0..16],
         &space_buf[0..20],
+        &space_buf[0..24],
+        &space_buf[0..28],
     ];
     let mut stack: [char; MAX_DEPTH] = [' '; MAX_DEPTH];
     let mut index = 0_usize;

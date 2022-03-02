@@ -24,6 +24,7 @@ pub enum AttrValue {
     Int64(i64),
     Uint16(u16),
     Uint32(u32),
+    Uint64(u64),
     Bool(bool),
     Custom,
 }
@@ -35,6 +36,7 @@ impl Debug for AttrValue {
             AttrValue::Int64(v) => write!(f, "{:?}", *v),
             AttrValue::Uint16(v) => write!(f, "{:?}", *v),
             AttrValue::Uint32(v) => write!(f, "{:?}", *v),
+            AttrValue::Uint64(v) => write!(f, "{:?}", *v),
             AttrValue::Bool(v) => write!(f, "{:?}", *v),
             AttrValue::Custom => write!(f, "custom-attribute"),
         }?;
@@ -47,8 +49,10 @@ impl ToTLV for AttrValue {
         // What is the time complexity of such long match statements?
         match self {
             AttrValue::Bool(v) => tw.put_bool(tag_type, *v),
+            AttrValue::Int8(v) => tw.put_i8(tag_type, *v),
             AttrValue::Uint16(v) => tw.put_u16(tag_type, *v),
             AttrValue::Uint32(v) => tw.put_u32(tag_type, *v),
+            AttrValue::Uint64(v) => tw.put_u64(tag_type, *v),
             _ => {
                 error!("Attribute type not yet supported");
                 Err(Error::AttributeNotFound)
@@ -61,8 +65,10 @@ impl AttrValue {
     fn update_from_tlv(&mut self, tr: &TLVElement) -> Result<(), Error> {
         match self {
             AttrValue::Bool(v) => *v = tr.get_bool()?,
+            AttrValue::Int8(v) => *v = tr.get_i8()?,
             AttrValue::Uint16(v) => *v = tr.get_u16()?,
             AttrValue::Uint32(v) => *v = tr.get_u32()?,
+            AttrValue::Uint64(v) => *v = tr.get_u64()?,
             _ => {
                 error!("Attribute type not yet supported");
                 return Err(Error::AttributeNotFound);

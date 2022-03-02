@@ -10,6 +10,7 @@ use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
 use crate::{error::*, interaction_model::command::CommandReq};
 use log::info;
+use num_derive::FromPrimitive;
 use std::sync::Arc;
 
 #[derive(Clone, Copy)]
@@ -22,6 +23,14 @@ enum CommissioningError {
 }
 
 const CLUSTER_GENERAL_COMMISSIONING_ID: u32 = 0x0030;
+
+#[derive(FromPrimitive)]
+enum Attributes {
+    BreadCrumb = 0,
+    BasicCommissioningInfo = 1,
+    RegConfig = 2,
+    LocationCapability = 3,
+}
 
 const CMD_ARMFAILSAFE_ID: u16 = 0x00;
 const CMD_ARMFAILSAFE_RESPONSE_ID: u16 = 0x01;
@@ -48,6 +57,37 @@ const CMD_PATH_COMMISSIONING_COMPLETE_RESPONSE: ib::CmdPath = command_path_ib!(
     CMD_COMMISSIONING_COMPLETE_RESPONSE_ID
 );
 
+pub enum RegLocationType {
+    Indoor = 0,
+    Outdoor = 1,
+    IndoorOutdoor = 2,
+}
+
+fn attr_bread_crumb_new(bread_crumb: u64) -> Result<Box<Attribute>, Error> {
+    Attribute::new(
+        Attributes::BreadCrumb as u16,
+        AttrValue::Uint64(bread_crumb),
+    )
+}
+
+fn attr_reg_config_new(reg_config: RegLocationType) -> Result<Box<Attribute>, Error> {
+    Attribute::new(
+        Attributes::RegConfig as u16,
+        AttrValue::Int8(reg_config as i8),
+    )
+}
+
+fn attr_location_capability_new(reg_config: RegLocationType) -> Result<Box<Attribute>, Error> {
+    Attribute::new(
+        Attributes::LocationCapability as u16,
+        AttrValue::Int8(reg_config as i8),
+    )
+}
+
+fn attr_comm_info_new() -> Result<Box<Attribute>, Error> {
+    Attribute::new(Attributes::BasicCommissioningInfo as u16, AttrValue::Custom)
+}
+
 fn get_armfailsafe_params(data: &TLVElement) -> Result<(u8, u8), Error> {
     // These data types don't match the spec
     let expiry_len = data.find_tag(0)?.get_u8()?;
@@ -61,6 +101,7 @@ fn get_armfailsafe_params(data: &TLVElement) -> Result<(u8, u8), Error> {
 }
 
 pub struct GenCommCluster {
+    expiry_len: u16,
     failsafe: Arc<FailSafe>,
     base: Cluster,
 }
@@ -74,7 +115,14 @@ impl ClusterType for GenCommCluster {
     }
 
     fn read_attribute(&self, tag: TagType, tw: &mut TLVWriter, attr_id: u16) -> Result<(), Error> {
-        self.base.read_attribute(tag, tw, attr_id)
+        match num::FromPrimitive::from_u16(attr_id).ok_or(Error::Invalid)? {
+            Attributes::BasicCommissioningInfo => {
+                tw.put_start_struct(TagType::Anonymous)?;
+                tw.put_u16(TagType::Context(0), self.expiry_len)?;
+                tw.put_end_container()
+            }
+            _ => self.base.read_attribute(tag, tw, attr_id),
+        }
     }
 
     fn write_attribute(&mut self, data: &TLVElement, attr_id: u16) -> Result<(), IMStatusCode> {
@@ -99,10 +147,23 @@ impl GenCommCluster {
     pub fn new() -> Result<Box<Self>, Error> {
         let failsafe = Arc::new(FailSafe::new());
 
-        Ok(Box::new(GenCommCluster {
+        let mut c = Box::new(GenCommCluster {
+            // TODO: Arch-Specific
+            expiry_len: 120,
             failsafe: failsafe,
             base: Cluster::new(CLUSTER_GENERAL_COMMISSIONING_ID),
-        }))
+        });
+        c.base.add_attribute(attr_bread_crumb_new(0)?)?;
+        // TODO: Arch-Specific
+        c.base
+            .add_attribute(attr_reg_config_new(RegLocationType::IndoorOutdoor)?)?;
+        // TODO: Arch-Specific
+        c.base.add_attribute(attr_location_capability_new(
+            RegLocationType::IndoorOutdoor,
+        )?)?;
+        c.base.add_attribute(attr_comm_info_new()?)?;
+
+        Ok(c)
     }
 
     pub fn failsafe(&self) -> Arc<FailSafe> {
