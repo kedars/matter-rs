@@ -1,4 +1,4 @@
-use log::info;
+use log::{error, info};
 
 use crate::{
     error::Error,
@@ -14,7 +14,7 @@ use super::{messages::ib, InteractionModel, Transaction};
 // TODO: This is different between the spec and C++
 enum Tag {
     AttrRequests = 0,
-    _DataVerFilters = 1,
+    DataVerFilters = 1,
     _EventRequests = 2,
     _EventFilters = 3,
     FabricFiltered = 4,
@@ -38,6 +38,11 @@ impl InteractionModel {
 
         let attr_list_iter = root.find_tag(Tag::AttrRequests as u32);
         if attr_list_iter.is_ok() {
+            let dataver_filters_iter = root.find_tag(Tag::DataVerFilters as u32);
+            if dataver_filters_iter.is_ok() {
+                error!("Data version filters aren't yet supported");
+            }
+
             tw.put_start_array(TagType::Context(ib::ReportDataTag::AttributeReportIb as u8))?;
             self.consumer
                 .consume_read_attr(attr_list_iter?, fab_scoped, &mut tw)?;

@@ -8,6 +8,7 @@ use crate::{
 };
 use log::error;
 use num_derive::FromPrimitive;
+use rand::Rng;
 use std::fmt::{self, Debug, Formatter};
 
 /* This file needs some major revamp.
@@ -21,8 +22,8 @@ pub const CMDS_PER_CLUSTER: usize = 8;
 
 #[derive(PartialEq)]
 pub enum AttrValue {
-    Int8(i8),
     Int64(i64),
+    Uint8(u8),
     Uint16(u16),
     Uint32(u32),
     Uint64(u64),
@@ -33,8 +34,8 @@ pub enum AttrValue {
 impl Debug for AttrValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         match &self {
-            AttrValue::Int8(v) => write!(f, "{:?}", *v),
             AttrValue::Int64(v) => write!(f, "{:?}", *v),
+            AttrValue::Uint8(v) => write!(f, "{:?}", *v),
             AttrValue::Uint16(v) => write!(f, "{:?}", *v),
             AttrValue::Uint32(v) => write!(f, "{:?}", *v),
             AttrValue::Uint64(v) => write!(f, "{:?}", *v),
@@ -50,7 +51,7 @@ impl ToTLV for AttrValue {
         // What is the time complexity of such long match statements?
         match self {
             AttrValue::Bool(v) => tw.put_bool(tag_type, *v),
-            AttrValue::Int8(v) => tw.put_i8(tag_type, *v),
+            AttrValue::Uint8(v) => tw.put_u8(tag_type, *v),
             AttrValue::Uint16(v) => tw.put_u16(tag_type, *v),
             AttrValue::Uint32(v) => tw.put_u32(tag_type, *v),
             AttrValue::Uint64(v) => tw.put_u64(tag_type, *v),
@@ -66,7 +67,7 @@ impl AttrValue {
     fn update_from_tlv(&mut self, tr: &TLVElement) -> Result<(), Error> {
         match self {
             AttrValue::Bool(v) => *v = tr.get_bool()?,
-            AttrValue::Int8(v) => *v = tr.get_i8()?,
+            AttrValue::Uint8(v) => *v = tr.get_u8()?,
             AttrValue::Uint16(v) => *v = tr.get_u16()?,
             AttrValue::Uint32(v) => *v = tr.get_u32()?,
             AttrValue::Uint64(v) => *v = tr.get_u64()?,
@@ -140,6 +141,7 @@ pub struct Cluster {
     id: u32,
     attributes: Vec<Box<Attribute>>,
     feature_map: Option<u32>,
+    data_ver: u32,
 }
 
 impl Cluster {
@@ -148,6 +150,7 @@ impl Cluster {
             id,
             attributes: Vec::with_capacity(ATTRS_PER_CLUSTER),
             feature_map: None,
+            data_ver: rand::thread_rng().gen_range(0..0xFFFFFFFF),
         };
         c.add_default_attributes()?;
         Ok(c)
@@ -155,6 +158,10 @@ impl Cluster {
 
     pub fn id(&self) -> u32 {
         self.id
+    }
+
+    pub fn get_dataver(&self) -> u32 {
+        self.data_ver
     }
 
     pub fn set_feature_map(&mut self, map: u32) -> Result<(), Error> {
@@ -489,6 +496,22 @@ impl Node {
         Ok(endpoints)
     }
 
+    pub fn for_each_endpoint<T>(&self, path: &GenericPath, mut f: T) -> Result<(), IMStatusCode>
+    where
+        T: FnMut(&GenericPath, &Endpoint) -> Result<(), IMStatusCode>,
+    {
+        let mut current_path = *path;
+        let (endpoints, mut endpoint_id) = self.get_wildcard_endpoints(path.endpoint)?;
+        for e in endpoints.iter() {
+            if let Some(e) = e {
+                current_path.endpoint = Some(endpoint_id as u16);
+                f(&current_path, e.as_ref())?;
+            }
+            endpoint_id += 1;
+        }
+        Ok(())
+    }
+
     pub fn for_each_endpoint_mut<T>(
         &mut self,
         path: &GenericPath,
@@ -513,18 +536,34 @@ impl Node {
     where
         T: FnMut(&GenericPath, &dyn ClusterType) -> Result<(), IMStatusCode>,
     {
-        let mut current_path = *path;
-        let (endpoints, mut endpoint_id) = self.get_wildcard_endpoints(path.endpoint)?;
-        for e in endpoints.iter() {
-            if let Some(e) = e {
-                current_path.endpoint = Some(endpoint_id as u16);
-                let clusters = e.get_wildcard_clusters(path.cluster)?;
-                for c in clusters.iter() {
-                    f(&current_path, c.as_ref())?;
+        let mut handled = false;
+        let mut last_err = IMStatusCode::UnsupportedCluster;
+
+        self.for_each_endpoint(path, |p, e| {
+            let mut current_path = *p;
+            let clusters = e.get_wildcard_clusters(p.cluster);
+            if clusters.is_ok() {
+                // We don't fail on error immediately. It is likely the cluster doesn't exist
+                // in this endpoint, but the endpoint field itself was wildcard, so this isn't
+                // a reportable error
+                for c in clusters.unwrap().iter() {
+                    current_path.cluster = Some(c.base().id);
+                    let result = f(&current_path, c.as_ref());
+                    if let Err(e) = result {
+                        last_err = e;
+                    } else {
+                        handled = true;
+                    }
                 }
             }
-            endpoint_id += 1;
-        }
+            if handled {
+                Ok(())
+            } else {
+                // Error is actually reported, only when we couldn't execute any closure
+                // successfully
+                Err(last_err)
+            }
+        })?;
         Ok(())
     }
 
@@ -536,35 +575,69 @@ impl Node {
     where
         T: FnMut(&GenericPath, &mut dyn ClusterType) -> Result<(), IMStatusCode>,
     {
-        let mut current_path = *path;
-        let (endpoints, mut endpoint_id) = self.get_wildcard_endpoints_mut(path.endpoint)?;
-        for e in endpoints.iter_mut() {
-            if let Some(e) = e {
-                current_path.endpoint = Some(endpoint_id as u16);
-                let clusters = e.get_wildcard_clusters_mut(path.cluster)?;
-                for c in clusters.iter_mut() {
-                    f(&current_path, c.as_mut())?;
+        let mut handled = false;
+        let mut last_err = IMStatusCode::UnsupportedCluster;
+
+        self.for_each_endpoint_mut(path, |p, e| {
+            let mut current_path = *p;
+            let clusters = e.get_wildcard_clusters_mut(p.cluster);
+            if clusters.is_ok() {
+                // We don't fail on error immediately. It is likely the cluster doesn't exist
+                // in this endpoint, but the endpoint field itself was wildcard, so this isn't
+                // a reportable error
+                for c in clusters.unwrap().iter_mut() {
+                    current_path.cluster = Some(c.base().id);
+                    let result = f(&current_path, c.as_mut());
+                    if let Err(e) = result {
+                        last_err = e;
+                    } else {
+                        handled = true;
+                    }
                 }
             }
-            endpoint_id += 1;
-        }
-        Ok(())
+            if handled {
+                Ok(())
+            } else {
+                // Error is actually reported, only when we couldn't execute any closure
+                // successfully
+                Err(last_err)
+            }
+        })
     }
 
     pub fn for_each_attribute<T>(&self, path: &GenericPath, mut f: T) -> Result<(), IMStatusCode>
     where
         T: FnMut(&GenericPath, &dyn ClusterType) -> Result<(), IMStatusCode>,
     {
+        let mut handled = false;
+        let mut last_err = IMStatusCode::UnsupportedAttribute;
+
         self.for_each_cluster(path, |current_path, c| {
             let mut current_path = *current_path;
             let attributes = c
                 .base()
-                .get_wildcard_attribute(path.leaf.map(|at| at as u16))?;
-            for a in attributes.iter() {
-                current_path.leaf = Some(a.id as u32);
-                f(&current_path, c)?;
+                .get_wildcard_attribute(path.leaf.map(|at| at as u16));
+            if attributes.is_ok() {
+                // We don't fail on error immediately. It is likely the attribute doesn't exist
+                // in this cluster, but the cluster field itself was wildcard, so this isn't
+                // a reportable error
+                for a in attributes.unwrap().iter() {
+                    current_path.leaf = Some(a.id as u32);
+                    let result = f(&current_path, c);
+                    if let Err(e) = result {
+                        last_err = e;
+                    } else {
+                        handled = true;
+                    }
+                }
             }
-            Ok(())
+            if handled {
+                Ok(())
+            } else {
+                // Error is actually reported, only when we couldn't execute any closure
+                // successfully
+                Err(last_err)
+            }
         })
     }
 }

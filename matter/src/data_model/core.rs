@@ -125,7 +125,8 @@ impl InteractionConsumer for DataModel {
                 let path = ib::AttrPath::new(path);
                 let data = |tag: TagType, tw: &mut TLVWriter| c.read_attribute(tag, tw, attr_id);
 
-                let attr_resp = ib::AttrResp::Data(ib::AttrDataOut::new(path, data));
+                let attr_resp =
+                    ib::AttrResp::Data(ib::AttrDataOut::new(c.base().get_dataver(), path, data));
                 let _ = tw.put_object(TagType::Anonymous, &attr_resp);
                 Ok(())
             });

@@ -159,19 +159,25 @@ pub mod ib {
     where
         F: Fn(TagType, &mut TLVWriter) -> Result<(), Error>,
     {
+        data_ver: u32,
         path: AttrPath,
         data: F,
     }
 
     impl<F: Fn(TagType, &mut TLVWriter) -> Result<(), Error>> AttrDataOut<F> {
-        pub fn new(path: AttrPath, data: F) -> Self {
-            Self { path, data }
+        pub fn new(data_ver: u32, path: AttrPath, data: F) -> Self {
+            Self {
+                data_ver,
+                path,
+                data,
+            }
         }
     }
 
     impl<F: Fn(TagType, &mut TLVWriter) -> Result<(), Error>> ToTLV for AttrDataOut<F> {
         fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
             tw.put_start_struct(tag_type)?;
+            tw.put_u32(TagType::Context(Tag::DataVersion as u8), self.data_ver)?;
             tw.put_object(TagType::Context(Tag::Path as u8), &self.path)?;
             (self.data)(TagType::Context(Tag::Data as u8), tw)?;
             tw.put_end_container()

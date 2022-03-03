@@ -73,14 +73,14 @@ fn attr_bread_crumb_new(bread_crumb: u64) -> Result<Box<Attribute>, Error> {
 fn attr_reg_config_new(reg_config: RegLocationType) -> Result<Box<Attribute>, Error> {
     Attribute::new(
         Attributes::RegConfig as u16,
-        AttrValue::Int8(reg_config as i8),
+        AttrValue::Uint8(reg_config as u8),
     )
 }
 
 fn attr_location_capability_new(reg_config: RegLocationType) -> Result<Box<Attribute>, Error> {
     Attribute::new(
         Attributes::LocationCapability as u16,
-        AttrValue::Int8(reg_config as i8),
+        AttrValue::Uint8(reg_config as u8),
     )
 }
 
