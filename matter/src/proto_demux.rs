@@ -7,6 +7,7 @@ use crate::utils::writebuf::WriteBuf;
 
 const MAX_PROTOCOLS: usize = 4;
 
+#[derive(PartialEq)]
 pub enum ResponseRequired {
     Yes,
     No,

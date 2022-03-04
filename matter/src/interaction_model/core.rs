@@ -2,8 +2,10 @@ use crate::error::*;
 use crate::proto_demux;
 use crate::proto_demux::ResponseRequired;
 use crate::proto_demux::{ProtoRx, ProtoTx};
+use crate::tlv;
 use crate::transport::session::SessionHandle;
-use log::error;
+use colored::Colorize;
+use log::{error, info};
 use num;
 use num_derive::FromPrimitive;
 
@@ -68,6 +70,8 @@ impl proto_demux::HandleProto for InteractionModel {
             num::FromPrimitive::from_u8(proto_rx.proto_opcode).ok_or(Error::Invalid)?;
         proto_tx.proto_id = PROTO_ID_INTERACTION_MODEL;
 
+        info!("{} {:?}", "Received command".cyan(), proto_opcode);
+        tlv::print_tlv_list(proto_rx.buf);
         let result = match proto_opcode {
             OpCode::InvokeRequest => self.handle_invoke_req(&mut trans, proto_rx.buf, proto_tx)?,
             OpCode::ReadRequest => self.handle_read_req(&mut trans, proto_rx.buf, proto_tx)?,
@@ -78,6 +82,10 @@ impl proto_demux::HandleProto for InteractionModel {
             }
         };
 
+        if result == ResponseRequired::Yes {
+            info!("Sending response");
+            tlv::print_tlv_list(proto_tx.write_buf.as_slice());
+        }
         if trans.is_complete() {
             proto_rx.exchange.close();
         }

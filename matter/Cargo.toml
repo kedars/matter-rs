@@ -27,7 +27,7 @@ generic-array = "0.14.5"
 num = "0.3"
 num-derive = "0.3.3"
 num-traits = "0.2.14"
-log = "0.4.14"
+log = { version = "0.4.14", features = ["max_level_debug", "release_max_level_debug"] }
 env_logger = "0.9.0"
 rand = "0.8.4"
 esp-idf-sys = { version = "0.30", features = ["binstart"], optional = true }

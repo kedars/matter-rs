@@ -1,4 +1,4 @@
-use log::{error, info};
+use log::error;
 
 use crate::{
     error::Error,
@@ -26,7 +26,6 @@ impl InteractionModel {
         rx_buf: &[u8],
         proto_tx: &mut ProtoTx,
     ) -> Result<ResponseRequired, Error> {
-        info!("In Write Req");
         proto_tx.proto_opcode = OpCode::WriteResponse as u8;
 
         let mut tw = TLVWriter::new(&mut proto_tx.write_buf);

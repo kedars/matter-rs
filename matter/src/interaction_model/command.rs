@@ -9,7 +9,6 @@ use crate::tlv::*;
 use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
 use log::error;
-use log::info;
 
 #[macro_export]
 macro_rules! cmd_enter {
@@ -39,7 +38,6 @@ impl InteractionModel {
         rx_buf: &[u8],
         proto_tx: &mut ProtoTx,
     ) -> Result<ResponseRequired, Error> {
-        info!("In Invoke Req");
         proto_tx.proto_opcode = OpCode::InvokeResponse as u8;
 
         let mut tw = TLVWriter::new(&mut proto_tx.write_buf);

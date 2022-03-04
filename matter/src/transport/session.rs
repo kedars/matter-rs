@@ -239,8 +239,13 @@ impl fmt::Display for Session {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "peer: {:?}, local: {}, remote: {}, msg_ctr: {}, mode: {:?}",
-            self.peer_addr, self.local_sess_id, self.peer_sess_id, self.msg_ctr, self.mode,
+            "peer: {:?}, peer_nodeid: {:?}, local: {}, remote: {}, msg_ctr: {}, mode: {:?}",
+            self.peer_addr,
+            self.peer_nodeid,
+            self.local_sess_id,
+            self.peer_sess_id,
+            self.msg_ctr,
+            self.mode,
         )
     }
 }
