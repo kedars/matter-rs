@@ -10,6 +10,7 @@ pub enum Error {
     EndpointNotFound,
     Crypto,
     TLSStack,
+    MdnsError,
     Network,
     NoCommand,
     NoEndpoint,

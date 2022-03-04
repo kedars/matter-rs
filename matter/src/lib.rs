@@ -49,6 +49,7 @@ pub mod fabric;
 pub mod interaction_model;
 pub mod proto_demux;
 pub mod secure_channel;
+pub mod sys;
 pub mod tlv;
 pub mod tlv_common;
 pub mod tlv_writer;

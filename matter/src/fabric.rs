@@ -8,6 +8,7 @@ use crate::{
     cert::Cert,
     crypto::{self, crypto_dummy::KeyPairDummy, hkdf_sha256, CryptoKeyPair, HmacSha256, KeyPair},
     error::Error,
+    sys::{Mdns, MdnsService},
 };
 
 const COMPRESSED_FABRIC_ID_LEN: usize = 8;
@@ -22,6 +23,7 @@ pub struct Fabric {
     pub noc: Cert,
     ipk: Cert,
     compressed_id: [u8; COMPRESSED_FABRIC_ID_LEN],
+    mdns_service: Option<MdnsService>,
 }
 
 impl Fabric {
@@ -44,6 +46,7 @@ impl Fabric {
             noc,
             ipk,
             compressed_id: [0; COMPRESSED_FABRIC_ID_LEN],
+            mdns_service: None,
         };
         Fabric::get_compressed_id(f.root_ca.get_pubkey()?, fabric_id, &mut f.compressed_id)?;
         let mut mdns_service_name = String::with_capacity(33);
@@ -57,6 +60,7 @@ impl Fabric {
             mdns_service_name.push_str(&format!("{:02X}", c));
         }
         info!("MDNS Service Name: {}", mdns_service_name);
+        f.mdns_service = Some(Mdns::publish_service(&mdns_service_name)?);
         Ok(f)
     }
 
@@ -70,6 +74,7 @@ impl Fabric {
             noc: Cert::default(),
             ipk: Cert::default(),
             compressed_id: [0; COMPRESSED_FABRIC_ID_LEN],
+            mdns_service: None,
         })
     }
 
