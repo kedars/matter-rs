@@ -161,7 +161,8 @@ impl InteractionConsumer for DataModel {
             let result = c.handle_command(&mut cmd_req);
             if let Err(e) = result {
                 let status = ib::Status::new(e, 0);
-                let invoke_resp = ib::CmdResponse::Status(cmd_req.cmd, status, ib::cmd_resp_dummy);
+                let invoke_resp =
+                    ib::InvResponseOut::Status(cmd_req.cmd, status, ib::cmd_resp_dummy);
                 let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
             }
             Ok(())
@@ -169,7 +170,7 @@ impl InteractionConsumer for DataModel {
         if let Err(result) = result {
             // Err return implies we must send the StatusIB with this code
             let status = ib::Status::new(result, 0);
-            let invoke_resp = ib::CmdResponse::Status(*cmd_path_ib, status, ib::cmd_resp_dummy);
+            let invoke_resp = ib::InvResponseOut::Status(*cmd_path_ib, status, ib::cmd_resp_dummy);
             tlvwriter.put_object(TagType::Anonymous, &invoke_resp)?;
             trans.complete();
         }

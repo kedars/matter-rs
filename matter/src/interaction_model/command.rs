@@ -1,5 +1,6 @@
 use super::core::OpCode;
 use super::messages::ib;
+use super::messages::msg;
 use super::InteractionModel;
 use super::Transaction;
 use crate::error::*;
@@ -51,9 +52,12 @@ impl InteractionModel {
 
         tw.put_start_struct(TagType::Anonymous)?;
         // Suppress Response -> TODO: Need to revisit this for cases where we send a command back
-        tw.put_bool(TagType::Context(0), false)?;
+        tw.put_bool(
+            TagType::Context(msg::InvResponseTag::SupressResponse as u8),
+            false,
+        )?;
         // Array of InvokeResponse IBs
-        tw.put_start_array(TagType::Context(1))?;
+        tw.put_start_array(TagType::Context(msg::InvResponseTag::InvokeResponses as u8))?;
         for cmd_data_ib in cmd_list_iter {
             // CommandDataIB has CommandPath(0) + Data(1)
             let cmd_path_ib = ib::CmdPath::from_tlv(&cmd_data_ib.find_tag(0)?.confirm_list()?)?;

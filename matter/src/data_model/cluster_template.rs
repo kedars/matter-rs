@@ -35,9 +35,9 @@ impl ClusterType for TemplateCluster {
 }
 
 impl TemplateCluster {
-    pub fn new() -> Result<Self, Error> {
-        Ok(Self {
+    pub fn new() -> Result<Box<Self>, Error> {
+        Ok(Box::new(Self {
             base: Cluster::new(CLUSTER_NETWORK_COMMISSIONING_ID)?,
-        })
+        }))
     }
 }
