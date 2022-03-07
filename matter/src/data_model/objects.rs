@@ -556,15 +556,15 @@ impl Node {
                     }
                 }
             }
-            if handled {
-                Ok(())
-            } else {
-                // Error is actually reported, only when we couldn't execute any closure
-                // successfully
-                Err(last_err)
-            }
+            Ok(())
         })?;
-        Ok(())
+        if handled {
+            Ok(())
+        } else {
+            // Error is actually reported, only when we couldn't execute any closure
+            // successfully
+            Err(last_err)
+        }
     }
 
     pub fn for_each_cluster_mut<T>(
@@ -595,14 +595,15 @@ impl Node {
                     }
                 }
             }
-            if handled {
-                Ok(())
-            } else {
-                // Error is actually reported, only when we couldn't execute any closure
-                // successfully
-                Err(last_err)
-            }
-        })
+            Ok(())
+        })?;
+        if handled {
+            Ok(())
+        } else {
+            // Error is actually reported, only when we couldn't execute any closure
+            // successfully
+            Err(last_err)
+        }
     }
 
     pub fn for_each_attribute<T>(&self, path: &GenericPath, mut f: T) -> Result<(), IMStatusCode>
@@ -631,13 +632,14 @@ impl Node {
                     }
                 }
             }
-            if handled {
-                Ok(())
-            } else {
-                // Error is actually reported, only when we couldn't execute any closure
-                // successfully
-                Err(last_err)
-            }
-        })
+            Ok(())
+        })?;
+        if handled {
+            Ok(())
+        } else {
+            // Error is actually reported, only when we couldn't execute any closure
+            // successfully
+            Err(last_err)
+        }
     }
 }

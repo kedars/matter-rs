@@ -12,6 +12,12 @@ pub mod msg {
         SupressResponse = 0,
         InvokeResponses = 1,
     }
+
+    pub enum InvRequestTag {
+        SupressResponse = 0,
+        TimedReq = 1,
+        InvokeRequests = 2,
+    }
 }
 
 pub mod ib {
@@ -33,7 +39,7 @@ pub mod ib {
     where
         F: Fn(&mut TLVWriter) -> Result<(), Error>,
     {
-        Cmd(CmdPath, F),
+        Cmd(CmdData<F>),
         Status(CmdPath, Status, F),
     }
 
@@ -41,11 +47,6 @@ pub mod ib {
     enum InvResponseTag {
         Cmd = 0,
         Status = 1,
-    }
-
-    enum CmdDataTag {
-        Path = 0,
-        Data = 1,
     }
 
     enum CmdStatusTag {
@@ -65,16 +66,8 @@ pub mod ib {
         ) -> Result<(), Error> {
             tw.put_start_struct(tag_type)?;
             match self {
-                InvResponseOut::Cmd(cmd_path, data_cb) => {
-                    tw.put_start_struct(TagType::Context(InvResponseTag::Cmd as u8))?;
-                    tw.put_object(TagType::Context(CmdDataTag::Path as u8), cmd_path)?;
-                    // TODO: We are cheating here a little bit. This following 'Data' need
-                    // not be a 'structure'. Somebody could directly embed u8 at the tag
-                    // 'CmdDataTag::Data'. We will have to modify this (and all the callers)
-                    // when we stumble across that scenario
-                    tw.put_start_struct(TagType::Context(CmdDataTag::Data as u8))?;
-                    data_cb(tw)?;
-                    tw.put_end_container()?;
+                InvResponseOut::Cmd(cmd_data) => {
+                    tw.put_object(TagType::Context(InvResponseTag::Cmd as u8), cmd_data)?;
                 }
                 InvResponseOut::Status(cmd_path, status, _) => {
                     tw.put_start_struct(TagType::Context(InvResponseTag::Status as u8))?;
@@ -122,6 +115,40 @@ pub mod ib {
                     ))
                 }
             }
+        }
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    pub struct CmdData<F>
+    where
+        F: Fn(&mut TLVWriter) -> Result<(), Error>,
+    {
+        path: CmdPath,
+        data: F,
+    }
+
+    enum CmdDataTag {
+        Path = 0,
+        Data = 1,
+    }
+
+    impl<F: Fn(&mut TLVWriter) -> Result<(), Error>> CmdData<F> {
+        pub fn new(path: CmdPath, data: F) -> Self {
+            Self { path, data }
+        }
+    }
+
+    impl<F: Fn(&mut TLVWriter) -> Result<(), Error>> ToTLV for CmdData<F> {
+        fn to_tlv(self: &CmdData<F>, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
+            tw.put_start_struct(tag_type)?;
+            tw.put_object(TagType::Context(CmdDataTag::Path as u8), &self.path)?;
+            // TODO: We are cheating here a little bit. This following 'Data' need
+            // not be a 'structure'. Somebody could directly embed u8 at the tag
+            // 'CmdDataTag::Data'. We will have to modify this (and all the callers)
+            // when we stumble across that scenario
+            tw.put_start_struct(TagType::Context(CmdDataTag::Data as u8))?;
+            (self.data)(tw)?;
+            tw.put_end_container()
         }
     }
 

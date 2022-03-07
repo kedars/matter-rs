@@ -183,10 +183,11 @@ impl GenCommCluster {
             return Err(IMStatusCode::Busy);
         }
 
-        let invoke_resp = ib::InvResponseOut::Cmd(CMD_PATH_ARMFAILSAFE_RESPONSE, |t| {
-            t.put_u8(TagType::Context(0), CommissioningError::Ok as u8)?;
-            t.put_utf8(TagType::Context(1), b"")
-        });
+        let invoke_resp =
+            ib::InvResponseOut::Cmd(ib::CmdData::new(CMD_PATH_ARMFAILSAFE_RESPONSE, |t| {
+                t.put_u8(TagType::Context(0), CommissioningError::Ok as u8)?;
+                t.put_utf8(TagType::Context(1), b"")
+            }));
         let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
         cmd_req.trans.complete();
         Ok(())
@@ -206,10 +207,11 @@ impl GenCommCluster {
             .map_err(|_| IMStatusCode::InvalidCommand)?;
         info!("Received country code: {:?}", country_code);
 
-        let invoke_resp = ib::InvResponseOut::Cmd(CMD_PATH_SETREGULATORY_RESPONSE, |t| {
-            t.put_u8(TagType::Context(0), 0)?;
-            t.put_utf8(TagType::Context(1), b"")
-        });
+        let invoke_resp =
+            ib::InvResponseOut::Cmd(ib::CmdData::new(CMD_PATH_SETREGULATORY_RESPONSE, |t| {
+                t.put_u8(TagType::Context(0), 0)?;
+                t.put_utf8(TagType::Context(1), b"")
+            }));
         let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
         cmd_req.trans.complete();
         Ok(())
@@ -237,10 +239,13 @@ impl GenCommCluster {
             status = CommissioningError::ErrInvalidAuth as u8;
         }
 
-        let invoke_resp = ib::InvResponseOut::Cmd(CMD_PATH_COMMISSIONING_COMPLETE_RESPONSE, |t| {
-            t.put_u8(TagType::Context(0), status)?;
-            t.put_utf8(TagType::Context(1), b"")
-        });
+        let invoke_resp = ib::InvResponseOut::Cmd(ib::CmdData::new(
+            CMD_PATH_COMMISSIONING_COMPLETE_RESPONSE,
+            |t| {
+                t.put_u8(TagType::Context(0), status)?;
+                t.put_utf8(TagType::Context(1), b"")
+            },
+        ));
         let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
         cmd_req.trans.complete();
         Ok(())

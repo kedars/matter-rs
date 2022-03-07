@@ -26,12 +26,6 @@ pub struct CommandReq<'a, 'b, 'c, 'd, 'e> {
     pub trans: &'a mut Transaction<'d, 'e>,
 }
 
-pub enum Tag {
-    SupressResponse = 0,
-    TimedReq = 1,
-    InvokeRequests = 2,
-}
-
 impl InteractionModel {
     pub fn handle_invoke_req(
         &mut self,
@@ -45,7 +39,7 @@ impl InteractionModel {
         let root = get_root_node_struct(rx_buf)?;
         // Spec says tag should be 2, but CHIP Tool sends the tag as 0
         let cmd_list_iter = root
-            .find_tag(Tag::InvokeRequests as u32)?
+            .find_tag(msg::InvRequestTag::InvokeRequests as u32)?
             .confirm_array()?
             .iter()
             .ok_or(Error::InvalidData)?;

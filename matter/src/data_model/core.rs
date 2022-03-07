@@ -160,6 +160,10 @@ impl InteractionConsumer for DataModel {
             cmd_req.cmd.path = *path;
             let result = c.handle_command(&mut cmd_req);
             if let Err(e) = result {
+                if e == IMStatusCode::UnsupportedCommand {
+                    // If this is an error in path component, we don't return error here
+                    return Err(e);
+                }
                 let status = ib::Status::new(e, 0);
                 let invoke_resp =
                     ib::InvResponseOut::Status(cmd_req.cmd, status, ib::cmd_resp_dummy);
@@ -168,7 +172,7 @@ impl InteractionConsumer for DataModel {
             Ok(())
         });
         if let Err(result) = result {
-            // Err return implies we must send the StatusIB with this code
+            // Err return here implies that the path itself is incorrect
             let status = ib::Status::new(result, 0);
             let invoke_resp = ib::InvResponseOut::Status(*cmd_path_ib, status, ib::cmd_resp_dummy);
             tlvwriter.put_object(TagType::Anonymous, &invoke_resp)?;
