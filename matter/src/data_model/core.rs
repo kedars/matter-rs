@@ -126,13 +126,13 @@ impl InteractionConsumer for DataModel {
                 let data = |tag: TagType, tw: &mut TLVWriter| c.read_attribute(tag, tw, attr_id);
 
                 let attr_resp =
-                    ib::AttrResp::Data(ib::AttrDataOut::new(c.base().get_dataver(), path, data));
+                    ib::AttrRespOut::Data(ib::AttrDataOut::new(c.base().get_dataver(), path, data));
                 let _ = tw.put_object(TagType::Anonymous, &attr_resp);
                 Ok(())
             });
             if let Err(e) = result {
                 let attr_status = ib::AttrStatus::new(&attr_path.path, e, 0);
-                let attr_resp = ib::AttrResp::Status(attr_status, ib::attr_resp_dummy);
+                let attr_resp = ib::AttrRespOut::Status(attr_status, ib::attr_resp_dummy);
                 let _ = tw.put_object(TagType::Anonymous, &attr_resp);
             }
         }

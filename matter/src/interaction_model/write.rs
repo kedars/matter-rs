@@ -8,7 +8,7 @@ use crate::{
     tlv_writer::TLVWriter,
 };
 
-use super::{core::OpCode, messages::ib, InteractionModel, Transaction};
+use super::{core::OpCode, messages::msg, InteractionModel, Transaction};
 
 // TODO: This is different between the spec and C++
 enum Tag {
@@ -41,7 +41,9 @@ impl InteractionModel {
 
         let attr_list_iter = root.find_tag(Tag::WriteRequests as u32);
         if attr_list_iter.is_ok() {
-            tw.put_start_array(TagType::Context(ib::WriteResponseTag::WriteResponses as u8))?;
+            tw.put_start_array(TagType::Context(
+                msg::WriteResponseTag::WriteResponses as u8,
+            ))?;
             self.consumer
                 .consume_write_attr(attr_list_iter?, fab_scoped, &mut tw)?;
             tw.put_end_container()?;

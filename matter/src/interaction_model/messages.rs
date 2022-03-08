@@ -7,7 +7,25 @@ pub struct GenericPath {
     pub leaf: Option<u32>,
 }
 
+impl GenericPath {
+    pub fn new(endpoint: Option<u16>, cluster: Option<u32>, leaf: Option<u32>) -> Self {
+        Self {
+            endpoint,
+            cluster,
+            leaf,
+        }
+    }
+}
+
 pub mod msg {
+    use crate::{
+        error::Error,
+        tlv_common::TagType,
+        tlv_writer::{TLVWriter, ToTLV},
+    };
+
+    use super::ib::AttrPath;
+
     pub enum InvResponseTag {
         SupressResponse = 0,
         InvokeResponses = 1,
@@ -17,6 +35,67 @@ pub mod msg {
         SupressResponse = 0,
         TimedReq = 1,
         InvokeRequests = 2,
+    }
+
+    pub enum ReadReqTag {
+        AttrRequests = 0,
+        DataVerFilters = 1,
+        _EventRequests = 2,
+        _EventFilters = 3,
+        FabricFiltered = 4,
+    }
+
+    #[derive(Default)]
+    pub struct ReadReq<'a> {
+        attr_requests: Option<&'a [AttrPath]>,
+        fabric_filtered: bool,
+    }
+
+    impl<'a> ReadReq<'a> {
+        pub fn new(fabric_filtered: bool) -> Self {
+            Self {
+                fabric_filtered,
+                ..Default::default()
+            }
+        }
+
+        pub fn set_attr_requests(mut self, requests: &'a [AttrPath]) -> Self {
+            self.attr_requests = Some(requests);
+            self
+        }
+    }
+
+    impl<'a> ToTLV for ReadReq<'a> {
+        fn to_tlv(self: &ReadReq<'a>, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
+            tw.put_start_struct(tag_type)?;
+            if let Some(attr_requests) = self.attr_requests {
+                tw.put_start_array(TagType::Context(ReadReqTag::AttrRequests as u8))?;
+                for request in attr_requests {
+                    tw.put_object(TagType::Anonymous, request)?;
+                }
+                tw.put_end_container()?;
+            }
+            tw.put_bool(
+                TagType::Context(ReadReqTag::FabricFiltered as u8),
+                self.fabric_filtered,
+            )?;
+            tw.put_end_container()
+        }
+    }
+
+    // Report Data
+    // TODO: Differs from spec
+    pub enum ReportDataTag {
+        _SubscriptionId = 0,
+        AttributeReports = 1,
+        _EventReport = 2,
+        _MoreChunkedMsgs = 3,
+        SupressResponse = 4,
+    }
+
+    // Write Response
+    pub enum WriteResponseTag {
+        WriteResponses = 0,
     }
 }
 
@@ -153,7 +232,7 @@ pub mod ib {
     }
 
     // Status
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct Status {
         pub status: IMStatusCode,
         pub cluster_status: u16,
@@ -203,7 +282,7 @@ pub mod ib {
 
     // Attribute Response
     #[derive(Debug, Clone, Copy)]
-    pub enum AttrResp<F>
+    pub enum AttrRespOut<F>
     where
         F: Fn(TagType, &mut TLVWriter) -> Result<(), Error>,
     {
@@ -211,35 +290,73 @@ pub mod ib {
         Status(AttrStatus, F),
     }
 
+    #[derive(FromPrimitive)]
+    enum AttrRespTag {
+        Status = 0,
+        Data = 1,
+    }
+
     pub fn attr_resp_dummy(_a: TagType, _t: &mut TLVWriter) -> Result<(), Error> {
         Ok(())
     }
 
-    impl<F: Fn(TagType, &mut TLVWriter) -> Result<(), Error>> ToTLV for AttrResp<F> {
-        fn to_tlv(self: &AttrResp<F>, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
+    impl<F: Fn(TagType, &mut TLVWriter) -> Result<(), Error>> ToTLV for AttrRespOut<F> {
+        fn to_tlv(
+            self: &AttrRespOut<F>,
+            tw: &mut TLVWriter,
+            tag_type: TagType,
+        ) -> Result<(), Error> {
             tw.put_start_struct(tag_type)?;
             match self {
-                AttrResp::Data(data) => {
+                AttrRespOut::Data(data) => {
                     // In this case, we'll have to add the AttributeDataIb
-                    tw.put_object(TagType::Context(1), data)?;
+                    tw.put_object(TagType::Context(AttrRespTag::Data as u8), data)?;
                 }
-                AttrResp::Status(status, _) => {
+                AttrRespOut::Status(status, _) => {
                     // In this case, we'll have to add the AttributeStatusIb
-                    tw.put_object(TagType::Context(0), status)?;
+                    tw.put_object(TagType::Context(AttrRespTag::Status as u8), status)?;
                 }
             }
             tw.put_end_container()
         }
     }
 
+    pub enum AttrRespIn<'a> {
+        Data(AttrDataIn<'a>),
+        Status(AttrStatus),
+    }
+
+    impl<'a> AttrRespIn<'a> {
+        pub fn from_tlv(resp: &TLVElement<'a>) -> Result<Self, Error> {
+            let resp = resp
+                .confirm_struct()?
+                .iter()
+                .ok_or(Error::Invalid)?
+                .next()
+                .ok_or(Error::Invalid)?;
+            let tag = match resp.get_tag() {
+                TagType::Context(a) => a,
+                _ => {
+                    return Err(Error::TLVTypeMismatch);
+                }
+            };
+
+            match num::FromPrimitive::from_u8(tag).ok_or(Error::Invalid)? {
+                AttrRespTag::Data => Ok(AttrRespIn::Data(AttrDataIn::from_tlv(&resp)?)),
+                AttrRespTag::Status => Ok(AttrRespIn::Status(AttrStatus::from_tlv(&resp)?)),
+            }
+        }
+    }
+
     // Attribute Data
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct AttrDataIn<'a> {
+        pub data_ver: Option<u32>,
         pub path: AttrPath,
         pub data: TLVElement<'a>,
     }
 
-    pub enum Tag {
+    pub enum AttrDataTag {
         DataVersion = 0,
         Path = 1,
         Data = 2,
@@ -247,15 +364,22 @@ pub mod ib {
 
     impl<'a> AttrDataIn<'a> {
         pub fn from_tlv(attr_data: &TLVElement<'a>) -> Result<Self, Error> {
-            let data_version = attr_data.find_tag(Tag::DataVersion as u32);
-            if data_version.is_ok() {
-                let _data_version = data_version?.get_u8()?;
+            let data_ver_tag = attr_data.find_tag(AttrDataTag::DataVersion as u32);
+            let data_ver = if data_ver_tag.is_ok() {
                 error!("Data Version handling not yet supported");
-            }
-            let path = attr_data.find_tag(Tag::Path as u32)?;
+                Some(data_ver_tag?.get_u32()?)
+            } else {
+                None
+            };
+
+            let path = attr_data.find_tag(AttrDataTag::Path as u32)?;
             let path = AttrPath::from_tlv(&path)?;
-            let data = attr_data.find_tag(Tag::Data as u32)?;
-            Ok(Self { path, data })
+            let data = attr_data.find_tag(AttrDataTag::Data as u32)?;
+            Ok(Self {
+                data_ver,
+                path,
+                data,
+            })
         }
     }
 
@@ -282,15 +406,23 @@ pub mod ib {
     impl<F: Fn(TagType, &mut TLVWriter) -> Result<(), Error>> ToTLV for AttrDataOut<F> {
         fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
             tw.put_start_struct(tag_type)?;
-            tw.put_u32(TagType::Context(Tag::DataVersion as u8), self.data_ver)?;
-            tw.put_object(TagType::Context(Tag::Path as u8), &self.path)?;
-            (self.data)(TagType::Context(Tag::Data as u8), tw)?;
+            tw.put_u32(
+                TagType::Context(AttrDataTag::DataVersion as u8),
+                self.data_ver,
+            )?;
+            tw.put_object(TagType::Context(AttrDataTag::Path as u8), &self.path)?;
+            (self.data)(TagType::Context(AttrDataTag::Data as u8), tw)?;
             tw.put_end_container()
         }
     }
 
     // Attribute Status
-    #[derive(Debug, Clone, Copy)]
+    pub enum AttrStatusTag {
+        Path = 0,
+        Status = 1,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq)]
     pub struct AttrStatus {
         path: AttrPath,
         status: super::ib::Status,
@@ -303,21 +435,30 @@ pub mod ib {
                 status: super::ib::Status::new(status, cluster_status),
             }
         }
+
+        pub fn from_tlv<'a>(resp: &TLVElement<'a>) -> Result<Self, Error> {
+            let resp = resp.confirm_struct()?;
+            let path = resp.find_tag(AttrStatusTag::Path as u32)?;
+            let path = AttrPath::from_tlv(&path)?;
+            let status = resp.find_tag(AttrStatusTag::Status as u32)?;
+            let status = Status::from_tlv(&status)?;
+            Ok(Self { path, status })
+        }
     }
 
     impl ToTLV for AttrStatus {
         fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
             tw.put_start_struct(tag_type)?;
             // Attribute Status IB
-            tw.put_object(TagType::Context(0), &self.path)?;
+            tw.put_object(TagType::Context(AttrStatusTag::Path as u8), &self.path)?;
             // Status IB
-            tw.put_object(TagType::Context(1), &self.status)?;
+            tw.put_object(TagType::Context(AttrStatusTag::Status as u8), &self.status)?;
             tw.put_end_container()
         }
     }
 
     // Attribute Path
-    #[derive(Default, Clone, Copy, Debug)]
+    #[derive(Default, Clone, Copy, Debug, PartialEq)]
     pub struct AttrPath {
         pub tag_compression: bool,
         pub node: Option<u64>,
@@ -472,20 +613,5 @@ pub mod ib {
             }
             tw.put_end_container()
         }
-    }
-
-    // Report Data
-    // TODO: Differs from spec
-    pub enum ReportDataTag {
-        _SubscriptionId = 0,
-        AttributeReportIb = 1,
-        _EventReport = 2,
-        _MoreChunkedMsgs = 3,
-        SupressResponse = 4,
-    }
-
-    // Write Response
-    pub enum WriteResponseTag {
-        WriteResponses = 0,
     }
 }

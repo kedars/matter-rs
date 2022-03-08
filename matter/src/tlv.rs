@@ -302,6 +302,13 @@ impl<'a> TLVElement<'a> {
         })
     }
 
+    pub fn new(tag: TagType, value: ElementType<'a>) -> Self {
+        Self {
+            tag_type: tag,
+            element_type: value,
+        }
+    }
+
     pub fn get_i8(&self) -> Result<i8, Error> {
         match self.element_type {
             ElementType::S8(a) => Ok(a),
@@ -396,6 +403,10 @@ impl<'a> TLVElement<'a> {
 
     pub fn get_tag(&self) -> TagType {
         self.tag_type
+    }
+
+    pub fn get_element_type(&self) -> ElementType {
+        self.element_type
     }
 }
 

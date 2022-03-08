@@ -1,5 +1,5 @@
 use matter::{
-    data_model::objects::{Cluster, ClusterType},
+    data_model::objects::{AttrValue, Attribute, Cluster, ClusterType},
     error::Error,
     interaction_model::{command::CommandReq, core::IMStatusCode, messages::ib},
     tlv::TLVElement,
@@ -21,16 +21,29 @@ pub struct EchoCluster {
     multiplier: u8,
 }
 
+#[derive(FromPrimitive)]
+pub enum Attributes {
+    Att1 = 0,
+    Att2 = 1,
+    AttCustom = 2,
+}
+
+pub const ATTR_CUSTOM_VALUE: u32 = 0xcafebeef;
+
 impl ClusterType for EchoCluster {
     fn base(&self) -> &Cluster {
         &self.base
     }
+
     fn base_mut(&mut self) -> &mut Cluster {
         &mut self.base
     }
 
     fn read_attribute(&self, tag: TagType, tw: &mut TLVWriter, attr_id: u16) -> Result<(), Error> {
-        self.base.read_attribute(tag, tw, attr_id)
+        match num::FromPrimitive::from_u16(attr_id).ok_or(Error::Invalid)? {
+            Attributes::AttCustom => tw.put_u32(tag, ATTR_CUSTOM_VALUE),
+            _ => self.base.read_attribute(tag, tw, attr_id),
+        }
     }
 
     fn write_attribute(&mut self, data: &TLVElement, attr_id: u16) -> Result<(), IMStatusCode> {
@@ -69,9 +82,22 @@ impl ClusterType for EchoCluster {
 
 impl EchoCluster {
     pub fn new(multiplier: u8) -> Result<Box<Self>, Error> {
-        Ok(Box::new(Self {
+        let mut c = Box::new(Self {
             base: Cluster::new(ID)?,
             multiplier,
-        }))
+        });
+        c.base.add_attribute(Attribute::new(
+            Attributes::Att1 as u16,
+            AttrValue::Uint16(0x1234),
+        )?)?;
+        c.base.add_attribute(Attribute::new(
+            Attributes::Att2 as u16,
+            AttrValue::Uint16(0x5678),
+        )?)?;
+        c.base.add_attribute(Attribute::new(
+            Attributes::AttCustom as u16,
+            AttrValue::Custom,
+        )?)?;
+        Ok(c)
     }
 }
