@@ -8,18 +8,24 @@ use crate::{
     tlv_writer::TLVWriter,
 };
 use log::info;
+use num_derive::FromPrimitive;
 
-pub const CLUSTER_ONOFF_ID: u32 = 0x0006;
+pub const ID: u32 = 0x0006;
 
-const ATTR_ON_OFF_ID: u16 = 0x0;
+pub enum Attributes {
+    OnOff = 0x0,
+}
 
-const CMD_OFF_ID: u16 = 0x00;
-pub const CMD_ON_ID: u16 = 0x01;
-const CMD_TOGGLE_ID: u16 = 0x02;
+#[derive(FromPrimitive)]
+pub enum Commands {
+    Off = 0x0,
+    On = 0x01,
+    Toggle = 0x02,
+}
 
 fn attr_on_off_new() -> Result<Box<Attribute>, Error> {
-    // Id: 0, Value: false
-    Attribute::new(ATTR_ON_OFF_ID, AttrValue::Bool(false))
+    // OnOff, Value: false
+    Attribute::new(Attributes::OnOff as u16, AttrValue::Bool(false))
 }
 
 pub struct OnOffCluster {
@@ -29,7 +35,7 @@ pub struct OnOffCluster {
 impl OnOffCluster {
     pub fn new() -> Result<Box<Self>, Error> {
         let mut cluster = Box::new(OnOffCluster {
-            base: Cluster::new(CLUSTER_ONOFF_ID)?,
+            base: Cluster::new(ID)?,
         });
         cluster.base.add_attribute(attr_on_off_new()?)?;
         Ok(cluster)
@@ -53,42 +59,56 @@ impl ClusterType for OnOffCluster {
     }
 
     fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
-        let cmd = cmd_req.cmd.path.leaf.map(|a| a as u16);
-        println!("Received command: {:?}", cmd);
+        let cmd = cmd_req
+            .cmd
+            .path
+            .leaf
+            .map(|c| num::FromPrimitive::from_u32(c))
+            .ok_or(IMStatusCode::UnsupportedCommand)?
+            .ok_or(IMStatusCode::UnsupportedCommand)?;
         match cmd {
-            Some(CMD_OFF_ID) => {
+            Commands::Off => {
                 cmd_enter!("Off");
-                let value = self.base.read_attribute_raw(ATTR_ON_OFF_ID).unwrap();
+                let value = self
+                    .base
+                    .read_attribute_raw(Attributes::OnOff as u16)
+                    .unwrap();
                 if AttrValue::Bool(true) == *value {
                     self.base
-                        .write_attribute_raw(ATTR_ON_OFF_ID, AttrValue::Bool(false))?;
+                        .write_attribute_raw(Attributes::OnOff as u16, AttrValue::Bool(false))?;
                 }
                 cmd_req.trans.complete();
                 Err(IMStatusCode::Sucess)
             }
-            Some(CMD_ON_ID) => {
+            Commands::On => {
                 cmd_enter!("On");
-                let value = self.base.read_attribute_raw(ATTR_ON_OFF_ID).unwrap();
+                let value = self
+                    .base
+                    .read_attribute_raw(Attributes::OnOff as u16)
+                    .unwrap();
                 if AttrValue::Bool(false) == *value {
                     self.base
-                        .write_attribute_raw(ATTR_ON_OFF_ID, AttrValue::Bool(true))?;
+                        .write_attribute_raw(Attributes::OnOff as u16, AttrValue::Bool(true))?;
                 }
 
                 cmd_req.trans.complete();
                 Err(IMStatusCode::Sucess)
             }
-            Some(CMD_TOGGLE_ID) => {
+            Commands::Toggle => {
                 cmd_enter!("Toggle");
-                let value = match self.base.read_attribute_raw(ATTR_ON_OFF_ID).unwrap() {
+                let value = match self
+                    .base
+                    .read_attribute_raw(Attributes::OnOff as u16)
+                    .unwrap()
+                {
                     &AttrValue::Bool(v) => v,
                     _ => false,
                 };
                 self.base
-                    .write_attribute_raw(ATTR_ON_OFF_ID, AttrValue::Bool(!value))?;
+                    .write_attribute_raw(Attributes::OnOff as u16, AttrValue::Bool(!value))?;
                 cmd_req.trans.complete();
                 Err(IMStatusCode::Sucess)
             }
-            _ => Err(IMStatusCode::UnsupportedCommand),
         }
     }
 }

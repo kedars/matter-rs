@@ -7,7 +7,7 @@ use crate::{
     tlv_writer::TLVWriter,
 };
 
-const CLUSTER_BASIC_INFORMATION_ID: u32 = 0x0028;
+pub const ID: u32 = 0x0028;
 enum Attributes {
     VendorId = 2,
     ProductId = 4,
@@ -45,7 +45,7 @@ pub struct BasicInfoCluster {
 impl BasicInfoCluster {
     pub fn new(cfg: BasicInfoConfig) -> Result<Box<Self>, Error> {
         let mut cluster = Box::new(BasicInfoCluster {
-            base: Cluster::new(CLUSTER_BASIC_INFORMATION_ID)?,
+            base: Cluster::new(ID)?,
         });
         cluster.base.add_attribute(attr_vid_new(cfg.vid)?)?;
         cluster.base.add_attribute(attr_pid_new(cfg.pid)?)?;

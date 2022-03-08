@@ -11,7 +11,7 @@ use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
 use log::error;
 
-const CLUSTER_DESCRIPTOR_ID: u32 = 0x001D;
+pub const ID: u32 = 0x001D;
 
 #[derive(FromPrimitive)]
 enum Attributes {
@@ -32,7 +32,7 @@ impl DescriptorCluster {
         let mut c = Box::new(DescriptorCluster {
             endpoint_id,
             data_model,
-            base: Cluster::new(CLUSTER_DESCRIPTOR_ID)?,
+            base: Cluster::new(ID)?,
         });
         c.base.add_attribute(attr_serverlist_new()?)?;
         Ok(c)

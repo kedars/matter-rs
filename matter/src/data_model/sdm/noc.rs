@@ -14,8 +14,9 @@ use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
 use crate::transport::session::SessionMode;
 use crate::utils::writebuf::WriteBuf;
-use crate::{cmd_enter, command_path_ib, error::*};
+use crate::{cmd_enter, cmd_path_ib, error::*};
 use log::{error, info};
+use num_derive::FromPrimitive;
 
 use super::dev_att::{DataType, DevAttDataFetcher};
 use super::failsafe::FailSafe;
@@ -46,32 +47,25 @@ const MAX_CSR_LEN: usize = 300;
 // As defined in the Matter Spec
 const RESP_MAX: usize = 900;
 
-const CLUSTER_OPERATIONAL_CREDENTIALS_ID: u32 = 0x003E;
+pub const ID: u32 = 0x003E;
 
-const CMD_ATTREQUEST_ID: u16 = 0x00;
-const CMD_ATTRESPONSE_ID: u16 = 0x01;
-const CMD_CERTCHAINREQUEST_ID: u16 = 0x02;
-const CMD_CERTCHAINRESPONSE_ID: u16 = 0x03;
-const CMD_CSRREQUEST_ID: u16 = 0x04;
-const CMD_CSRRESPONSE_ID: u16 = 0x05;
-const CMD_ADDNOC_ID: u16 = 0x06;
-const CMD_NOCRESPONSE_ID: u16 = 0x08;
-const CMD_ADDTRUSTEDROOTCERT_ID: u16 = 0x0b;
+#[derive(FromPrimitive)]
+pub enum Commands {
+    AttReq = 0x00,
+    AttReqResp = 0x01,
+    CertChainReq = 0x02,
+    CertChainResp = 0x03,
+    CSRReq = 0x04,
+    CSRResp = 0x05,
+    AddNOC = 0x06,
+    NOCResp = 0x08,
+    AddTrustedRootCert = 0x0b,
+}
 
-const CMD_PATH_CSRRESPONSE: ib::CmdPath =
-    command_path_ib!(0, CLUSTER_OPERATIONAL_CREDENTIALS_ID, CMD_CSRRESPONSE_ID);
-
-const CMD_PATH_NOCRESPONSE: ib::CmdPath =
-    command_path_ib!(0, CLUSTER_OPERATIONAL_CREDENTIALS_ID, CMD_NOCRESPONSE_ID);
-
-const CMD_PATH_CERTCHAINRESPONSE: ib::CmdPath = command_path_ib!(
-    0,
-    CLUSTER_OPERATIONAL_CREDENTIALS_ID,
-    CMD_CERTCHAINRESPONSE_ID
-);
-
-const CMD_PATH_ATTRESPONSE: ib::CmdPath =
-    command_path_ib!(0, CLUSTER_OPERATIONAL_CREDENTIALS_ID, CMD_ATTRESPONSE_ID);
+const CMD_PATH_CSRRESPONSE: ib::CmdPath = cmd_path_ib!(0, ID, Commands::CSRResp);
+const CMD_PATH_NOCRESPONSE: ib::CmdPath = cmd_path_ib!(0, ID, Commands::NOCResp);
+const CMD_PATH_CERTCHAINRESPONSE: ib::CmdPath = cmd_path_ib!(0, ID, Commands::CertChainResp);
+const CMD_PATH_ATTRESPONSE: ib::CmdPath = cmd_path_ib!(0, ID, Commands::AttReqResp);
 
 pub struct NocCluster {
     base: Cluster,
@@ -103,7 +97,7 @@ impl NocCluster {
             dev_att,
             fabric_mgr,
             failsafe,
-            base: Cluster::new(CLUSTER_OPERATIONAL_CREDENTIALS_ID)?,
+            base: Cluster::new(ID)?,
         }))
     }
 
@@ -313,13 +307,19 @@ impl ClusterType for NocCluster {
     }
 
     fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
-        let cmd = cmd_req.cmd.path.leaf.map(|a| a as u16);
+        let cmd = cmd_req
+            .cmd
+            .path
+            .leaf
+            .map(|c| num::FromPrimitive::from_u32(c))
+            .ok_or(IMStatusCode::UnsupportedCommand)?
+            .ok_or(IMStatusCode::UnsupportedCommand)?;
         match cmd {
-            Some(CMD_ADDNOC_ID) => self.handle_command_addnoc(cmd_req),
-            Some(CMD_CSRREQUEST_ID) => self.handle_command_csrrequest(cmd_req),
-            Some(CMD_ADDTRUSTEDROOTCERT_ID) => self.handle_command_addtrustedrootcert(cmd_req),
-            Some(CMD_ATTREQUEST_ID) => self.handle_command_attrequest(cmd_req),
-            Some(CMD_CERTCHAINREQUEST_ID) => self.handle_command_certchainrequest(cmd_req),
+            Commands::AddNOC => self.handle_command_addnoc(cmd_req),
+            Commands::CSRReq => self.handle_command_csrrequest(cmd_req),
+            Commands::AddTrustedRootCert => self.handle_command_addtrustedrootcert(cmd_req),
+            Commands::AttReq => self.handle_command_attrequest(cmd_req),
+            Commands::CertChainReq => self.handle_command_certchainrequest(cmd_req),
             _ => Err(IMStatusCode::UnsupportedCommand),
         }
     }

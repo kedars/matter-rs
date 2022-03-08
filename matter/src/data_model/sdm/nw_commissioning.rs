@@ -7,7 +7,7 @@ use crate::{
     tlv_writer::TLVWriter,
 };
 
-const CLUSTER_NETWORK_COMMISSIONING_ID: u32 = 0x0031;
+pub const ID: u32 = 0x0031;
 
 pub struct NwCommCluster {
     base: Cluster,
@@ -43,7 +43,7 @@ enum FeatureMap {
 impl NwCommCluster {
     pub fn new() -> Result<Box<Self>, Error> {
         let mut c = Box::new(Self {
-            base: Cluster::new(CLUSTER_NETWORK_COMMISSIONING_ID)?,
+            base: Cluster::new(ID)?,
         });
         // TODO: Arch-Specific
         c.base.set_feature_map(FeatureMap::Ethernet as u32)?;

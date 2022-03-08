@@ -1,5 +1,5 @@
 use crate::cmd_enter;
-use crate::command_path_ib;
+use crate::cmd_path_ib;
 use crate::data_model::objects::*;
 use crate::data_model::sdm::failsafe::FailSafe;
 use crate::interaction_model::core::IMStatusCode;
@@ -21,40 +21,33 @@ enum CommissioningError {
     ErrNotCommissioning = 3,
 }
 
-const CLUSTER_GENERAL_COMMISSIONING_ID: u32 = 0x0030;
+pub const ID: u32 = 0x0030;
 
 #[derive(FromPrimitive)]
-enum Attributes {
+pub enum Attributes {
     BreadCrumb = 0,
     BasicCommissioningInfo = 1,
     RegConfig = 2,
     LocationCapability = 3,
 }
 
-const CMD_ARMFAILSAFE_ID: u16 = 0x00;
-const CMD_ARMFAILSAFE_RESPONSE_ID: u16 = 0x01;
-const CMD_SETREGULATORYCONFIG_ID: u16 = 0x02;
-const CMD_SETREGULATORYCONFIG_RESPONSE_ID: u16 = 0x03;
-const CMD_COMMISSIONING_COMPLETE_ID: u16 = 0x04;
-const CMD_COMMISSIONING_COMPLETE_RESPONSE_ID: u16 = 0x05;
+#[derive(FromPrimitive)]
+pub enum Commands {
+    ArmFailsafe = 0x00,
+    ArmFailsafeResp = 0x01,
+    SetRegulatoryConfig = 0x02,
+    SetRegulatoryConfigResp = 0x03,
+    CommissioningComplete = 0x04,
+    CommissioningCompleteResp = 0x05,
+}
 
-const CMD_PATH_ARMFAILSAFE_RESPONSE: ib::CmdPath = command_path_ib!(
-    0,
-    CLUSTER_GENERAL_COMMISSIONING_ID,
-    CMD_ARMFAILSAFE_RESPONSE_ID
-);
+const CMD_PATH_ARMFAILSAFE_RESP: ib::CmdPath = cmd_path_ib!(0, ID, Commands::ArmFailsafeResp);
 
-const CMD_PATH_SETREGULATORY_RESPONSE: ib::CmdPath = command_path_ib!(
-    0,
-    CLUSTER_GENERAL_COMMISSIONING_ID,
-    CMD_SETREGULATORYCONFIG_RESPONSE_ID
-);
+const CMD_PATH_SETREGULATORY_RESP: ib::CmdPath =
+    cmd_path_ib!(0, ID, Commands::SetRegulatoryConfigResp);
 
-const CMD_PATH_COMMISSIONING_COMPLETE_RESPONSE: ib::CmdPath = command_path_ib!(
-    0,
-    CLUSTER_GENERAL_COMMISSIONING_ID,
-    CMD_COMMISSIONING_COMPLETE_RESPONSE_ID
-);
+const CMD_PATH_COMMISSIONING_COMPLETE_RESP: ib::CmdPath =
+    cmd_path_ib!(0, ID, Commands::CommissioningCompleteResp);
 
 pub enum RegLocationType {
     Indoor = 0,
@@ -129,14 +122,17 @@ impl ClusterType for GenCommCluster {
     }
 
     fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
-        let cmd = cmd_req.cmd.path.leaf.map(|a| a as u16);
-        println!("Received command: {:?}", cmd);
+        let cmd = cmd_req
+            .cmd
+            .path
+            .leaf
+            .map(|c| num::FromPrimitive::from_u32(c))
+            .ok_or(IMStatusCode::UnsupportedCommand)?
+            .ok_or(IMStatusCode::UnsupportedCommand)?;
         match cmd {
-            Some(CMD_ARMFAILSAFE_ID) => self.handle_command_armfailsafe(cmd_req),
-            Some(CMD_SETREGULATORYCONFIG_ID) => self.handle_command_setregulatoryconfig(cmd_req),
-            Some(CMD_COMMISSIONING_COMPLETE_ID) => {
-                self.handle_command_commissioningcomplete(cmd_req)
-            }
+            Commands::ArmFailsafe => self.handle_command_armfailsafe(cmd_req),
+            Commands::SetRegulatoryConfig => self.handle_command_setregulatoryconfig(cmd_req),
+            Commands::CommissioningComplete => self.handle_command_commissioningcomplete(cmd_req),
             _ => Err(IMStatusCode::UnsupportedCommand),
         }
     }
@@ -150,7 +146,7 @@ impl GenCommCluster {
             // TODO: Arch-Specific
             expiry_len: 120,
             failsafe: failsafe,
-            base: Cluster::new(CLUSTER_GENERAL_COMMISSIONING_ID)?,
+            base: Cluster::new(ID)?,
         });
         c.base.add_attribute(attr_bread_crumb_new(0)?)?;
         // TODO: Arch-Specific
@@ -184,7 +180,7 @@ impl GenCommCluster {
         }
 
         let invoke_resp =
-            ib::InvResponseOut::Cmd(ib::CmdData::new(CMD_PATH_ARMFAILSAFE_RESPONSE, |t| {
+            ib::InvResponseOut::Cmd(ib::CmdData::new(CMD_PATH_ARMFAILSAFE_RESP, |t| {
                 t.put_u8(TagType::Context(0), CommissioningError::Ok as u8)?;
                 t.put_utf8(TagType::Context(1), b"")
             }));
@@ -208,7 +204,7 @@ impl GenCommCluster {
         info!("Received country code: {:?}", country_code);
 
         let invoke_resp =
-            ib::InvResponseOut::Cmd(ib::CmdData::new(CMD_PATH_SETREGULATORY_RESPONSE, |t| {
+            ib::InvResponseOut::Cmd(ib::CmdData::new(CMD_PATH_SETREGULATORY_RESP, |t| {
                 t.put_u8(TagType::Context(0), 0)?;
                 t.put_utf8(TagType::Context(1), b"")
             }));
@@ -240,7 +236,7 @@ impl GenCommCluster {
         }
 
         let invoke_resp = ib::InvResponseOut::Cmd(ib::CmdData::new(
-            CMD_PATH_COMMISSIONING_COMPLETE_RESPONSE,
+            CMD_PATH_COMMISSIONING_COMPLETE_RESP,
             |t| {
                 t.put_u8(TagType::Context(0), status)?;
                 t.put_utf8(TagType::Context(1), b"")

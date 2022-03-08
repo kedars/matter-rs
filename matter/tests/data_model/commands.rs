@@ -45,6 +45,7 @@ fn handle_commands(input: &[(CmdPath, Option<u8>)], expected: &[ExpectedInvResp]
         .iter()
         .unwrap();
     for response in cmd_list_iter {
+        println!("Validating index {}", index);
         let inv_response = InvResponseIn::from_tlv(&response).unwrap();
         match expected[index] {
             ExpectedInvResp::Cmd(e_c, e_d) => match inv_response {
@@ -66,6 +67,7 @@ fn handle_commands(input: &[(CmdPath, Option<u8>)], expected: &[ExpectedInvResp]
                 }
             },
         }
+        println!("Index {} success", index);
         index += 1;
     }
     assert_eq!(index, expected.len());
@@ -76,8 +78,8 @@ macro_rules! echo_req {
         (
             CmdPath::new(
                 Some($endpoint),
-                Some(echo_cluster::CLUSTER_ECHO_ID),
-                Some(echo_cluster::CMD_ECHO_REQUEST_ID),
+                Some(echo_cluster::ID),
+                Some(echo_cluster::Commands::EchoReq as u16),
             ),
             Some($data),
         )
@@ -89,8 +91,8 @@ macro_rules! echo_resp {
         ExpectedInvResp::Cmd(
             CmdPath::new(
                 Some($endpoint),
-                Some(echo_cluster::CLUSTER_ECHO_ID),
-                Some(echo_cluster::CMD_ECHO_RESPONSE_ID),
+                Some(echo_cluster::ID),
+                Some(echo_cluster::Commands::EchoResp as u16),
             ),
             $data,
         )
@@ -102,7 +104,7 @@ fn test_invoke_cmds_success() {
     // 2 echo Requests
     // - one on endpoint 0 with data 5,
     // - another on endpoint 1 with data 10
-    env_logger::try_init();
+    let _ = env_logger::try_init();
 
     let input = &[echo_req!(0, 5), echo_req!(1, 10)];
     let expected = &[echo_resp!(0, 10), echo_resp!(1, 30)];
@@ -117,24 +119,25 @@ fn test_invoke_cmds_unsupported_fields() {
     // - cluster doesn't exist and endpoint is wildcard - UnsupportedCluster
     // - command doesn't exist - UnsupportedCommand
     // - command doesn't exist and endpoint is wildcard - UnsupportedCommand
-    env_logger::try_init();
+    let _ = env_logger::try_init();
 
     let invalid_endpoint = CmdPath::new(
         Some(2),
-        Some(echo_cluster::CLUSTER_ECHO_ID),
-        Some(echo_cluster::CMD_ECHO_REQUEST_ID),
+        Some(echo_cluster::ID),
+        Some(echo_cluster::Commands::EchoReq as u16),
     );
     let invalid_cluster = CmdPath::new(
         Some(0),
         Some(0x1234),
-        Some(echo_cluster::CMD_ECHO_REQUEST_ID),
+        Some(echo_cluster::Commands::EchoReq as u16),
     );
-    let invalid_cluster_wc_endpoint =
-        CmdPath::new(None, Some(0x1234), Some(echo_cluster::CMD_ECHO_REQUEST_ID));
-
-    let invalid_command = CmdPath::new(Some(0), Some(echo_cluster::CLUSTER_ECHO_ID), Some(0x1234));
-    let invalid_command_wc_endpoint =
-        CmdPath::new(None, Some(echo_cluster::CLUSTER_ECHO_ID), Some(0x1234));
+    let invalid_cluster_wc_endpoint = CmdPath::new(
+        None,
+        Some(0x1234),
+        Some(echo_cluster::Commands::EchoReq as u16),
+    );
+    let invalid_command = CmdPath::new(Some(0), Some(echo_cluster::ID), Some(0x1234));
+    let invalid_command_wc_endpoint = CmdPath::new(None, Some(echo_cluster::ID), Some(0x1234));
     let input = &[
         (invalid_endpoint, Some(5)),
         (invalid_cluster, Some(5)),
@@ -163,13 +166,13 @@ fn test_invoke_cmds_unsupported_fields() {
 fn test_invoke_cmd_wc_endpoint_all_have_clusters() {
     // 1 echo Request with wildcard endpoint
     // should generate 2 responses from the echo clusters on both
-    env_logger::try_init();
+    let _ = env_logger::try_init();
 
     let input = &[(
         CmdPath::new(
             None,
-            Some(echo_cluster::CLUSTER_ECHO_ID),
-            Some(echo_cluster::CMD_ECHO_REQUEST_ID),
+            Some(echo_cluster::ID),
+            Some(echo_cluster::Commands::EchoReq as u16),
         ),
         Some(5),
     )];
@@ -181,17 +184,17 @@ fn test_invoke_cmd_wc_endpoint_all_have_clusters() {
 fn test_invoke_cmd_wc_endpoint_only_1_has_cluster() {
     // 1 on command for on/off cluster with wildcard endpoint
     // should generate 1 response from the on-off cluster
-    env_logger::try_init();
+    let _ = env_logger::try_init();
 
     let target = CmdPath::new(
         None,
-        Some(cluster_on_off::CLUSTER_ONOFF_ID),
-        Some(cluster_on_off::CMD_ON_ID),
+        Some(cluster_on_off::ID),
+        Some(cluster_on_off::Commands::On as u16),
     );
     let expected_path = CmdPath::new(
         Some(1),
-        Some(cluster_on_off::CLUSTER_ONOFF_ID),
-        Some(cluster_on_off::CMD_ON_ID),
+        Some(cluster_on_off::ID),
+        Some(cluster_on_off::Commands::On as u16),
     );
     let input = &[(target, Some(1))];
     let expected = &[ExpectedInvResp::Status(expected_path, 0)];
