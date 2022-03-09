@@ -123,7 +123,8 @@ impl InteractionConsumer for DataModel {
             let result = node.for_each_attribute(&attr_path.path, |path, c| {
                 let attr_id = if let Some(a) = path.leaf { a } else { 0 } as u16;
                 let path = ib::AttrPath::new(path);
-                let data = |tag: TagType, tw: &mut TLVWriter| c.read_attribute(tag, tw, attr_id);
+                let data =
+                    |tag: TagType, tw: &mut TLVWriter| Cluster::read_attribute(c, tag, tw, attr_id);
 
                 let attr_resp =
                     ib::AttrRespOut::Data(ib::AttrDataOut::new(c.base().get_dataver(), path, data));

@@ -17,7 +17,11 @@ impl<'a> WriteBuf<'a> {
         }
     }
 
-    pub fn as_slice(&self) -> &[u8] {
+    pub fn as_borrow_slice(&self) -> &[u8] {
+        &self.buf[self.start..self.end]
+    }
+
+    pub fn as_slice(self) -> &'a [u8] {
         &self.buf[self.start..self.end]
     }
 

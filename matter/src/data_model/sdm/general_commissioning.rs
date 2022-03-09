@@ -106,14 +106,19 @@ impl ClusterType for GenCommCluster {
         &mut self.base
     }
 
-    fn read_attribute(&self, tag: TagType, tw: &mut TLVWriter, attr_id: u16) -> Result<(), Error> {
+    fn read_custom_attribute(
+        &self,
+        tag: TagType,
+        tw: &mut TLVWriter,
+        attr_id: u16,
+    ) -> Result<(), Error> {
         match num::FromPrimitive::from_u16(attr_id).ok_or(Error::Invalid)? {
             Attributes::BasicCommissioningInfo => {
                 tw.put_start_struct(tag)?;
                 tw.put_u16(TagType::Context(0), self.expiry_len)?;
                 tw.put_end_container()
             }
-            _ => self.base.read_attribute(tag, tw, attr_id),
+            _ => Err(Error::Invalid),
         }
     }
 

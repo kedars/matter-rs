@@ -63,8 +63,13 @@ impl ClusterType for BasicInfoCluster {
         &mut self.base
     }
 
-    fn read_attribute(&self, tag: TagType, tw: &mut TLVWriter, attr_id: u16) -> Result<(), Error> {
-        self.base.read_attribute(tag, tw, attr_id)
+    fn read_custom_attribute(
+        &self,
+        _tag: TagType,
+        _tw: &mut TLVWriter,
+        _attr_id: u16,
+    ) -> Result<(), Error> {
+        Err(Error::Invalid)
     }
 
     fn write_attribute(&mut self, data: &TLVElement, attr_id: u16) -> Result<(), IMStatusCode> {

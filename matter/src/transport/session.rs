@@ -217,14 +217,14 @@ impl Session {
         plain_hdr.encode(&mut write_buf)?;
         let plain_hdr_bytes = write_buf.as_slice();
 
-        trace!("unencrypted packet: {:x?}", packet_buf.as_slice());
+        trace!("unencrypted packet: {:x?}", packet_buf.as_borrow_slice());
         let enc_key = self.get_enc_key();
         if let Some(e) = enc_key {
             proto_hdr::encrypt_in_place(plain_hdr.ctr, plain_hdr_bytes, packet_buf, e)?;
         }
 
         packet_buf.prepend(plain_hdr_bytes)?;
-        trace!("Full encrypted packet: {:x?}", packet_buf.as_slice());
+        trace!("Full encrypted packet: {:x?}", packet_buf.as_borrow_slice());
         Ok(())
     }
 }

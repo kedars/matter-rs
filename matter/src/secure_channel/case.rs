@@ -228,7 +228,9 @@ impl Case {
         tw.put_str8(TagType::Context(3), &case_session.our_pub_key)?;
         tw.put_str16(TagType::Context(4), encrypted)?;
         tw.put_end_container()?;
-        case_session.tt_hash.update(proto_tx.write_buf.as_slice())?;
+        case_session
+            .tt_hash
+            .update(proto_tx.write_buf.as_borrow_slice())?;
         proto_rx.exchange.set_exchange_data(case_session);
         Ok(())
     }

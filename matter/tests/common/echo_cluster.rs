@@ -39,10 +39,15 @@ impl ClusterType for EchoCluster {
         &mut self.base
     }
 
-    fn read_attribute(&self, tag: TagType, tw: &mut TLVWriter, attr_id: u16) -> Result<(), Error> {
+    fn read_custom_attribute(
+        &self,
+        tag: TagType,
+        tw: &mut TLVWriter,
+        attr_id: u16,
+    ) -> Result<(), Error> {
         match num::FromPrimitive::from_u16(attr_id).ok_or(Error::Invalid)? {
             Attributes::AttCustom => tw.put_u32(tag, ATTR_CUSTOM_VALUE),
-            _ => self.base.read_attribute(tag, tw, attr_id),
+            _ => Err(Error::Invalid),
         }
     }
 

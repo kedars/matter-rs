@@ -32,9 +32,9 @@ fn handle_commands(input: &[(CmdPath, Option<u8>)], expected: &[ExpectedInvResp]
 
     td.commands(input).unwrap();
 
-    let _ = im_engine(OpCode::InvokeRequest, wb.as_slice(), &mut proto_tx);
-    tlv::print_tlv_list(proto_tx.write_buf.as_slice());
-    let root = tlv::get_root_node_struct(proto_tx.write_buf.as_slice()).unwrap();
+    let _ = im_engine(OpCode::InvokeRequest, wb.as_borrow_slice(), &mut proto_tx);
+    tlv::print_tlv_list(proto_tx.write_buf.as_borrow_slice());
+    let root = tlv::get_root_node_struct(proto_tx.write_buf.as_borrow_slice()).unwrap();
 
     let mut index = 0;
     let cmd_list_iter = root

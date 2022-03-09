@@ -2,9 +2,10 @@ use std::{fmt, sync::PoisonError, time::SystemTimeError};
 
 use log::error;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Error {
     AttributeNotFound,
+    AttributeIsCustom,
     ClusterNotFound,
     CommandNotFound,
     EndpointNotFound,

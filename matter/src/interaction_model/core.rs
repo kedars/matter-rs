@@ -84,7 +84,7 @@ impl proto_demux::HandleProto for InteractionModel {
 
         if result == ResponseRequired::Yes {
             info!("Sending response");
-            tlv::print_tlv_list(proto_tx.write_buf.as_slice());
+            tlv::print_tlv_list(proto_tx.write_buf.as_borrow_slice());
         }
         if trans.is_complete() {
             proto_rx.exchange.close();

@@ -120,7 +120,7 @@ impl Mgr {
         let mut plain_hdr = plain_hdr::PlainHdr::default();
         let mut proto_hdr = proto_hdr::ProtoHdr::default();
 
-        trace!("payload: {:x?}", proto_tx.write_buf.as_slice());
+        trace!("payload: {:x?}", proto_tx.write_buf.as_borrow_slice());
         proto_hdr.proto_id = proto_tx.proto_id as u16;
         proto_hdr.proto_opcode = proto_tx.proto_opcode;
 
@@ -138,7 +138,7 @@ impl Mgr {
 
         session.send(&mut plain_hdr, &mut proto_hdr, &mut proto_tx.write_buf)?;
 
-        transport.send(proto_tx.write_buf.as_slice(), proto_tx.peer)?;
+        transport.send(proto_tx.write_buf.as_borrow_slice(), proto_tx.peer)?;
         Ok(())
     }
 

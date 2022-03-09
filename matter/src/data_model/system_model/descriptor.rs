@@ -47,7 +47,12 @@ impl ClusterType for DescriptorCluster {
         &mut self.base
     }
 
-    fn read_attribute(&self, tag: TagType, tw: &mut TLVWriter, attr_id: u16) -> Result<(), Error> {
+    fn read_custom_attribute(
+        &self,
+        tag: TagType,
+        tw: &mut TLVWriter,
+        attr_id: u16,
+    ) -> Result<(), Error> {
         match num::FromPrimitive::from_u16(attr_id).ok_or(Error::Invalid)? {
             Attributes::ServerList => {
                 let path = GenericPath {

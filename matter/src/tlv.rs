@@ -278,10 +278,77 @@ fn read_length_value<'a>(
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone)]
 pub struct TLVElement<'a> {
     tag_type: TagType,
     element_type: ElementType<'a>,
+}
+
+impl<'a> PartialEq for TLVElement<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        match self.element_type {
+            ElementType::Struct(a) | ElementType::Array(a) | ElementType::List(a) => {
+                let mut our_iter = TLVListIterator::from_pointer(a);
+                let mut their = match other.element_type {
+                    ElementType::Struct(b) | ElementType::Array(b) | ElementType::List(b) => {
+                        TLVListIterator::from_pointer(b)
+                    }
+                    _ => {
+                        // If we are a container, the other must be a container, else this is a mismatch
+                        return false;
+                    }
+                };
+                let mut nest_level = 0_u8;
+                loop {
+                    let ours = our_iter.next();
+                    let theirs = their.next();
+                    if std::mem::discriminant(&ours) != std::mem::discriminant(&theirs) {
+                        // One of us reached end of list, but the other didn't, that's a mismatch
+                        return false;
+                    }
+                    if ours.is_none() {
+                        // End of list
+                        break;
+                    }
+                    // guaranteed to work
+                    let ours = ours.unwrap();
+                    let theirs = theirs.unwrap();
+
+                    match ours.element_type {
+                        ElementType::EndCnt => {
+                            if nest_level == 0 {
+                                break;
+                            } else {
+                                nest_level -= 1;
+                            }
+                        }
+                        _ => {
+                            if is_container(ours.element_type) {
+                                nest_level += 1;
+                                // Only compare the discriminants in case of array/list/structures,
+                                // instead of actual element values. Those will be subsets within this same
+                                // list that will get validated anyway
+                                if std::mem::discriminant(&ours.element_type)
+                                    != std::mem::discriminant(&theirs.element_type)
+                                {
+                                    return false;
+                                }
+                            } else {
+                                if ours.element_type != theirs.element_type {
+                                    return false;
+                                }
+                            }
+                            if ours.tag_type != theirs.tag_type {
+                                return false;
+                            }
+                        }
+                    }
+                }
+                true
+            }
+            _ => self.tag_type == other.tag_type && self.element_type == other.element_type,
+        }
+    }
 }
 
 impl<'a> TLVElement<'a> {
@@ -448,6 +515,14 @@ pub struct TLVListIterator<'a> {
 }
 
 impl<'a> TLVListIterator<'a> {
+    fn from_pointer(p: Pointer<'a>) -> Self {
+        Self {
+            buf: p.buf,
+            current: p.current,
+            left: p.left,
+        }
+    }
+
     fn advance(&mut self, len: usize) {
         self.current += len;
         self.left -= len;
@@ -623,9 +698,9 @@ pub fn get_root_node_list(b: &[u8]) -> Result<TLVElement, Error> {
 pub fn print_tlv_list(b: &[u8]) {
     let tlvlist = TLVList::new(b, b.len());
 
-    const MAX_DEPTH: usize = 8;
+    const MAX_DEPTH: usize = 9;
     info!("TLV list:");
-    let space_buf = "                            ";
+    let space_buf = "                                ";
     let space: [&str; MAX_DEPTH] = [
         &space_buf[0..0],
         &space_buf[0..4],
@@ -635,6 +710,7 @@ pub fn print_tlv_list(b: &[u8]) {
         &space_buf[0..20],
         &space_buf[0..24],
         &space_buf[0..28],
+        &space_buf[0..32],
     ];
     let mut stack: [char; MAX_DEPTH] = [' '; MAX_DEPTH];
     let mut index = 0_usize;

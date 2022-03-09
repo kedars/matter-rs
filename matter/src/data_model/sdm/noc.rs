@@ -298,8 +298,13 @@ impl ClusterType for NocCluster {
         &mut self.base
     }
 
-    fn read_attribute(&self, tag: TagType, tw: &mut TLVWriter, attr_id: u16) -> Result<(), Error> {
-        self.base.read_attribute(tag, tw, attr_id)
+    fn read_custom_attribute(
+        &self,
+        _tag: TagType,
+        _tw: &mut TLVWriter,
+        _attr_id: u16,
+    ) -> Result<(), Error> {
+        Err(Error::Invalid)
     }
 
     fn write_attribute(&mut self, data: &TLVElement, attr_id: u16) -> Result<(), IMStatusCode> {
@@ -343,7 +348,7 @@ fn add_attestation_element(
     writer.put_u32(TagType::Context(3), epoch)?;
     writer.put_end_container()?;
 
-    t.put_str16(TagType::Context(0), write_buf.as_slice())?;
+    t.put_str16(TagType::Context(0), write_buf.as_borrow_slice())?;
     Ok(())
 }
 
@@ -362,7 +367,7 @@ fn add_attestation_signature(
     }?;
     attest_element.copy_from_slice(attest_challenge)?;
     let mut signature = [0u8; crypto::EC_SIGNATURE_LEN_BYTES];
-    dac_key.sign_msg(attest_element.as_slice(), &mut signature)?;
+    dac_key.sign_msg(attest_element.as_borrow_slice(), &mut signature)?;
     resp.put_str8(TagType::Context(1), &signature)
 }
 
@@ -380,7 +385,7 @@ fn add_nocsrelement(
     writer.put_str8(TagType::Context(2), csr_nonce)?;
     writer.put_end_container()?;
 
-    resp.put_str8(TagType::Context(0), write_buf.as_slice())?;
+    resp.put_str8(TagType::Context(0), write_buf.as_borrow_slice())?;
     Ok(())
 }
 

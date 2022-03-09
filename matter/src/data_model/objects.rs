@@ -119,7 +119,7 @@ impl std::fmt::Display for Attribute {
 }
 
 #[derive(FromPrimitive, Debug)]
-enum GlobalAttributes {
+pub enum GlobalAttributes {
     _ClusterRevision = 0xFFFD,
     FeatureMap = 0xFFFC,
     AttributeList = 0xFFFB,
@@ -132,7 +132,12 @@ enum GlobalAttributes {
 pub trait ClusterType {
     fn base(&self) -> &Cluster;
     fn base_mut(&mut self) -> &mut Cluster;
-    fn read_attribute(&self, tag: TagType, tw: &mut TLVWriter, attr_id: u16) -> Result<(), Error>;
+    fn read_custom_attribute(
+        &self,
+        tag: TagType,
+        tw: &mut TLVWriter,
+        attr_id: u16,
+    ) -> Result<(), Error>;
     fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode>;
     fn write_attribute(&mut self, data: &TLVElement, attr_id: u16) -> Result<(), IMStatusCode>;
 }
@@ -230,6 +235,23 @@ impl Cluster {
     }
 
     pub fn read_attribute(
+        c: &dyn ClusterType,
+        tag: TagType,
+        tw: &mut TLVWriter,
+        attr_id: u16,
+    ) -> Result<(), Error> {
+        // Directly call lower level attribute read first
+        let result = c.base().read_non_custom_attribute(tag, tw, attr_id);
+        if let Err(e) = result {
+            // If the attribute is a custom type, call the ClusterType's read attribute
+            if e == Error::AttributeIsCustom {
+                return c.read_custom_attribute(tag, tw, attr_id);
+            }
+        }
+        result
+    }
+
+    fn read_non_custom_attribute(
         &self,
         tag: TagType,
         tw: &mut TLVWriter,
@@ -261,7 +283,7 @@ impl Cluster {
             if a.value != AttrValue::Custom {
                 tw.put_object(tag, &a.value)
             } else {
-                Err(Error::Invalid)
+                Err(Error::AttributeIsCustom)
             }
         }
     }
