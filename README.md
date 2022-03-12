@@ -20,6 +20,14 @@ $ RUST_LOG="matter" cargo run --example onoff_light
 
 
 ## Functionality
-- PASE Works (TLV Parser/Generator, SPAKE2+, AEAD, Commissioning/Operational Certificates Cluster)
-- CASE Works 
+- Secure Channel:
+  - PASE
+  - CASE
+- Interactions:
+  - Invoke Command(s), Read Attribute(s), Write Attribute(s)
+- Commissioning:
+  - over Ethernet
+  - Network Commissioning Cluster
+  - General Commissioning Cluster
+  - Operational Certificates Cluster
 - Some [TODO](TODO.md) are captured here
