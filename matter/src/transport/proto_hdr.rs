@@ -1,3 +1,4 @@
+use bitflags::bitflags;
 use std::fmt;
 
 use crate::transport::plain_hdr;
@@ -7,16 +8,21 @@ use crate::{crypto, error::*};
 
 use log::{info, trace};
 
-const EXCHANGE_FLAG_VENDOR_MASK: u8 = 0x10;
-const EXCHANGE_FLAG_SECEX_MASK: u8 = 0x08;
-const EXCHANGE_FLAG_RELIABLE_MASK: u8 = 0x04;
-const EXCHANGE_FLAG_ACK_MASK: u8 = 0x02;
-const EXCHANGE_FLAG_INITIATOR_MASK: u8 = 0x01;
+bitflags! {
+    #[derive(Default)]
+    pub struct ExchFlags: u8 {
+        const VENDOR = 0x10;
+        const SECEX = 0x08;
+        const RELIABLE = 0x04;
+        const ACK = 0x02;
+        const INITIATOR = 0x01;
+    }
+}
 
 #[derive(Default)]
 pub struct ProtoHdr {
     pub exch_id: u16,
-    pub exch_flags: u8,
+    pub exch_flags: ExchFlags,
     pub proto_id: u16,
     pub proto_opcode: u8,
     pub proto_vendor_id: Option<u16>,
@@ -25,27 +31,27 @@ pub struct ProtoHdr {
 
 impl ProtoHdr {
     pub fn is_vendor(&self) -> bool {
-        (self.exch_flags & EXCHANGE_FLAG_VENDOR_MASK) != 0
+        self.exch_flags.contains(ExchFlags::VENDOR)
     }
 
     pub fn set_vendor(&mut self, proto_vendor_id: u16) {
-        self.exch_flags |= EXCHANGE_FLAG_RELIABLE_MASK;
+        self.exch_flags |= ExchFlags::RELIABLE;
         self.proto_vendor_id = Some(proto_vendor_id);
     }
 
     pub fn is_security_ext(&self) -> bool {
-        (self.exch_flags & EXCHANGE_FLAG_SECEX_MASK) != 0
+        self.exch_flags.contains(ExchFlags::SECEX)
     }
     pub fn is_reliable(&self) -> bool {
-        (self.exch_flags & EXCHANGE_FLAG_RELIABLE_MASK) != 0
+        self.exch_flags.contains(ExchFlags::RELIABLE)
     }
 
     pub fn set_reliable(&mut self) {
-        self.exch_flags |= EXCHANGE_FLAG_RELIABLE_MASK;
+        self.exch_flags |= ExchFlags::RELIABLE;
     }
 
     pub fn is_ack(&self) -> bool {
-        (self.exch_flags & EXCHANGE_FLAG_ACK_MASK) != 0
+        self.exch_flags.contains(ExchFlags::ACK)
     }
 
     pub fn get_ack_msg_ctr(&self) -> Option<u32> {
@@ -53,16 +59,16 @@ impl ProtoHdr {
     }
 
     pub fn set_ack(&mut self, ack_msg_ctr: u32) {
-        self.exch_flags |= EXCHANGE_FLAG_ACK_MASK;
+        self.exch_flags |= ExchFlags::ACK;
         self.ack_msg_ctr = Some(ack_msg_ctr);
     }
 
     pub fn is_initiator(&self) -> bool {
-        (self.exch_flags & EXCHANGE_FLAG_INITIATOR_MASK) != 0
+        self.exch_flags.contains(ExchFlags::INITIATOR)
     }
 
     pub fn set_initiator(&mut self) {
-        self.exch_flags |= EXCHANGE_FLAG_INITIATOR_MASK;
+        self.exch_flags |= ExchFlags::INITIATOR;
     }
 
     pub fn decrypt_and_decode(
@@ -76,7 +82,7 @@ impl ProtoHdr {
             decrypt_in_place(plain_hdr.ctr, parsebuf, d)?;
         }
 
-        self.exch_flags = parsebuf.le_u8()?;
+        self.exch_flags = ExchFlags::from_bits(parsebuf.le_u8()?).ok_or(Error::Invalid)?;
         self.proto_opcode = parsebuf.le_u8()?;
         self.exch_id = parsebuf.le_u16()?;
         self.proto_id = parsebuf.le_u16()?;
@@ -94,7 +100,7 @@ impl ProtoHdr {
 
     pub fn encode(&mut self, resp_buf: &mut WriteBuf) -> Result<(), Error> {
         info!("[encode] {}", self);
-        resp_buf.le_u8(self.exch_flags)?;
+        resp_buf.le_u8(self.exch_flags.bits())?;
         resp_buf.le_u8(self.proto_opcode)?;
         resp_buf.le_u16(self.exch_id)?;
         resp_buf.le_u16(self.proto_id)?;

@@ -21,6 +21,7 @@ crypto_mbedtls = ["mbedtls"]
 crypto_esp_mbedtls = ["esp-idf-sys"]
 
 [dependencies]
+bitflags = "1.3"
 byteorder = "1.4.3"
 heapless = "0.7.7"
 generic-array = "0.14.5"

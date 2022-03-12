@@ -1,6 +1,7 @@
 use crate::error::*;
 use crate::utils::parsebuf::ParseBuf;
 use crate::utils::writebuf::WriteBuf;
+use bitflags::bitflags;
 use log::info;
 
 #[derive(Debug, PartialEq)]
@@ -15,28 +16,33 @@ impl Default for SessionType {
     }
 }
 
+bitflags! {
+    #[derive(Default)]
+    pub struct MsgFlags: u8 {
+        const DSIZ_UNICAST_NODEID = 0x01;
+        const DSIZ_GROUPCAST_NODEID = 0x02;
+        const SRC_ADDR_PRESENT = 0x04;
+    }
+}
+
 // This is the unencrypted message
 #[derive(Debug, Default)]
 pub struct PlainHdr {
-    pub flags: u8,
+    pub flags: MsgFlags,
     pub sess_type: SessionType,
     pub sess_id: u16,
     pub ctr: u32,
     peer_nodeid: Option<u64>,
 }
 
-// A 64-bit nodeid is present
-const DSIZ_UNICAST_NODEID: u8 = 0x01;
-const _DSIZ_GROUPCAST_NODEID: u8 = 0x02;
-
 impl PlainHdr {
     pub fn set_dest_u64(&mut self, id: u64) {
-        self.flags |= DSIZ_UNICAST_NODEID;
+        self.flags |= MsgFlags::DSIZ_UNICAST_NODEID;
         self.peer_nodeid = Some(id);
     }
 
     pub fn get_src_u64(&self) -> Option<u64> {
-        if (self.flags & FLAG_SRC_ADDR_PRESENT) != 0 {
+        if self.flags.contains(MsgFlags::SRC_ADDR_PRESENT) {
             self.peer_nodeid
         } else {
             None
@@ -44,11 +50,10 @@ impl PlainHdr {
     }
 }
 
-const FLAG_SRC_ADDR_PRESENT: u8 = 0x04;
 impl PlainHdr {
     // it will have an additional 'message length' field first
     pub fn decode(&mut self, msg: &mut ParseBuf) -> Result<(), Error> {
-        self.flags = msg.le_u8()?;
+        self.flags = MsgFlags::from_bits(msg.le_u8()?).ok_or(Error::Invalid)?;
         self.sess_id = msg.le_u16()?;
         let _sec_flags = msg.le_u8()?;
         self.sess_type = if self.sess_id != 0 {
@@ -58,19 +63,19 @@ impl PlainHdr {
         };
         self.ctr = msg.le_u32()?;
 
-        if (self.flags & FLAG_SRC_ADDR_PRESENT) != 0 {
+        if self.flags.contains(MsgFlags::SRC_ADDR_PRESENT) {
             self.peer_nodeid = Some(msg.le_u64()?);
         }
 
         info!(
-            "[decode] flags: {:x}, session type: {:#?}, sess_id: {}, ctr: {}",
+            "[decode] flags: {:?}, session type: {:#?}, sess_id: {}, ctr: {}",
             self.flags, self.sess_type, self.sess_id, self.ctr
         );
         Ok(())
     }
 
     pub fn encode(&mut self, resp_buf: &mut WriteBuf) -> Result<(), Error> {
-        resp_buf.le_u8(self.flags)?;
+        resp_buf.le_u8(self.flags.bits())?;
         resp_buf.le_u16(self.sess_id)?;
         resp_buf.le_u8(0)?;
         resp_buf.le_u32(self.ctr)?;
