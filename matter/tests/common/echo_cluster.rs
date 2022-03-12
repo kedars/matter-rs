@@ -1,5 +1,5 @@
 use matter::{
-    data_model::objects::{AttrValue, Attribute, Cluster, ClusterType},
+    data_model::objects::{Access, AttrValue, Attribute, Cluster, ClusterType, Quality},
     error::Error,
     interaction_model::{command::CommandReq, core::IMStatusCode, messages::ib},
     tlv::TLVElement,
@@ -94,14 +94,20 @@ impl EchoCluster {
         c.base.add_attribute(Attribute::new(
             Attributes::Att1 as u16,
             AttrValue::Uint16(0x1234),
+            Access::READ | Access::NEED_VIEW,
+            Quality::NONE,
         )?)?;
         c.base.add_attribute(Attribute::new(
             Attributes::Att2 as u16,
             AttrValue::Uint16(0x5678),
+            Access::READ | Access::NEED_VIEW,
+            Quality::NONE,
         )?)?;
         c.base.add_attribute(Attribute::new(
             Attributes::AttCustom as u16,
             AttrValue::Custom,
+            Access::READ | Access::NEED_VIEW,
+            Quality::NONE,
         )?)?;
         Ok(c)
     }

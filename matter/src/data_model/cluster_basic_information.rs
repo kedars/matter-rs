@@ -23,19 +23,39 @@ pub struct BasicInfoConfig {
 }
 
 fn attr_vid_new(vid: u16) -> Result<Box<Attribute>, Error> {
-    Attribute::new(Attributes::VendorId as u16, AttrValue::Uint16(vid))
+    Attribute::new(
+        Attributes::VendorId as u16,
+        AttrValue::Uint16(vid),
+        Access::RV,
+        Quality::FIXED,
+    )
 }
 
 fn attr_pid_new(pid: u16) -> Result<Box<Attribute>, Error> {
-    Attribute::new(Attributes::ProductId as u16, AttrValue::Uint16(pid))
+    Attribute::new(
+        Attributes::ProductId as u16,
+        AttrValue::Uint16(pid),
+        Access::RV,
+        Quality::FIXED,
+    )
 }
 
 fn attr_hw_ver_new(hw_ver: u16) -> Result<Box<Attribute>, Error> {
-    Attribute::new(Attributes::HwVer as u16, AttrValue::Uint16(hw_ver))
+    Attribute::new(
+        Attributes::HwVer as u16,
+        AttrValue::Uint16(hw_ver),
+        Access::RV,
+        Quality::FIXED,
+    )
 }
 
 fn attr_sw_ver_new(sw_ver: u32) -> Result<Box<Attribute>, Error> {
-    Attribute::new(Attributes::SwVer as u16, AttrValue::Uint32(sw_ver))
+    Attribute::new(
+        Attributes::SwVer as u16,
+        AttrValue::Uint32(sw_ver),
+        Access::RV,
+        Quality::FIXED,
+    )
 }
 
 pub struct BasicInfoCluster {

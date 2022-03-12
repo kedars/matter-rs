@@ -6,10 +6,40 @@ use crate::{
     tlv_common::TagType,
     tlv_writer::{TLVWriter, ToTLV},
 };
+use bitflags::bitflags;
 use log::error;
 use num_derive::FromPrimitive;
 use rand::Rng;
 use std::fmt::{self, Debug, Formatter};
+
+bitflags! {
+    #[derive(Default)]
+    pub struct Access: u16 {
+        const READ = 0x0001;
+        const WRITE = 0x0002;
+        const FAB_SCOPED = 0x0004;
+        const FAB_SENSITIVE = 0x0008;
+        const NEED_VIEW = 0x0010;
+        const NEED_OPERATE = 0x0020;
+        const NEED_MANAGE = 0x0040;
+        const NEED_ADMIN = 0x0080;
+        const TIMED_ONLY = 0x0100;
+        const RV = Self::READ.bits | Self::NEED_VIEW.bits;
+        const RWVA = Self::READ.bits | Self::WRITE.bits | Self::NEED_VIEW.bits | Self::NEED_ADMIN.bits;
+        const RWVM = Self::READ.bits | Self::WRITE.bits | Self::NEED_VIEW.bits | Self::NEED_MANAGE.bits;
+    }
+}
+
+bitflags! {
+    #[derive(Default)]
+    pub struct Quality: u8 {
+        const NONE = 0x00;
+        const SCENE = 0x01;
+        const PERSISTENT = 0x02;
+        const FIXED = 0x03;
+        const NULLABLE = 0x04;
+    }
+}
 
 /* This file needs some major revamp.
  * - instead of allocating all over the heap, we should use some kind of slab/block allocator
@@ -20,7 +50,7 @@ pub const CLUSTERS_PER_ENDPT: usize = 7;
 pub const ATTRS_PER_CLUSTER: usize = 8;
 pub const CMDS_PER_CLUSTER: usize = 8;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Copy, Clone)]
 pub enum AttrValue {
     Int64(i64),
     Uint8(u8),
@@ -82,8 +112,10 @@ impl AttrValue {
 
 #[derive(Debug)]
 pub struct Attribute {
-    pub id: u16,
-    pub value: AttrValue,
+    id: u16,
+    value: AttrValue,
+    quality: Quality,
+    access: Access,
 }
 
 impl Default for Attribute {
@@ -91,24 +123,38 @@ impl Default for Attribute {
         Attribute {
             id: 0,
             value: AttrValue::Bool(true),
+            quality: Default::default(),
+            access: Default::default(),
         }
     }
 }
 
 impl Attribute {
-    pub fn new(id: u16, val: AttrValue) -> Result<Box<Attribute>, Error> {
-        let mut a = Box::new(Attribute::default());
-        a.id = id;
-        a.value = val;
-        Ok(a)
+    pub fn new(
+        id: u16,
+        value: AttrValue,
+        access: Access,
+        quality: Quality,
+    ) -> Result<Box<Attribute>, Error> {
+        Ok(Box::new(Attribute {
+            id,
+            value,
+            access,
+            quality,
+        }))
     }
 
-    pub fn value_mut(&mut self) -> &mut AttrValue {
-        &mut self.value
+    pub fn set_value(&mut self, value: AttrValue) -> Result<(), Error> {
+        if !self.quality.contains(Quality::FIXED) {
+            self.value = value;
+            Ok(())
+        } else {
+            Err(Error::Invalid)
+        }
     }
 
-    pub fn value(&self) -> &AttrValue {
-        &self.value
+    pub fn is_system_attr(attr_id: u16) -> bool {
+        attr_id >= (GlobalElements::ServerGenCmd as u16)
     }
 }
 
@@ -119,13 +165,13 @@ impl std::fmt::Display for Attribute {
 }
 
 #[derive(FromPrimitive, Debug)]
-pub enum GlobalAttributes {
+pub enum GlobalElements {
     _ClusterRevision = 0xFFFD,
     FeatureMap = 0xFFFC,
     AttributeList = 0xFFFB,
     _EventList = 0xFFFA,
     _ClientGenCmd = 0xFFF9,
-    _ServerGenCmd = 0xFFF8,
+    ServerGenCmd = 0xFFF8,
     _FabricIndex = 0xFE,
 }
 
@@ -172,11 +218,13 @@ impl Cluster {
     pub fn set_feature_map(&mut self, map: u32) -> Result<(), Error> {
         if self.feature_map.is_none() {
             self.add_attribute(Attribute::new(
-                GlobalAttributes::FeatureMap as u16,
+                GlobalElements::FeatureMap as u16,
                 AttrValue::Uint32(map),
+                Access::RV,
+                Quality::NONE,
             )?)?;
         } else {
-            self.write_attribute_raw(GlobalAttributes::FeatureMap as u16, AttrValue::Uint32(map))
+            self.write_attribute_raw(GlobalElements::FeatureMap as u16, AttrValue::Uint32(map))
                 .map_err(|_| Error::Invalid)?;
         }
         self.feature_map = Some(map);
@@ -185,8 +233,10 @@ impl Cluster {
 
     fn add_default_attributes(&mut self) -> Result<(), Error> {
         self.add_attribute(Attribute::new(
-            GlobalAttributes::AttributeList as u16,
+            GlobalElements::AttributeList as u16,
             AttrValue::Custom,
+            Access::RV,
+            Quality::NONE,
         )?)
     }
 
@@ -240,34 +290,37 @@ impl Cluster {
         tw: &mut TLVWriter,
         attr_id: u16,
     ) -> Result<(), Error> {
-        // Directly call lower level attribute read first
-        let result = c.base().read_non_custom_attribute(tag, tw, attr_id);
-        if let Err(e) = result {
-            // If the attribute is a custom type, call the ClusterType's read attribute
-            if e == Error::AttributeIsCustom {
-                return c.read_custom_attribute(tag, tw, attr_id);
-            }
+        let base = c.base();
+        let a = base
+            .get_attribute(attr_id)
+            .map_err(|_| Error::AttributeNotFound)?;
+
+        if a.value != AttrValue::Custom || Attribute::is_system_attr(attr_id) {
+            base.read_standard_attribute(tag, tw, a)
+        } else {
+            c.read_custom_attribute(tag, tw, attr_id)
         }
-        result
     }
 
-    fn read_non_custom_attribute(
+    fn read_standard_attribute(
         &self,
         tag: TagType,
         tw: &mut TLVWriter,
-        attr_id: u16,
+        attr: &Attribute,
     ) -> Result<(), Error> {
-        let global_attr: Option<GlobalAttributes> = num::FromPrimitive::from_u16(attr_id);
+        println!("Attr id is {}", attr.id);
+        let global_attr: Option<GlobalElements> = num::FromPrimitive::from_u16(attr.id);
         if let Some(global_attr) = global_attr {
             match global_attr {
-                GlobalAttributes::AttributeList => {
+                GlobalElements::AttributeList => {
+                    println!("Printing attribute list");
                     tw.put_start_array(tag)?;
                     for a in &self.attributes {
                         tw.put_u16(TagType::Anonymous, a.id)?;
                     }
                     tw.put_end_container()
                 }
-                GlobalAttributes::FeatureMap => {
+                GlobalElements::FeatureMap => {
                     let val = if let Some(m) = self.feature_map { m } else { 0 };
                     tw.put_u32(tag, val)
                 }
@@ -277,14 +330,7 @@ impl Cluster {
                 }
             }
         } else {
-            let a = self
-                .get_attribute(attr_id)
-                .map_err(|_| Error::AttributeNotFound)?;
-            if a.value != AttrValue::Custom {
-                tw.put_object(tag, &a.value)
-            } else {
-                Err(Error::AttributeIsCustom)
-            }
+            tw.put_object(tag, &attr.value)
         }
     }
 
@@ -299,25 +345,24 @@ impl Cluster {
         let a = self
             .get_attribute_mut(attr_id)
             .map_err(|_| IMStatusCode::UnsupportedAttribute)?;
+        if !a.access.contains(Access::WRITE) {
+            return Err(IMStatusCode::UnsupportedWrite);
+        }
         if a.value != AttrValue::Custom {
-            a.value
+            let mut value = a.value;
+            value
                 .update_from_tlv(data)
+                .map_err(|_| IMStatusCode::Failure)?;
+            a.set_value(value)
                 .map_err(|_| IMStatusCode::UnsupportedWrite)
         } else {
             Err(IMStatusCode::UnsupportedAttribute)
         }
     }
 
-    pub fn write_attribute_raw(
-        &mut self,
-        attr_id: u16,
-        value: AttrValue,
-    ) -> Result<(), IMStatusCode> {
-        let a = self
-            .get_attribute_mut(attr_id)
-            .map_err(|_| IMStatusCode::UnsupportedAttribute)?;
-        a.value = value;
-        Ok(())
+    pub fn write_attribute_raw(&mut self, attr_id: u16, value: AttrValue) -> Result<(), Error> {
+        let a = self.get_attribute_mut(attr_id)?;
+        a.set_value(value)
     }
 }
 

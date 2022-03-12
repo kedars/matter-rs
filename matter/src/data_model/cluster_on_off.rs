@@ -25,7 +25,12 @@ pub enum Commands {
 
 fn attr_on_off_new() -> Result<Box<Attribute>, Error> {
     // OnOff, Value: false
-    Attribute::new(Attributes::OnOff as u16, AttrValue::Bool(false))
+    Attribute::new(
+        Attributes::OnOff as u16,
+        AttrValue::Bool(false),
+        Access::RV,
+        Quality::PERSISTENT,
+    )
 }
 
 pub struct OnOffCluster {
@@ -80,7 +85,8 @@ impl ClusterType for OnOffCluster {
                     .unwrap();
                 if AttrValue::Bool(true) == *value {
                     self.base
-                        .write_attribute_raw(Attributes::OnOff as u16, AttrValue::Bool(false))?;
+                        .write_attribute_raw(Attributes::OnOff as u16, AttrValue::Bool(false))
+                        .map_err(|_| IMStatusCode::Failure)?;
                 }
                 cmd_req.trans.complete();
                 Err(IMStatusCode::Sucess)
@@ -93,7 +99,8 @@ impl ClusterType for OnOffCluster {
                     .unwrap();
                 if AttrValue::Bool(false) == *value {
                     self.base
-                        .write_attribute_raw(Attributes::OnOff as u16, AttrValue::Bool(true))?;
+                        .write_attribute_raw(Attributes::OnOff as u16, AttrValue::Bool(true))
+                        .map_err(|_| IMStatusCode::Failure)?;
                 }
 
                 cmd_req.trans.complete();
@@ -110,7 +117,8 @@ impl ClusterType for OnOffCluster {
                     _ => false,
                 };
                 self.base
-                    .write_attribute_raw(Attributes::OnOff as u16, AttrValue::Bool(!value))?;
+                    .write_attribute_raw(Attributes::OnOff as u16, AttrValue::Bool(!value))
+                    .map_err(|_| IMStatusCode::Failure)?;
                 cmd_req.trans.complete();
                 Err(IMStatusCode::Sucess)
             }

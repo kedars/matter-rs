@@ -1,5 +1,5 @@
 use matter::{
-    data_model::{cluster_on_off, objects::GlobalAttributes},
+    data_model::{cluster_on_off, objects::GlobalElements},
     interaction_model::{
         core::{IMStatusCode, OpCode},
         messages::{
@@ -95,7 +95,7 @@ macro_rules! attr_status {
 }
 
 #[test]
-fn test_success() {
+fn test_read_success() {
     // 3 Attr Read Requests
     // - first on endpoint 0, att1
     // - second on endpoint 1, att2
@@ -134,7 +134,7 @@ fn test_success() {
 }
 
 #[test]
-fn test_unsupported_fields() {
+fn test_read_unsupported_fields() {
     // 6 reads
     // - endpoint doesn't exist - UnsupportedEndpoint
     // - cluster doesn't exist - UnsupportedCluster
@@ -193,7 +193,7 @@ fn test_unsupported_fields() {
 }
 
 #[test]
-fn test_wc_endpoint_all_have_clusters() {
+fn test_read_wc_endpoint_all_have_clusters() {
     // 1 Attr Read Requests
     // - wildcard endpoint, att1
     // - 2 responses are expected
@@ -228,7 +228,7 @@ fn test_wc_endpoint_all_have_clusters() {
 }
 
 #[test]
-fn test_wc_endpoint_only_1_has_cluster() {
+fn test_read_wc_endpoint_only_1_has_cluster() {
     // 1 Attr Read Requests
     // - wildcard endpoint, on/off Cluster OnOff Attribute
     // - 1 response are expected
@@ -267,7 +267,7 @@ fn get_tlvs<'a>(buf: &'a mut [u8], data: &[u16]) -> TLVElement<'a> {
 }
 
 #[test]
-fn test_wc_endpoint_wc_attribute() {
+fn test_read_wc_endpoint_wc_attribute() {
     // 1 Attr Read Request
     // - wildcard endpoint, wildcard attribute
     // - 8 responses are expected, 1+3 attributes on endpoint 0, 1+3 on endpoint 1
@@ -279,7 +279,7 @@ fn test_wc_endpoint_wc_attribute() {
     let attr_list_tlvs = get_tlvs(
         &mut buf,
         &[
-            GlobalAttributes::AttributeList as u16,
+            GlobalElements::AttributeList as u16,
             echo_cluster::Attributes::Att1 as u16,
             echo_cluster::Attributes::Att2 as u16,
             echo_cluster::Attributes::AttCustom as u16,
@@ -291,7 +291,7 @@ fn test_wc_endpoint_wc_attribute() {
             GenericPath::new(
                 Some(0),
                 Some(echo_cluster::ID),
-                Some(GlobalAttributes::AttributeList as u32),
+                Some(GlobalElements::AttributeList as u32),
             ),
             attr_list_tlvs.get_element_type()
         ),
@@ -323,7 +323,7 @@ fn test_wc_endpoint_wc_attribute() {
             GenericPath::new(
                 Some(1),
                 Some(echo_cluster::ID),
-                Some(GlobalAttributes::AttributeList as u32),
+                Some(GlobalElements::AttributeList as u32),
             ),
             attr_list_tlvs.get_element_type()
         ),

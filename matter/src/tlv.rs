@@ -719,7 +719,7 @@ pub fn print_tlv_list(b: &[u8]) {
         match a.element_type {
             ElementType::Struct(_) => {
                 if index < MAX_DEPTH {
-                    info!("{}{}", space[index], a);
+                    println!("{}{}", space[index], a);
                     stack[index] = '}';
                     index += 1;
                 } else {
@@ -728,7 +728,7 @@ pub fn print_tlv_list(b: &[u8]) {
             }
             ElementType::Array(_) | ElementType::List(_) => {
                 if index < MAX_DEPTH {
-                    info!("{}{}", space[index], a);
+                    println!("{}{}", space[index], a);
                     stack[index] = ']';
                     index += 1;
                 } else {
@@ -738,15 +738,15 @@ pub fn print_tlv_list(b: &[u8]) {
             ElementType::EndCnt => {
                 if index > 0 {
                     index -= 1;
-                    info!("{}{}", space[index], stack[index]);
+                    println!("{}{}", space[index], stack[index]);
                 } else {
                     error!("Incorrect TLV List");
                 }
             }
-            _ => info!("{}{}", space[index], a),
+            _ => println!("{}{}", space[index], a),
         }
     }
-    info!("---------");
+    println!("---------");
 }
 
 #[cfg(test)]

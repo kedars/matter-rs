@@ -59,6 +59,8 @@ fn attr_bread_crumb_new(bread_crumb: u64) -> Result<Box<Attribute>, Error> {
     Attribute::new(
         Attributes::BreadCrumb as u16,
         AttrValue::Uint64(bread_crumb),
+        Access::READ | Access::WRITE | Access::NEED_ADMIN,
+        Quality::NONE,
     )
 }
 
@@ -66,6 +68,8 @@ fn attr_reg_config_new(reg_config: RegLocationType) -> Result<Box<Attribute>, Er
     Attribute::new(
         Attributes::RegConfig as u16,
         AttrValue::Uint8(reg_config as u8),
+        Access::RV,
+        Quality::NONE,
     )
 }
 
@@ -73,11 +77,18 @@ fn attr_location_capability_new(reg_config: RegLocationType) -> Result<Box<Attri
     Attribute::new(
         Attributes::LocationCapability as u16,
         AttrValue::Uint8(reg_config as u8),
+        Access::RV,
+        Quality::FIXED,
     )
 }
 
 fn attr_comm_info_new() -> Result<Box<Attribute>, Error> {
-    Attribute::new(Attributes::BasicCommissioningInfo as u16, AttrValue::Custom)
+    Attribute::new(
+        Attributes::BasicCommissioningInfo as u16,
+        AttrValue::Custom,
+        Access::RV,
+        Quality::FIXED,
+    )
 }
 
 fn get_armfailsafe_params(data: &TLVElement) -> Result<(u8, u8), Error> {
