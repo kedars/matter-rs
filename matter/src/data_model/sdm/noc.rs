@@ -286,6 +286,8 @@ impl NocCluster {
             }
             _ => (),
         }
+        cmd_req.trans.complete();
+
         Err(IMStatusCode::Sucess)
     }
 }
