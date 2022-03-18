@@ -17,6 +17,14 @@ impl<'a> WriteBuf<'a> {
         }
     }
 
+    pub fn get_tail(&self) -> usize {
+        self.end
+    }
+
+    pub fn rewind_tail_to(&mut self, new_end: usize) {
+        self.end = new_end;
+    }
+
     pub fn as_borrow_slice(&self) -> &[u8] {
         &self.buf[self.start..self.end]
     }
@@ -267,5 +275,27 @@ mod tests {
             Ok(_) => panic!("Prepend should return error"),
             Err(_) => (),
         }
+    }
+
+    #[test]
+    fn test_rewind_tail() {
+        let mut test_slice: [u8; 20] = [0; 20];
+        let mut buf = WriteBuf::new(&mut test_slice, 20);
+        buf.reserve(5).unwrap();
+
+        buf.le_u16(65).unwrap();
+
+        let anchor = buf.get_tail();
+
+        let new_slice: [u8; 5] = [0xaa, 0xbb, 0xcc, 0xdd, 0xee];
+        buf.copy_from_slice(&new_slice).unwrap();
+        assert_eq!(
+            buf.as_borrow_slice(),
+            [65, 0, 0xaa, 0xbb, 0xcc, 0xdd, 0xee,]
+        );
+
+        buf.rewind_tail_to(anchor);
+        buf.le_u16(66).unwrap();
+        assert_eq!(buf.as_borrow_slice(), [65, 0, 66, 0,]);
     }
 }

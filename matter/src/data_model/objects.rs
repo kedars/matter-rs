@@ -180,12 +180,23 @@ pub trait ClusterType {
     fn base_mut(&mut self) -> &mut Cluster;
     fn read_custom_attribute(
         &self,
-        tag: TagType,
-        tw: &mut TLVWriter,
-        attr_id: u16,
-    ) -> Result<(), Error>;
-    fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode>;
-    fn write_attribute(&mut self, data: &TLVElement, attr_id: u16) -> Result<(), IMStatusCode>;
+        _tag: TagType,
+        _tw: &mut TLVWriter,
+        _attr_id: u16,
+    ) -> Result<(), IMStatusCode> {
+        Err(IMStatusCode::UnsupportedAttribute)
+    }
+
+    fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
+        let cmd = cmd_req.cmd.path.leaf.map(|a| a as u16);
+        println!("Received command: {:?}", cmd);
+
+        Err(IMStatusCode::UnsupportedCommand)
+    }
+
+    fn write_attribute(&mut self, data: &TLVElement, attr_id: u16) -> Result<(), IMStatusCode> {
+        self.base_mut().write_attribute(data, attr_id)
+    }
 }
 
 pub struct Cluster {
@@ -289,11 +300,14 @@ impl Cluster {
         tag: TagType,
         tw: &mut TLVWriter,
         attr_id: u16,
-    ) -> Result<(), Error> {
+    ) -> Result<(), IMStatusCode> {
         let base = c.base();
         let a = base
             .get_attribute(attr_id)
-            .map_err(|_| Error::AttributeNotFound)?;
+            .map_err(|_| IMStatusCode::UnsupportedAttribute)?;
+        if !a.access.contains(Access::READ) {
+            return Err(IMStatusCode::UnsupportedRead);
+        }
 
         if a.value != AttrValue::Custom || Attribute::is_system_attr(attr_id) {
             base.read_standard_attribute(tag, tw, a)
@@ -307,30 +321,31 @@ impl Cluster {
         tag: TagType,
         tw: &mut TLVWriter,
         attr: &Attribute,
-    ) -> Result<(), Error> {
-        println!("Attr id is {}", attr.id);
+    ) -> Result<(), IMStatusCode> {
         let global_attr: Option<GlobalElements> = num::FromPrimitive::from_u16(attr.id);
         if let Some(global_attr) = global_attr {
             match global_attr {
                 GlobalElements::AttributeList => {
-                    println!("Printing attribute list");
-                    tw.put_start_array(tag)?;
+                    let _ = tw.put_start_list(tag);
                     for a in &self.attributes {
-                        tw.put_u16(TagType::Anonymous, a.id)?;
+                        let _ = tw.put_u16(TagType::Anonymous, a.id);
                     }
-                    tw.put_end_container()
+                    let _ = tw.put_end_container();
+                    Ok(())
                 }
                 GlobalElements::FeatureMap => {
                     let val = if let Some(m) = self.feature_map { m } else { 0 };
-                    tw.put_u32(tag, val)
+                    let _ = tw.put_u32(tag, val);
+                    Ok(())
                 }
                 _ => {
                     error!("This attribute not yet handled {:?}", global_attr);
-                    Err(Error::Invalid)
+                    Err(IMStatusCode::UnsupportedAttribute)
                 }
             }
         } else {
-            tw.put_object(tag, &attr.value)
+            let _ = tw.put_object(tag, &attr.value);
+            Ok(())
         }
     }
 
@@ -403,7 +418,14 @@ impl Endpoint {
         self.clusters.iter().position(|c| c.base().id == cluster_id)
     }
 
-    pub fn get_cluster(&mut self, cluster_id: u32) -> Result<&mut dyn ClusterType, Error> {
+    pub fn get_cluster(&self, cluster_id: u32) -> Result<&dyn ClusterType, Error> {
+        let index = self
+            .get_cluster_index(cluster_id)
+            .ok_or(Error::ClusterNotFound)?;
+        Ok(self.clusters[index].as_ref())
+    }
+
+    pub fn get_cluster_mut(&mut self, cluster_id: u32) -> Result<&mut dyn ClusterType, Error> {
         let index = self
             .get_cluster_index(cluster_id)
             .ok_or(Error::ClusterNotFound)?;
@@ -503,7 +525,18 @@ impl Node {
         Ok(index as u32)
     }
 
-    pub fn get_endpoint(&mut self, endpoint_id: u32) -> Result<&mut Box<Endpoint>, Error> {
+    pub fn get_endpoint(&self, endpoint_id: u16) -> Result<&Box<Endpoint>, Error> {
+        if (endpoint_id as usize) < ENDPTS_PER_ACC {
+            let endpoint = self.endpoints[endpoint_id as usize]
+                .as_ref()
+                .ok_or(Error::EndpointNotFound)?;
+            Ok(endpoint)
+        } else {
+            Err(Error::EndpointNotFound)
+        }
+    }
+
+    pub fn get_endpoint_mut(&mut self, endpoint_id: u16) -> Result<&mut Box<Endpoint>, Error> {
         if (endpoint_id as usize) < ENDPTS_PER_ACC {
             let endpoint = self.endpoints[endpoint_id as usize]
                 .as_mut()

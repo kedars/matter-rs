@@ -155,6 +155,14 @@ impl<'a, 'b> TLVWriter<'a, 'b> {
     pub fn put_object(&mut self, tag_type: TagType, object: &dyn ToTLV) -> Result<(), Error> {
         object.to_tlv(self, tag_type)
     }
+
+    pub fn get_tail(&self) -> usize {
+        self.buf.get_tail()
+    }
+
+    pub fn rewind_to(&mut self, anchor: usize) {
+        self.buf.rewind_tail_to(anchor);
+    }
 }
 pub trait ToTLV {
     fn to_tlv(&self, tw: &mut TLVWriter, tag: TagType) -> Result<(), Error>;

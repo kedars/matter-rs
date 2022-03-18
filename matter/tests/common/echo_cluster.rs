@@ -2,7 +2,6 @@ use matter::{
     data_model::objects::{Access, AttrValue, Attribute, Cluster, ClusterType, Quality},
     error::Error,
     interaction_model::{command::CommandReq, core::IMStatusCode, messages::ib},
-    tlv::TLVElement,
     tlv_common::TagType,
     tlv_writer::TLVWriter,
 };
@@ -25,7 +24,8 @@ pub struct EchoCluster {
 pub enum Attributes {
     Att1 = 0,
     Att2 = 1,
-    AttCustom = 2,
+    AttWrite = 2,
+    AttCustom = 3,
 }
 
 pub const ATTR_CUSTOM_VALUE: u32 = 0xcafebeef;
@@ -44,15 +44,14 @@ impl ClusterType for EchoCluster {
         tag: TagType,
         tw: &mut TLVWriter,
         attr_id: u16,
-    ) -> Result<(), Error> {
-        match num::FromPrimitive::from_u16(attr_id).ok_or(Error::Invalid)? {
-            Attributes::AttCustom => tw.put_u32(tag, ATTR_CUSTOM_VALUE),
-            _ => Err(Error::Invalid),
+    ) -> Result<(), IMStatusCode> {
+        match num::FromPrimitive::from_u16(attr_id).ok_or(IMStatusCode::UnsupportedAttribute)? {
+            Attributes::AttCustom => {
+                let _ = tw.put_u32(tag, ATTR_CUSTOM_VALUE);
+                Ok(())
+            }
+            _ => Err(IMStatusCode::UnsupportedAttribute),
         }
-    }
-
-    fn write_attribute(&mut self, data: &TLVElement, attr_id: u16) -> Result<(), IMStatusCode> {
-        self.base.write_attribute(data, attr_id)
     }
 
     fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
@@ -94,13 +93,19 @@ impl EchoCluster {
         c.base.add_attribute(Attribute::new(
             Attributes::Att1 as u16,
             AttrValue::Uint16(0x1234),
-            Access::READ | Access::NEED_VIEW,
+            Access::RV,
             Quality::NONE,
         )?)?;
         c.base.add_attribute(Attribute::new(
             Attributes::Att2 as u16,
             AttrValue::Uint16(0x5678),
-            Access::READ | Access::NEED_VIEW,
+            Access::RV,
+            Quality::NONE,
+        )?)?;
+        c.base.add_attribute(Attribute::new(
+            Attributes::AttWrite as u16,
+            AttrValue::Uint16(0x5678),
+            Access::WRITE | Access::NEED_OPERATE,
             Quality::NONE,
         )?)?;
         c.base.add_attribute(Attribute::new(

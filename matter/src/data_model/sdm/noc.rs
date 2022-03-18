@@ -298,19 +298,6 @@ impl ClusterType for NocCluster {
         &mut self.base
     }
 
-    fn read_custom_attribute(
-        &self,
-        _tag: TagType,
-        _tw: &mut TLVWriter,
-        _attr_id: u16,
-    ) -> Result<(), Error> {
-        Err(Error::Invalid)
-    }
-
-    fn write_attribute(&mut self, data: &TLVElement, attr_id: u16) -> Result<(), IMStatusCode> {
-        self.base.write_attribute(data, attr_id)
-    }
-
     fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
         let cmd = cmd_req
             .cmd

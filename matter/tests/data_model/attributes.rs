@@ -175,19 +175,7 @@ fn test_read_unsupported_fields() {
     let expected = &[
         attr_status!(&invalid_endpoint, IMStatusCode::UnsupportedEndpoint),
         attr_status!(&invalid_cluster, IMStatusCode::UnsupportedCluster),
-        attr_status!(
-            &invalid_cluster_wc_endpoint,
-            IMStatusCode::UnsupportedCluster
-        ),
         attr_status!(&invalid_attribute, IMStatusCode::UnsupportedAttribute),
-        attr_status!(
-            &invalid_attribute_wc_endpoint,
-            IMStatusCode::UnsupportedAttribute
-        ),
-        attr_status!(
-            &invalid_attribute_wc_cluster,
-            IMStatusCode::UnsupportedAttribute
-        ),
     ];
     handle_read_reqs(input, expected);
 }
@@ -282,6 +270,7 @@ fn test_read_wc_endpoint_wc_attribute() {
             GlobalElements::AttributeList as u16,
             echo_cluster::Attributes::Att1 as u16,
             echo_cluster::Attributes::Att2 as u16,
+            echo_cluster::Attributes::AttWrite as u16,
             echo_cluster::Attributes::AttCustom as u16,
         ],
     );

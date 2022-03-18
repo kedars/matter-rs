@@ -1,11 +1,5 @@
 use super::objects::*;
-use crate::{
-    error::*,
-    interaction_model::{command::CommandReq, core::IMStatusCode},
-    tlv::TLVElement,
-    tlv_common::TagType,
-    tlv_writer::TLVWriter,
-};
+use crate::error::*;
 
 pub const ID: u32 = 0x0028;
 enum Attributes {
@@ -81,26 +75,5 @@ impl ClusterType for BasicInfoCluster {
     }
     fn base_mut(&mut self) -> &mut Cluster {
         &mut self.base
-    }
-
-    fn read_custom_attribute(
-        &self,
-        _tag: TagType,
-        _tw: &mut TLVWriter,
-        _attr_id: u16,
-    ) -> Result<(), Error> {
-        Err(Error::Invalid)
-    }
-
-    fn write_attribute(&mut self, data: &TLVElement, attr_id: u16) -> Result<(), IMStatusCode> {
-        self.base.write_attribute(data, attr_id)
-    }
-
-    fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
-        let cmd = cmd_req.cmd.path.leaf.map(|a| a as u16);
-        println!("Received command: {:?}", cmd);
-        match cmd {
-            _ => Err(IMStatusCode::UnsupportedCommand),
-        }
     }
 }

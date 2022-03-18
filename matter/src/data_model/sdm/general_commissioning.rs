@@ -122,14 +122,15 @@ impl ClusterType for GenCommCluster {
         tag: TagType,
         tw: &mut TLVWriter,
         attr_id: u16,
-    ) -> Result<(), Error> {
-        match num::FromPrimitive::from_u16(attr_id).ok_or(Error::Invalid)? {
+    ) -> Result<(), IMStatusCode> {
+        match num::FromPrimitive::from_u16(attr_id).ok_or(IMStatusCode::UnsupportedAttribute)? {
             Attributes::BasicCommissioningInfo => {
-                tw.put_start_struct(tag)?;
-                tw.put_u16(TagType::Context(0), self.expiry_len)?;
-                tw.put_end_container()
+                let _ = tw.put_start_struct(tag);
+                let _ = tw.put_u16(TagType::Context(0), self.expiry_len);
+                let _ = tw.put_end_container();
+                Ok(())
             }
-            _ => Err(Error::Invalid),
+            _ => Err(IMStatusCode::UnsupportedAttribute),
         }
     }
 

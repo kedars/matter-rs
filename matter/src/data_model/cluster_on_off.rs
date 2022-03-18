@@ -3,9 +3,6 @@ use crate::{
     cmd_enter,
     error::*,
     interaction_model::{command::CommandReq, core::IMStatusCode},
-    tlv::TLVElement,
-    tlv_common::TagType,
-    tlv_writer::TLVWriter,
 };
 use log::info;
 use num_derive::FromPrimitive;
@@ -53,19 +50,6 @@ impl ClusterType for OnOffCluster {
     }
     fn base_mut(&mut self) -> &mut Cluster {
         &mut self.base
-    }
-
-    fn read_custom_attribute(
-        &self,
-        _tag: TagType,
-        _tw: &mut TLVWriter,
-        _attr_id: u16,
-    ) -> Result<(), Error> {
-        Err(Error::Invalid)
-    }
-
-    fn write_attribute(&mut self, data: &TLVElement, attr_id: u16) -> Result<(), IMStatusCode> {
-        self.base.write_attribute(data, attr_id)
     }
 
     fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {

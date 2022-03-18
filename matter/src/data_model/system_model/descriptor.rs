@@ -3,10 +3,8 @@ use num_derive::FromPrimitive;
 use crate::data_model::core::DataModel;
 use crate::data_model::objects::*;
 use crate::error::*;
-use crate::interaction_model::command::CommandReq;
 use crate::interaction_model::core::IMStatusCode;
 use crate::interaction_model::messages::GenericPath;
-use crate::tlv::TLVElement;
 use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
 use log::error;
@@ -52,37 +50,27 @@ impl ClusterType for DescriptorCluster {
         tag: TagType,
         tw: &mut TLVWriter,
         attr_id: u16,
-    ) -> Result<(), Error> {
-        match num::FromPrimitive::from_u16(attr_id).ok_or(Error::Invalid)? {
+    ) -> Result<(), IMStatusCode> {
+        match num::FromPrimitive::from_u16(attr_id).ok_or(IMStatusCode::UnsupportedAttribute)? {
             Attributes::ServerList => {
                 let path = GenericPath {
                     endpoint: Some(self.endpoint_id),
                     cluster: None,
                     leaf: None,
                 };
-                tw.put_start_array(tag)?;
+                let _ = tw.put_start_array(tag);
                 let dm = self.data_model.node.read().unwrap();
                 dm.for_each_cluster(&path, |_current_path, c| {
                     tw.put_u32(TagType::Anonymous, c.base().id())
                         .map_err(|_| crate::interaction_model::core::IMStatusCode::Failure)
-                })
-                .map_err(|_| Error::Invalid)?;
-                tw.put_end_container()?;
+                })?;
+                let _ = tw.put_end_container();
             }
             _ => {
                 error!("Not yet supported");
-                return Err(Error::AttributeNotFound);
+                return Err(IMStatusCode::UnsupportedAttribute);
             }
         }
-        Ok(())
-    }
-
-    fn write_attribute(&mut self, data: &TLVElement, attr_id: u16) -> Result<(), IMStatusCode> {
-        self.base.write_attribute(data, attr_id)
-    }
-
-    fn handle_command(&mut self, _cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
-        // NocCommand to handle
         Ok(())
     }
 }

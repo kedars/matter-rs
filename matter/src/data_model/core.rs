@@ -9,14 +9,17 @@ use crate::{
     error::*,
     fabric::FabricMgr,
     interaction_model::{
-        command::CommandReq, core::IMStatusCode, messages::ib, InteractionConsumer, Transaction,
+        command::CommandReq,
+        core::IMStatusCode,
+        messages::ib::{self, AttrPath},
+        InteractionConsumer, Transaction,
     },
     tlv::TLVElement,
     tlv_common::TagType,
     tlv_writer::TLVWriter,
 };
 use log::{error, info};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, RwLockReadGuard};
 
 pub struct DataModel {
     pub node: Arc<RwLock<Box<Node>>>,
@@ -37,6 +40,71 @@ impl DataModel {
             device_type_add_root_node(&mut node, dev_details, dev_att, fabric_mgr)?;
         }
         Ok(dm)
+    }
+
+    // A valid attribute on a valid cluster should be encoded. Both wildcard and non-wildcard paths end up calling this API
+    // Note that it is possibe that some internal checks don't match even at this stage (read on a write-only attribute, invalid attr-id).
+    // If there was an error, we rewind, so the TLVWriter doesn't include any half-baked data about the 'AttrData' IB
+    fn encode_read_attr_data(
+        c: &dyn ClusterType,
+        tw: &mut TLVWriter,
+        path: AttrPath,
+        attr_id: u16,
+    ) -> Result<(), IMStatusCode> {
+        let anchor = tw.get_tail();
+        let data = |tag: TagType, tw: &mut TLVWriter| Cluster::read_attribute(c, tag, tw, attr_id);
+
+        let attr_resp = ib::AttrRespOut::new(c.base().get_dataver(), &path, data);
+        let result = attr_resp.write_tlv(tw, TagType::Anonymous);
+        if result.is_err() {
+            tw.rewind_to(anchor);
+        }
+        result
+    }
+
+    // Encode a read attribute from a path that may or may not be wildcard
+    fn encode_read_attr_path(
+        node: &RwLockReadGuard<Box<Node>>,
+        attr_path: AttrPath,
+        tw: &mut TLVWriter,
+    ) {
+        if let Ok((e, c, a)) = attr_path.path.not_wildcard() {
+            // The non-wildcard path
+            let get_cluster = |e, c| {
+                node.get_endpoint(e)
+                    .map_err(|_| IMStatusCode::UnsupportedEndpoint)?
+                    .get_cluster(c)
+                    .map_err(|_| IMStatusCode::UnsupportedCluster)
+            };
+            let cluster = get_cluster(e, c);
+            let result = match cluster {
+                Ok(cluster) => DataModel::encode_read_attr_data(cluster, tw, attr_path, a as u16),
+                Err(e) => Err(e),
+            };
+
+            if let Err(e) = result {
+                let attr_status = ib::AttrStatus::new(&attr_path.path, e, 0);
+                let attr_resp = ib::AttrRespOut::Status(attr_status, ib::attr_resp_dummy);
+                let _ = tw.put_object(TagType::Anonymous, &attr_resp);
+            }
+        } else {
+            // The wildcard path
+            println!("In wildcard path for {:?}", attr_path.path);
+            let result = node.for_each_attribute(&attr_path.path, |path, c| {
+                println!("In the each attribute loop for {:?}", path);
+                let attr_id = if let Some(a) = path.leaf { a } else { 0 } as u16;
+                let path = ib::AttrPath::new(path);
+                // Note: In the case of wildcard scenario, we do NOT encode AttrStatus in case of errors
+                // This is as per the spec, because we don't want ot encode UnsupportedRead/UnsupportedWrite type of errors
+
+                // TODO: It is likely that there may be genuine cases where the error code needs to be encoded
+                // in this response. If such a thing is desirable, we'll have to make the wildcard traversal
+                // routines 'Access' aware, so that they only provide attributes that are compatible with the
+                // operation under consideration (Access:RV for read, Access:W*for write)
+                let _ = DataModel::encode_read_attr_data(c, tw, path, attr_id);
+                Ok(())
+            });
+        }
     }
 }
 
@@ -120,22 +188,7 @@ impl InteractionConsumer for DataModel {
         let node = self.node.read().unwrap();
         for attr_path_ib in attr_list {
             let attr_path = ib::AttrPath::from_tlv(&attr_path_ib)?;
-            let result = node.for_each_attribute(&attr_path.path, |path, c| {
-                let attr_id = if let Some(a) = path.leaf { a } else { 0 } as u16;
-                let path = ib::AttrPath::new(path);
-                let data =
-                    |tag: TagType, tw: &mut TLVWriter| Cluster::read_attribute(c, tag, tw, attr_id);
-
-                let attr_resp =
-                    ib::AttrRespOut::Data(ib::AttrDataOut::new(c.base().get_dataver(), path, data));
-                let _ = tw.put_object(TagType::Anonymous, &attr_resp);
-                Ok(())
-            });
-            if let Err(e) = result {
-                let attr_status = ib::AttrStatus::new(&attr_path.path, e, 0);
-                let attr_resp = ib::AttrRespOut::Status(attr_status, ib::attr_resp_dummy);
-                let _ = tw.put_object(TagType::Anonymous, &attr_resp);
-            }
+            DataModel::encode_read_attr_path(&node, attr_path, tw);
         }
         Ok(())
     }

@@ -1,3 +1,5 @@
+use crate::error::Error;
+
 // A generic path with endpoint, clusters, and a leaf
 // The leaf could be command, attribute, event
 #[derive(Default, Clone, Copy, Debug, PartialEq)]
@@ -13,6 +15,18 @@ impl GenericPath {
             endpoint,
             cluster,
             leaf,
+        }
+    }
+
+    /// Returns Ok, if the path is non wildcard, otherwise returns an error
+    pub fn not_wildcard(&self) -> Result<(u16, u32, u32), Error> {
+        match *self {
+            GenericPath {
+                endpoint: Some(e),
+                cluster: Some(c),
+                leaf: Some(l),
+            } => Ok((e, c, l)),
+            _ => Err(Error::Invalid),
         }
     }
 }
@@ -284,7 +298,7 @@ pub mod ib {
     #[derive(Debug, Clone, Copy)]
     pub enum AttrRespOut<F>
     where
-        F: Fn(TagType, &mut TLVWriter) -> Result<(), Error>,
+        F: Fn(TagType, &mut TLVWriter) -> Result<(), IMStatusCode>,
     {
         Data(AttrDataOut<F>),
         Status(AttrStatus, F),
@@ -296,28 +310,40 @@ pub mod ib {
         Data = 1,
     }
 
-    pub fn attr_resp_dummy(_a: TagType, _t: &mut TLVWriter) -> Result<(), Error> {
+    pub fn attr_resp_dummy(_a: TagType, _t: &mut TLVWriter) -> Result<(), IMStatusCode> {
         Ok(())
     }
 
-    impl<F: Fn(TagType, &mut TLVWriter) -> Result<(), Error>> ToTLV for AttrRespOut<F> {
+    impl<F: Fn(TagType, &mut TLVWriter) -> Result<(), IMStatusCode>> AttrRespOut<F> {
+        pub fn new(data_ver: u32, path: &AttrPath, data: F) -> Self {
+            AttrRespOut::Data(AttrDataOut::new(data_ver, *path, data))
+        }
+
+        pub fn write_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), IMStatusCode> {
+            let _ = tw.put_start_struct(tag_type);
+            match self {
+                AttrRespOut::Data(data) => {
+                    // In this case, we'll have to add the AttributeDataIb
+                    // The only possible return here is if the AttrData read returns an error
+                    data.write_tlv(tw, TagType::Context(AttrRespTag::Data as u8))?;
+                }
+                AttrRespOut::Status(status, _) => {
+                    // In this case, we'll have to add the AttributeStatusIb
+                    let _ = tw.put_object(TagType::Context(AttrRespTag::Status as u8), status);
+                }
+            }
+            let _ = tw.put_end_container();
+            Ok(())
+        }
+    }
+
+    impl<F: Fn(TagType, &mut TLVWriter) -> Result<(), IMStatusCode>> ToTLV for AttrRespOut<F> {
         fn to_tlv(
             self: &AttrRespOut<F>,
             tw: &mut TLVWriter,
             tag_type: TagType,
         ) -> Result<(), Error> {
-            tw.put_start_struct(tag_type)?;
-            match self {
-                AttrRespOut::Data(data) => {
-                    // In this case, we'll have to add the AttributeDataIb
-                    tw.put_object(TagType::Context(AttrRespTag::Data as u8), data)?;
-                }
-                AttrRespOut::Status(status, _) => {
-                    // In this case, we'll have to add the AttributeStatusIb
-                    tw.put_object(TagType::Context(AttrRespTag::Status as u8), status)?;
-                }
-            }
-            tw.put_end_container()
+            self.write_tlv(tw, tag_type).map_err(|_| Error::Invalid)
         }
     }
 
@@ -386,14 +412,14 @@ pub mod ib {
     #[derive(Debug, Clone, Copy)]
     pub struct AttrDataOut<F>
     where
-        F: Fn(TagType, &mut TLVWriter) -> Result<(), Error>,
+        F: Fn(TagType, &mut TLVWriter) -> Result<(), IMStatusCode>,
     {
         data_ver: u32,
         path: AttrPath,
         data: F,
     }
 
-    impl<F: Fn(TagType, &mut TLVWriter) -> Result<(), Error>> AttrDataOut<F> {
+    impl<F: Fn(TagType, &mut TLVWriter) -> Result<(), IMStatusCode>> AttrDataOut<F> {
         pub fn new(data_ver: u32, path: AttrPath, data: F) -> Self {
             Self {
                 data_ver,
@@ -401,18 +427,23 @@ pub mod ib {
                 data,
             }
         }
-    }
 
-    impl<F: Fn(TagType, &mut TLVWriter) -> Result<(), Error>> ToTLV for AttrDataOut<F> {
-        fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
-            tw.put_start_struct(tag_type)?;
-            tw.put_u32(
+        fn write_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), IMStatusCode> {
+            let _ = tw.put_start_struct(tag_type);
+            let _ = tw.put_u32(
                 TagType::Context(AttrDataTag::DataVersion as u8),
                 self.data_ver,
-            )?;
-            tw.put_object(TagType::Context(AttrDataTag::Path as u8), &self.path)?;
+            );
+            let _ = tw.put_object(TagType::Context(AttrDataTag::Path as u8), &self.path);
             (self.data)(TagType::Context(AttrDataTag::Data as u8), tw)?;
-            tw.put_end_container()
+            let _ = tw.put_end_container();
+            Ok(())
+        }
+    }
+
+    impl<F: Fn(TagType, &mut TLVWriter) -> Result<(), IMStatusCode>> ToTLV for AttrDataOut<F> {
+        fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
+            self.write_tlv(tw, tag_type).map_err(|_| Error::Invalid)
         }
     }
 
