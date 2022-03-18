@@ -122,3 +122,15 @@ pub enum IMStatusCode {
     NoUpstreamSubscription = 0xc5,
     NeedsTimedInteraction = 0xc6,
 }
+
+impl From<Error> for IMStatusCode {
+    fn from(e: Error) -> Self {
+        match e {
+            Error::EndpointNotFound => IMStatusCode::UnsupportedEndpoint,
+            Error::ClusterNotFound => IMStatusCode::UnsupportedCluster,
+            Error::AttributeNotFound => IMStatusCode::UnsupportedAttribute,
+            Error::CommandNotFound => IMStatusCode::UnsupportedCommand,
+            _ => IMStatusCode::Failure,
+        }
+    }
+}
