@@ -149,15 +149,7 @@ fn test_invoke_cmds_unsupported_fields() {
     let expected = &[
         ExpectedInvResp::Status(invalid_endpoint, IMStatusCode::UnsupportedEndpoint as u16),
         ExpectedInvResp::Status(invalid_cluster, IMStatusCode::UnsupportedCluster as u16),
-        ExpectedInvResp::Status(
-            invalid_cluster_wc_endpoint,
-            IMStatusCode::UnsupportedCluster as u16,
-        ),
         ExpectedInvResp::Status(invalid_command, IMStatusCode::UnsupportedCommand as u16),
-        ExpectedInvResp::Status(
-            invalid_command_wc_endpoint,
-            IMStatusCode::UnsupportedCommand as u16,
-        ),
     ];
     handle_commands(input, expected);
 }

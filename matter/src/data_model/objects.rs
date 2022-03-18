@@ -279,20 +279,18 @@ impl Cluster {
     }
 
     // Returns a slice of attribute, with either a single attribute or all (wildcard)
-    pub fn get_wildcard_attribute(
-        &self,
-        attribute: Option<u16>,
-    ) -> Result<&[Box<Attribute>], IMStatusCode> {
+    pub fn get_wildcard_attribute(&self, attribute: Option<u16>) -> &[Box<Attribute>] {
         let attributes = if let Some(a) = attribute {
             if let Some(i) = self.get_attribute_index(a) {
                 &self.attributes[i..i + 1]
             } else {
-                return Err(IMStatusCode::UnsupportedAttribute);
+                // empty slice
+                &[] as &[Box<Attribute>]
             }
         } else {
             &self.attributes[..]
         };
-        Ok(attributes)
+        attributes
     }
 
     pub fn read_attribute(
@@ -433,37 +431,36 @@ impl Endpoint {
     }
 
     // Returns a slice of clusters, with either a single cluster or all (wildcard)
-    pub fn get_wildcard_clusters(
-        &self,
-        cluster: Option<u32>,
-    ) -> Result<&[Box<dyn ClusterType>], IMStatusCode> {
+    pub fn get_wildcard_clusters(&self, cluster: Option<u32>) -> &[Box<dyn ClusterType>] {
         let clusters = if let Some(c) = cluster {
             if let Some(i) = self.get_cluster_index(c) {
                 &self.clusters[i..i + 1]
             } else {
-                return Err(IMStatusCode::UnsupportedCluster);
+                // empty slice
+                &[] as &[Box<dyn ClusterType>]
             }
         } else {
             &self.clusters.as_slice()
         };
-        Ok(clusters)
+        clusters
     }
 
     // Returns a slice of clusters, with either a single cluster or all (wildcard)
     pub fn get_wildcard_clusters_mut(
         &mut self,
         cluster: Option<u32>,
-    ) -> Result<&mut [Box<dyn ClusterType>], IMStatusCode> {
+    ) -> &mut [Box<dyn ClusterType>] {
         let clusters = if let Some(c) = cluster {
             if let Some(i) = self.get_cluster_index(c) {
                 &mut self.clusters[i..i + 1]
             } else {
-                return Err(IMStatusCode::UnsupportedCluster);
+                // empty slice
+                &mut [] as &mut [Box<dyn ClusterType>]
             }
         } else {
             &mut self.clusters[..]
         };
-        Ok(clusters)
+        clusters
     }
 }
 
@@ -547,6 +544,14 @@ impl Node {
         }
     }
 
+    pub fn get_cluster_mut(&mut self, e: u16, c: u32) -> Result<&mut dyn ClusterType, Error> {
+        self.get_endpoint_mut(e)?.get_cluster_mut(c)
+    }
+
+    pub fn get_cluster(&self, e: u16, c: u32) -> Result<&dyn ClusterType, Error> {
+        self.get_endpoint(e)?.get_cluster(c)
+    }
+
     pub fn add_cluster(
         &mut self,
         endpoint_id: u32,
@@ -567,179 +572,111 @@ impl Node {
     pub fn get_wildcard_endpoints(
         &self,
         endpoint: Option<u16>,
-    ) -> Result<(&[Option<Box<Endpoint>>], usize), IMStatusCode> {
+    ) -> (&[Option<Box<Endpoint>>], usize) {
         let endpoints = if let Some(e) = endpoint {
             let e = e as usize;
             if self.endpoints[e].is_none() {
-                return Err(IMStatusCode::UnsupportedEndpoint);
+                // empty slice
+                (&[] as &[Option<Box<Endpoint>>], 0_usize)
+            } else {
+                (&self.endpoints[e..e + 1], e)
             }
-            (&self.endpoints[e..e + 1], e)
         } else {
             (&self.endpoints[..], 0)
         };
-        Ok(endpoints)
+        endpoints
     }
 
     pub fn get_wildcard_endpoints_mut(
         &mut self,
         endpoint: Option<u16>,
-    ) -> Result<(&mut [Option<Box<Endpoint>>], usize), IMStatusCode> {
+    ) -> (&mut [Option<Box<Endpoint>>], usize) {
         let endpoints = if let Some(e) = endpoint {
             let e = e as usize;
             if self.endpoints[e].is_none() {
-                return Err(IMStatusCode::UnsupportedEndpoint);
+                // empty slice
+                (&mut [] as &mut [Option<Box<Endpoint>>], 0_usize)
+            } else {
+                (&mut self.endpoints[e..e + 1], e)
             }
-            (&mut self.endpoints[e..e + 1], e)
         } else {
             (&mut self.endpoints[..], 0)
         };
-        Ok(endpoints)
+        endpoints
     }
 
-    pub fn for_each_endpoint<T>(&self, path: &GenericPath, mut f: T) -> Result<(), IMStatusCode>
+    pub fn for_each_endpoint<T>(&self, path: &GenericPath, mut f: T)
     where
-        T: FnMut(&GenericPath, &Endpoint) -> Result<(), IMStatusCode>,
+        T: FnMut(&GenericPath, &Endpoint),
     {
         let mut current_path = *path;
-        let (endpoints, mut endpoint_id) = self.get_wildcard_endpoints(path.endpoint)?;
+        let (endpoints, mut endpoint_id) = self.get_wildcard_endpoints(path.endpoint);
         for e in endpoints.iter() {
             if let Some(e) = e {
                 current_path.endpoint = Some(endpoint_id as u16);
-                f(&current_path, e.as_ref())?;
+                f(&current_path, e.as_ref());
             }
             endpoint_id += 1;
         }
-        Ok(())
     }
 
-    pub fn for_each_endpoint_mut<T>(
-        &mut self,
-        path: &GenericPath,
-        mut f: T,
-    ) -> Result<(), IMStatusCode>
+    pub fn for_each_endpoint_mut<T>(&mut self, path: &GenericPath, mut f: T)
     where
-        T: FnMut(&GenericPath, &mut Endpoint) -> Result<(), IMStatusCode>,
+        T: FnMut(&GenericPath, &mut Endpoint),
     {
         let mut current_path = *path;
-        let (endpoints, mut endpoint_id) = self.get_wildcard_endpoints_mut(path.endpoint)?;
+        let (endpoints, mut endpoint_id) = self.get_wildcard_endpoints_mut(path.endpoint);
         for e in endpoints.iter_mut() {
             if let Some(e) = e {
                 current_path.endpoint = Some(endpoint_id as u16);
-                f(&current_path, e.as_mut())?;
+                f(&current_path, e.as_mut());
             }
             endpoint_id += 1;
         }
-        Ok(())
     }
 
-    pub fn for_each_cluster<T>(&self, path: &GenericPath, mut f: T) -> Result<(), IMStatusCode>
+    pub fn for_each_cluster<T>(&self, path: &GenericPath, mut f: T)
     where
-        T: FnMut(&GenericPath, &dyn ClusterType) -> Result<(), IMStatusCode>,
+        T: FnMut(&GenericPath, &dyn ClusterType),
     {
-        let mut handled = false;
-        let mut last_err = IMStatusCode::UnsupportedCluster;
-
         self.for_each_endpoint(path, |p, e| {
             let mut current_path = *p;
             let clusters = e.get_wildcard_clusters(p.cluster);
-            if clusters.is_ok() {
-                // We don't fail on error immediately. It is likely the cluster doesn't exist
-                // in this endpoint, but the endpoint field itself was wildcard, so this isn't
-                // a reportable error
-                for c in clusters.unwrap().iter() {
-                    current_path.cluster = Some(c.base().id);
-                    let result = f(&current_path, c.as_ref());
-                    if let Err(e) = result {
-                        last_err = e;
-                    } else {
-                        handled = true;
-                    }
-                }
+            for c in clusters.iter() {
+                current_path.cluster = Some(c.base().id);
+                f(&current_path, c.as_ref());
             }
-            Ok(())
-        })?;
-        if handled {
-            Ok(())
-        } else {
-            // Error is actually reported, only when we couldn't execute any closure
-            // successfully
-            Err(last_err)
-        }
+        });
     }
 
-    pub fn for_each_cluster_mut<T>(
-        &mut self,
-        path: &GenericPath,
-        mut f: T,
-    ) -> Result<(), IMStatusCode>
+    pub fn for_each_cluster_mut<T>(&mut self, path: &GenericPath, mut f: T)
     where
-        T: FnMut(&GenericPath, &mut dyn ClusterType) -> Result<(), IMStatusCode>,
+        T: FnMut(&GenericPath, &mut dyn ClusterType),
     {
-        let mut handled = false;
-        let mut last_err = IMStatusCode::UnsupportedCluster;
-
         self.for_each_endpoint_mut(path, |p, e| {
             let mut current_path = *p;
             let clusters = e.get_wildcard_clusters_mut(p.cluster);
-            if clusters.is_ok() {
-                // We don't fail on error immediately. It is likely the cluster doesn't exist
-                // in this endpoint, but the endpoint field itself was wildcard, so this isn't
-                // a reportable error
-                for c in clusters.unwrap().iter_mut() {
-                    current_path.cluster = Some(c.base().id);
-                    let result = f(&current_path, c.as_mut());
-                    if let Err(e) = result {
-                        last_err = e;
-                    } else {
-                        handled = true;
-                    }
-                }
+
+            for c in clusters.iter_mut() {
+                current_path.cluster = Some(c.base().id);
+                f(&current_path, c.as_mut());
             }
-            Ok(())
-        })?;
-        if handled {
-            Ok(())
-        } else {
-            // Error is actually reported, only when we couldn't execute any closure
-            // successfully
-            Err(last_err)
-        }
+        });
     }
 
-    pub fn for_each_attribute<T>(&self, path: &GenericPath, mut f: T) -> Result<(), IMStatusCode>
+    pub fn for_each_attribute<T>(&self, path: &GenericPath, mut f: T)
     where
-        T: FnMut(&GenericPath, &dyn ClusterType) -> Result<(), IMStatusCode>,
+        T: FnMut(&GenericPath, &dyn ClusterType),
     {
-        let mut handled = false;
-        let mut last_err = IMStatusCode::UnsupportedAttribute;
-
         self.for_each_cluster(path, |current_path, c| {
             let mut current_path = *current_path;
             let attributes = c
                 .base()
                 .get_wildcard_attribute(path.leaf.map(|at| at as u16));
-            if attributes.is_ok() {
-                // We don't fail on error immediately. It is likely the attribute doesn't exist
-                // in this cluster, but the cluster field itself was wildcard, so this isn't
-                // a reportable error
-                for a in attributes.unwrap().iter() {
-                    current_path.leaf = Some(a.id as u32);
-                    let result = f(&current_path, c);
-                    if let Err(e) = result {
-                        last_err = e;
-                    } else {
-                        handled = true;
-                    }
-                }
+            for a in attributes.iter() {
+                current_path.leaf = Some(a.id as u32);
+                f(&current_path, c);
             }
-            Ok(())
-        })?;
-        if handled {
-            Ok(())
-        } else {
-            // Error is actually reported, only when we couldn't execute any closure
-            // successfully
-            Err(last_err)
-        }
+        });
     }
 }

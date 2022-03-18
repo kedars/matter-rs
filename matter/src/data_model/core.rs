@@ -19,7 +19,7 @@ use crate::{
     tlv_writer::TLVWriter,
 };
 use log::{error, info};
-use std::sync::{Arc, RwLock, RwLockReadGuard};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 pub struct DataModel {
     pub node: Arc<RwLock<Box<Node>>>,
@@ -45,7 +45,7 @@ impl DataModel {
     // A valid attribute on a valid cluster should be encoded. Both wildcard and non-wildcard paths end up calling this API
     // Note that it is possibe that some internal checks don't match even at this stage (read on a write-only attribute, invalid attr-id).
     // If there was an error, we rewind, so the TLVWriter doesn't include any half-baked data about the 'AttrData' IB
-    fn encode_read_attr_data(
+    fn handle_read_attr_data(
         c: &dyn ClusterType,
         tw: &mut TLVWriter,
         path: AttrPath,
@@ -63,23 +63,17 @@ impl DataModel {
     }
 
     // Encode a read attribute from a path that may or may not be wildcard
-    fn encode_read_attr_path(
+    fn handle_read_attr_path(
         node: &RwLockReadGuard<Box<Node>>,
         attr_path: AttrPath,
         tw: &mut TLVWriter,
     ) {
         if let Ok((e, c, a)) = attr_path.path.not_wildcard() {
             // The non-wildcard path
-            let get_cluster = |e, c| {
-                node.get_endpoint(e)
-                    .map_err(|_| IMStatusCode::UnsupportedEndpoint)?
-                    .get_cluster(c)
-                    .map_err(|_| IMStatusCode::UnsupportedCluster)
-            };
-            let cluster = get_cluster(e, c);
+            let cluster = node.get_cluster(e, c);
             let result = match cluster {
-                Ok(cluster) => DataModel::encode_read_attr_data(cluster, tw, attr_path, a as u16),
-                Err(e) => Err(e),
+                Ok(cluster) => DataModel::handle_read_attr_data(cluster, tw, attr_path, a as u16),
+                Err(e) => Err(e.into()),
             };
 
             if let Err(e) = result {
@@ -89,9 +83,7 @@ impl DataModel {
             }
         } else {
             // The wildcard path
-            println!("In wildcard path for {:?}", attr_path.path);
-            let result = node.for_each_attribute(&attr_path.path, |path, c| {
-                println!("In the each attribute loop for {:?}", path);
+            node.for_each_attribute(&attr_path.path, |path, c| {
                 let attr_id = if let Some(a) = path.leaf { a } else { 0 } as u16;
                 let path = ib::AttrPath::new(path);
                 // Note: In the case of wildcard scenario, we do NOT encode AttrStatus in case of errors
@@ -101,8 +93,41 @@ impl DataModel {
                 // in this response. If such a thing is desirable, we'll have to make the wildcard traversal
                 // routines 'Access' aware, so that they only provide attributes that are compatible with the
                 // operation under consideration (Access:RV for read, Access:W*for write)
-                let _ = DataModel::encode_read_attr_data(c, tw, path, attr_id);
-                Ok(())
+                let _ = DataModel::handle_read_attr_data(c, tw, path, attr_id);
+            });
+        }
+    }
+
+    // Handle command from a path that may or may not be wildcard
+    fn handle_command_path(node: &mut RwLockWriteGuard<Box<Node>>, cmd_req: &mut CommandReq) {
+        if let Ok((e, c, _cmd)) = cmd_req.cmd.path.not_wildcard() {
+            // The non-wildcard path
+            let cluster = node.get_cluster_mut(e, c);
+            let result: Result<(), IMStatusCode> = match cluster {
+                Ok(cluster) => cluster.handle_command(cmd_req),
+                Err(e) => Err(e.into()),
+            };
+
+            if let Err(e) = result {
+                let status = ib::Status::new(e, 0);
+                let invoke_resp =
+                    ib::InvResponseOut::Status(cmd_req.cmd, status, ib::cmd_resp_dummy);
+                let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
+            }
+        } else {
+            // The wildcard path
+            let path = cmd_req.cmd.path;
+            node.for_each_cluster_mut(&path, |path, c| {
+                cmd_req.cmd.path = *path;
+                let result = c.handle_command(cmd_req);
+                if let Err(e) = result {
+                    if e != IMStatusCode::UnsupportedCommand {
+                        let status = ib::Status::new(e, 0);
+                        let invoke_resp =
+                            ib::InvResponseOut::Status(cmd_req.cmd, status, ib::cmd_resp_dummy);
+                        let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
+                    }
+                }
             });
         }
     }
@@ -154,19 +179,14 @@ impl InteractionConsumer for DataModel {
                 continue;
             }
 
-            let result = node.for_each_cluster_mut(&attr_data.path.path, |path, c| {
+            node.for_each_cluster_mut(&attr_data.path.path, |path, c| {
                 let attr_id = if let Some(a) = path.leaf { a } else { 0 } as u16;
                 let result = c.write_attribute(&attr_data.data, attr_id);
                 if let Err(e) = result {
                     let attr_status = ib::AttrStatus::new(path, e, 0);
                     let _ = tw.put_object(TagType::Anonymous, &attr_status);
                 }
-                Ok(())
             });
-            if let Err(e) = result {
-                let attr_status = ib::AttrStatus::new(&attr_data.path.path, e, 0);
-                let _ = tw.put_object(TagType::Anonymous, &attr_status);
-            }
         }
         Ok(())
     }
@@ -188,7 +208,7 @@ impl InteractionConsumer for DataModel {
         let node = self.node.read().unwrap();
         for attr_path_ib in attr_list {
             let attr_path = ib::AttrPath::from_tlv(&attr_path_ib)?;
-            DataModel::encode_read_attr_path(&node, attr_path, tw);
+            DataModel::handle_read_attr_path(&node, attr_path, tw);
         }
         Ok(())
     }
@@ -210,28 +230,8 @@ impl InteractionConsumer for DataModel {
         };
 
         let mut node = self.node.write().unwrap();
-        let result = node.for_each_cluster_mut(&cmd_path_ib.path, |path, c| {
-            cmd_req.cmd.path = *path;
-            let result = c.handle_command(&mut cmd_req);
-            if let Err(e) = result {
-                if e == IMStatusCode::UnsupportedCommand {
-                    // If this is an error in path component, we don't return error here
-                    return Err(e);
-                }
-                let status = ib::Status::new(e, 0);
-                let invoke_resp =
-                    ib::InvResponseOut::Status(cmd_req.cmd, status, ib::cmd_resp_dummy);
-                let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
-            }
-            Ok(())
-        });
-        if let Err(result) = result {
-            // Err return here implies that the path itself is incorrect
-            let status = ib::Status::new(result, 0);
-            let invoke_resp = ib::InvResponseOut::Status(*cmd_path_ib, status, ib::cmd_resp_dummy);
-            tlvwriter.put_object(TagType::Anonymous, &invoke_resp)?;
-            trans.complete();
-        }
+        DataModel::handle_command_path(&mut node, &mut cmd_req);
+
         Ok(())
     }
 }

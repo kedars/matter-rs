@@ -61,9 +61,8 @@ impl ClusterType for DescriptorCluster {
                 let _ = tw.put_start_array(tag);
                 let dm = self.data_model.node.read().unwrap();
                 dm.for_each_cluster(&path, |_current_path, c| {
-                    tw.put_u32(TagType::Anonymous, c.base().id())
-                        .map_err(|_| crate::interaction_model::core::IMStatusCode::Failure)
-                })?;
+                    let _ = tw.put_u32(TagType::Anonymous, c.base().id());
+                });
                 let _ = tw.put_end_container();
             }
             _ => {
