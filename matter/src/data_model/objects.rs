@@ -522,7 +522,7 @@ impl Node {
         Ok(index as u32)
     }
 
-    pub fn get_endpoint(&self, endpoint_id: u16) -> Result<&Box<Endpoint>, Error> {
+    pub fn get_endpoint(&self, endpoint_id: u16) -> Result<&Endpoint, Error> {
         if (endpoint_id as usize) < ENDPTS_PER_ACC {
             let endpoint = self.endpoints[endpoint_id as usize]
                 .as_ref()
@@ -533,7 +533,7 @@ impl Node {
         }
     }
 
-    pub fn get_endpoint_mut(&mut self, endpoint_id: u16) -> Result<&mut Box<Endpoint>, Error> {
+    pub fn get_endpoint_mut(&mut self, endpoint_id: u16) -> Result<&mut Endpoint, Error> {
         if (endpoint_id as usize) < ENDPTS_PER_ACC {
             let endpoint = self.endpoints[endpoint_id as usize]
                 .as_mut()
