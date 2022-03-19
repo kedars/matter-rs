@@ -12,7 +12,7 @@ use crate::{
         command::CommandReq,
         core::IMStatusCode,
         messages::{
-            ib::{self, AttrDataIn, AttrPath},
+            ib::{self, AttrData, AttrDataType, AttrPath},
             GenericPath,
         },
         InteractionConsumer, Transaction,
@@ -50,10 +50,16 @@ impl DataModel {
         c: &mut dyn ClusterType,
         tw: &mut TLVWriter,
         path: &GenericPath,
-        data: &TLVElement,
+        data: &AttrDataType,
         attr_id: u16,
     ) {
-        let result = c.write_attribute(data, attr_id);
+        let result = match data {
+            &AttrDataType::Closure(_) => {
+                error!("Not supported");
+                Err(IMStatusCode::Failure)
+            }
+            &AttrDataType::Tlv(t) => c.write_attribute(&t, attr_id),
+        };
         if let Err(e) = result {
             let attr_status = ib::AttrStatus::new(path, e, 0);
             let _ = tw.put_object(TagType::Anonymous, &attr_status);
@@ -63,7 +69,7 @@ impl DataModel {
     // Encode a write attribute from a path that may or may not be wildcard
     fn handle_write_attr_path(
         node: &mut RwLockWriteGuard<Box<Node>>,
-        attr_data: &AttrDataIn,
+        attr_data: &AttrData,
         tw: &mut TLVWriter,
     ) {
         if let Ok((e, c, a)) = attr_data.path.path.not_wildcard() {
@@ -79,7 +85,7 @@ impl DataModel {
                 ),
                 Err(e) => {
                     let attr_status = ib::AttrStatus::new(&attr_data.path.path, e.into(), 0);
-                    let attr_resp = ib::AttrRespOut::Status(attr_status, ib::attr_resp_dummy);
+                    let attr_resp = ib::AttrResp::Status(attr_status);
                     let _ = tw.put_object(TagType::Anonymous, &attr_resp);
                 }
             }
@@ -115,7 +121,8 @@ impl DataModel {
         let anchor = tw.get_tail();
         let data = |tag: TagType, tw: &mut TLVWriter| Cluster::read_attribute(c, tag, tw, attr_id);
 
-        let attr_resp = ib::AttrRespOut::new(c.base().get_dataver(), &path, data);
+        let attr_resp =
+            ib::AttrResp::new(c.base().get_dataver(), &path, AttrDataType::Closure(&data));
         let result = attr_resp.write_tlv(tw, TagType::Anonymous);
         if result.is_err() {
             tw.rewind_to(anchor);
@@ -139,7 +146,7 @@ impl DataModel {
 
             if let Err(e) = result {
                 let attr_status = ib::AttrStatus::new(&attr_path.path, e, 0);
-                let attr_resp = ib::AttrRespOut::Status(attr_status, ib::attr_resp_dummy);
+                let attr_resp = ib::AttrResp::Status(attr_status);
                 let _ = tw.put_object(TagType::Anonymous, &attr_resp);
             }
         } else {
@@ -229,8 +236,8 @@ impl InteractionConsumer for DataModel {
 
         let mut node = self.node.write().unwrap();
         for attr_data_ib in attr_list {
-            let attr_data = ib::AttrDataIn::from_tlv(&attr_data_ib)?;
-            error!("Received attr data {:?}", attr_data);
+            let attr_data = ib::AttrData::from_tlv(&attr_data_ib)?;
+            error!("Received attr data ");
             DataModel::handle_write_attr_path(&mut node, &attr_data, tw);
         }
         Ok(())

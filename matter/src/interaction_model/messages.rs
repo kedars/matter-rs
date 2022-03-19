@@ -114,6 +114,8 @@ pub mod msg {
 }
 
 pub mod ib {
+    use std::fmt::{Debug, Formatter};
+
     use crate::{
         error::Error,
         interaction_model::core::IMStatusCode,
@@ -295,13 +297,10 @@ pub mod ib {
     }
 
     // Attribute Response
-    #[derive(Debug, Clone, Copy)]
-    pub enum AttrRespOut<F>
-    where
-        F: Fn(TagType, &mut TLVWriter) -> Result<(), IMStatusCode>,
-    {
-        Data(AttrDataOut<F>),
-        Status(AttrStatus, F),
+    #[derive(Clone, Copy)]
+    pub enum AttrResp<'a> {
+        Data(AttrData<'a>),
+        Status(AttrStatus),
     }
 
     #[derive(FromPrimitive)]
@@ -314,20 +313,20 @@ pub mod ib {
         Ok(())
     }
 
-    impl<F: Fn(TagType, &mut TLVWriter) -> Result<(), IMStatusCode>> AttrRespOut<F> {
-        pub fn new(data_ver: u32, path: &AttrPath, data: F) -> Self {
-            AttrRespOut::Data(AttrDataOut::new(data_ver, *path, data))
+    impl<'a> AttrResp<'a> {
+        pub fn new(data_ver: u32, path: &AttrPath, data: AttrDataType<'a>) -> Self {
+            AttrResp::Data(AttrData::new(Some(data_ver), *path, data))
         }
 
         pub fn write_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), IMStatusCode> {
             let _ = tw.put_start_struct(tag_type);
             match self {
-                AttrRespOut::Data(data) => {
+                AttrResp::Data(data) => {
                     // In this case, we'll have to add the AttributeDataIb
                     // The only possible return here is if the AttrData read returns an error
                     data.write_tlv(tw, TagType::Context(AttrRespTag::Data as u8))?;
                 }
-                AttrRespOut::Status(status, _) => {
+                AttrResp::Status(status) => {
                     // In this case, we'll have to add the AttributeStatusIb
                     let _ = tw.put_object(TagType::Context(AttrRespTag::Status as u8), status);
                 }
@@ -335,24 +334,7 @@ pub mod ib {
             let _ = tw.put_end_container();
             Ok(())
         }
-    }
 
-    impl<F: Fn(TagType, &mut TLVWriter) -> Result<(), IMStatusCode>> ToTLV for AttrRespOut<F> {
-        fn to_tlv(
-            self: &AttrRespOut<F>,
-            tw: &mut TLVWriter,
-            tag_type: TagType,
-        ) -> Result<(), Error> {
-            self.write_tlv(tw, tag_type).map_err(|_| Error::Invalid)
-        }
-    }
-
-    pub enum AttrRespIn<'a> {
-        Data(AttrDataIn<'a>),
-        Status(AttrStatus),
-    }
-
-    impl<'a> AttrRespIn<'a> {
         pub fn from_tlv(resp: &TLVElement<'a>) -> Result<Self, Error> {
             let resp = resp
                 .confirm_struct()?
@@ -368,18 +350,57 @@ pub mod ib {
             };
 
             match num::FromPrimitive::from_u8(tag).ok_or(Error::Invalid)? {
-                AttrRespTag::Data => Ok(AttrRespIn::Data(AttrDataIn::from_tlv(&resp)?)),
-                AttrRespTag::Status => Ok(AttrRespIn::Status(AttrStatus::from_tlv(&resp)?)),
+                AttrRespTag::Data => Ok(AttrResp::Data(AttrData::from_tlv(&resp)?)),
+                AttrRespTag::Status => Ok(AttrResp::Status(AttrStatus::from_tlv(&resp)?)),
             }
         }
     }
 
+    impl<'a> ToTLV for AttrResp<'a> {
+        fn to_tlv(self: &AttrResp<'a>, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
+            self.write_tlv(tw, tag_type).map_err(|_| Error::Invalid)
+        }
+    }
+
+    type AttrDataGen<'a> = &'a dyn Fn(TagType, &mut TLVWriter) -> Result<(), IMStatusCode>;
+
+    #[derive(Clone, Copy)]
+    pub enum AttrDataType<'a> {
+        Closure(AttrDataGen<'a>),
+        Tlv(TLVElement<'a>),
+    }
+
+    impl<'a> PartialEq for AttrDataType<'a> {
+        fn eq(&self, other: &Self) -> bool {
+            match *self {
+                AttrDataType::Closure(_) => false,
+                AttrDataType::Tlv(a) => {
+                    if let AttrDataType::Tlv(b) = *other {
+                        a == b
+                    } else {
+                        false
+                    }
+                }
+            }
+        }
+    }
+
+    impl<'a> Debug for AttrDataType<'a> {
+        fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+            match *self {
+                AttrDataType::Closure(_) => write!(f, "Contains closure"),
+                AttrDataType::Tlv(t) => write!(f, "{:?}", t),
+            }?;
+            Ok(())
+        }
+    }
+
     // Attribute Data
-    #[derive(Debug, Clone, Copy, PartialEq)]
-    pub struct AttrDataIn<'a> {
+    #[derive(Clone, Copy, PartialEq)]
+    pub struct AttrData<'a> {
         pub data_ver: Option<u32>,
         pub path: AttrPath,
-        pub data: TLVElement<'a>,
+        pub data: AttrDataType<'a>,
     }
 
     pub enum AttrDataTag {
@@ -388,7 +409,15 @@ pub mod ib {
         Data = 2,
     }
 
-    impl<'a> AttrDataIn<'a> {
+    impl<'a> AttrData<'a> {
+        pub fn new(data_ver: Option<u32>, path: AttrPath, data: AttrDataType<'a>) -> Self {
+            Self {
+                data_ver,
+                path,
+                data,
+            }
+        }
+
         pub fn from_tlv(attr_data: &TLVElement<'a>) -> Result<Self, Error> {
             let data_ver_tag = attr_data.find_tag(AttrDataTag::DataVersion as u32);
             let data_ver = if data_ver_tag.is_ok() {
@@ -404,44 +433,26 @@ pub mod ib {
             Ok(Self {
                 data_ver,
                 path,
-                data,
+                data: AttrDataType::Tlv(data),
             })
-        }
-    }
-
-    #[derive(Debug, Clone, Copy)]
-    pub struct AttrDataOut<F>
-    where
-        F: Fn(TagType, &mut TLVWriter) -> Result<(), IMStatusCode>,
-    {
-        data_ver: u32,
-        path: AttrPath,
-        data: F,
-    }
-
-    impl<F: Fn(TagType, &mut TLVWriter) -> Result<(), IMStatusCode>> AttrDataOut<F> {
-        pub fn new(data_ver: u32, path: AttrPath, data: F) -> Self {
-            Self {
-                data_ver,
-                path,
-                data,
-            }
         }
 
         fn write_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), IMStatusCode> {
             let _ = tw.put_start_struct(tag_type);
-            let _ = tw.put_u32(
-                TagType::Context(AttrDataTag::DataVersion as u8),
-                self.data_ver,
-            );
+            if let Some(data_ver) = self.data_ver {
+                let _ = tw.put_u32(TagType::Context(AttrDataTag::DataVersion as u8), data_ver);
+            }
             let _ = tw.put_object(TagType::Context(AttrDataTag::Path as u8), &self.path);
-            (self.data)(TagType::Context(AttrDataTag::Data as u8), tw)?;
+            match self.data {
+                AttrDataType::Closure(f) => (f)(TagType::Context(AttrDataTag::Data as u8), tw)?,
+                AttrDataType::Tlv(_) => (panic!("Not yet implemented")),
+            }
             let _ = tw.put_end_container();
             Ok(())
         }
     }
 
-    impl<F: Fn(TagType, &mut TLVWriter) -> Result<(), IMStatusCode>> ToTLV for AttrDataOut<F> {
+    impl<'a> ToTLV for AttrData<'a> {
         fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
             self.write_tlv(tw, tag_type).map_err(|_| Error::Invalid)
         }

@@ -3,7 +3,7 @@ use matter::{
     interaction_model::{
         core::{IMStatusCode, OpCode},
         messages::{
-            ib::{AttrDataIn, AttrDataTag, AttrPath, AttrRespIn, AttrStatus},
+            ib::{AttrData, AttrDataTag, AttrDataType, AttrPath, AttrResp, AttrStatus},
             msg::ReadReq,
         },
         messages::{msg, GenericPath},
@@ -18,7 +18,7 @@ use matter::{
 use crate::common::{echo_cluster, im_engine::im_engine};
 
 enum ExpectedReportData<'a> {
-    Data(AttrDataIn<'a>),
+    Data(AttrData<'a>),
     Status(AttrStatus),
 }
 
@@ -49,10 +49,10 @@ fn handle_read_reqs(input: &[AttrPath], expected: &[ExpectedReportData]) {
         .unwrap();
     for response in response_iter {
         println!("Validating index {}", index);
-        let inv_response = AttrRespIn::from_tlv(&response).unwrap();
+        let inv_response = AttrResp::from_tlv(&response).unwrap();
         match expected[index] {
             ExpectedReportData::Data(e_d) => match inv_response {
-                AttrRespIn::Data(d) => {
+                AttrResp::Data(d) => {
                     assert_eq!(e_d.path, d.path);
                     assert_eq!(e_d.data, d.data);
                 }
@@ -61,7 +61,7 @@ fn handle_read_reqs(input: &[AttrPath], expected: &[ExpectedReportData]) {
                 }
             },
             ExpectedReportData::Status(e_s) => match inv_response {
-                AttrRespIn::Status(s) => {
+                AttrResp::Status(s) => {
                     assert_eq!(e_s, s);
                 }
                 _ => {
@@ -77,13 +77,16 @@ fn handle_read_reqs(input: &[AttrPath], expected: &[ExpectedReportData]) {
 
 macro_rules! attr_data {
     ($path:expr, $data:expr) => {
-        ExpectedReportData::Data(AttrDataIn {
+        ExpectedReportData::Data(AttrData {
             data_ver: None,
             path: AttrPath {
                 path: $path,
                 ..Default::default()
             },
-            data: TLVElement::new(TagType::Context(AttrDataTag::Data as u8), $data),
+            data: AttrDataType::Tlv(TLVElement::new(
+                TagType::Context(AttrDataTag::Data as u8),
+                $data,
+            )),
         })
     };
 }
