@@ -1,5 +1,4 @@
 use crate::cmd_enter;
-use crate::cmd_path_ib;
 use crate::data_model::objects::*;
 use crate::data_model::sdm::failsafe::FailSafe;
 use crate::interaction_model::core::IMStatusCode;
@@ -40,14 +39,6 @@ pub enum Commands {
     CommissioningComplete = 0x04,
     CommissioningCompleteResp = 0x05,
 }
-
-const CMD_PATH_ARMFAILSAFE_RESP: ib::CmdPath = cmd_path_ib!(0, ID, Commands::ArmFailsafeResp);
-
-const CMD_PATH_SETREGULATORY_RESP: ib::CmdPath =
-    cmd_path_ib!(0, ID, Commands::SetRegulatoryConfigResp);
-
-const CMD_PATH_COMMISSIONING_COMPLETE_RESP: ib::CmdPath =
-    cmd_path_ib!(0, ID, Commands::CommissioningCompleteResp);
 
 pub enum RegLocationType {
     Indoor = 0,
@@ -196,12 +187,12 @@ impl GenCommCluster {
             return Err(IMStatusCode::Busy);
         }
 
-        let invoke_resp =
-            ib::InvResponseOut::Cmd(ib::CmdData::new(CMD_PATH_ARMFAILSAFE_RESP, |t| {
-                t.put_u8(TagType::Context(0), CommissioningError::Ok as u8)?;
-                t.put_utf8(TagType::Context(1), b"")
-            }));
-        let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
+        let cmd_data = |t: &mut TLVWriter| {
+            t.put_u8(TagType::Context(0), CommissioningError::Ok as u8)?;
+            t.put_utf8(TagType::Context(1), b"")
+        };
+        let resp = ib::InvResp::cmd_new(0, ID, Commands::ArmFailsafeResp as u16, &cmd_data);
+        let _ = cmd_req.resp.put_object(TagType::Anonymous, &resp);
         cmd_req.trans.complete();
         Ok(())
     }
@@ -220,12 +211,12 @@ impl GenCommCluster {
             .map_err(|_| IMStatusCode::InvalidCommand)?;
         info!("Received country code: {:?}", country_code);
 
-        let invoke_resp =
-            ib::InvResponseOut::Cmd(ib::CmdData::new(CMD_PATH_SETREGULATORY_RESP, |t| {
-                t.put_u8(TagType::Context(0), 0)?;
-                t.put_utf8(TagType::Context(1), b"")
-            }));
-        let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
+        let cmd_data = |t: &mut TLVWriter| {
+            t.put_u8(TagType::Context(0), 0)?;
+            t.put_utf8(TagType::Context(1), b"")
+        };
+        let resp = ib::InvResp::cmd_new(0, ID, Commands::SetRegulatoryConfigResp as u16, &cmd_data);
+        let _ = cmd_req.resp.put_object(TagType::Anonymous, &resp);
         cmd_req.trans.complete();
         Ok(())
     }
@@ -252,14 +243,14 @@ impl GenCommCluster {
             status = CommissioningError::ErrInvalidAuth as u8;
         }
 
-        let invoke_resp = ib::InvResponseOut::Cmd(ib::CmdData::new(
-            CMD_PATH_COMMISSIONING_COMPLETE_RESP,
-            |t| {
-                t.put_u8(TagType::Context(0), status)?;
-                t.put_utf8(TagType::Context(1), b"")
-            },
-        ));
-        let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
+        let cmd_data = |t: &mut TLVWriter| {
+            t.put_u8(TagType::Context(0), status)?;
+            t.put_utf8(TagType::Context(1), b"")
+        };
+
+        let resp =
+            ib::InvResp::cmd_new(0, ID, Commands::CommissioningCompleteResp as u16, &cmd_data);
+        let _ = cmd_req.resp.put_object(TagType::Anonymous, &resp);
         cmd_req.trans.complete();
         Ok(())
     }

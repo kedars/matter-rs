@@ -2,7 +2,7 @@ use matter::{
     data_model::cluster_on_off,
     interaction_model::{
         core::{IMStatusCode, OpCode},
-        messages::ib::{CmdPath, InvResponseIn},
+        messages::ib::{CmdDataType, CmdPath, InvResp},
         messages::msg,
     },
     proto_demux::ProtoTx,
@@ -46,19 +46,24 @@ fn handle_commands(input: &[(CmdPath, Option<u8>)], expected: &[ExpectedInvResp]
         .unwrap();
     for response in cmd_list_iter {
         println!("Validating index {}", index);
-        let inv_response = InvResponseIn::from_tlv(&response).unwrap();
+        let inv_response = InvResp::from_tlv(&response).unwrap();
         match expected[index] {
             ExpectedInvResp::Cmd(e_c, e_d) => match inv_response {
-                InvResponseIn::Cmd(c, d) => {
-                    assert_eq!(e_c, c);
-                    assert_eq!(e_d, d.find_tag(0).unwrap().get_u8().unwrap());
+                InvResp::Cmd(c) => {
+                    assert_eq!(e_c, c.path);
+                    match c.data {
+                        CmdDataType::Tlv(t) => {
+                            assert_eq!(e_d, t.find_tag(0).unwrap().get_u8().unwrap())
+                        }
+                        _ => panic!("Incorrect CmdDataType"),
+                    }
                 }
                 _ => {
                     panic!("Invalid response, expected InvResponse::Cmd");
                 }
             },
             ExpectedInvResp::Status(e_c, e_status) => match inv_response {
-                InvResponseIn::Status(c, status) => {
+                InvResp::Status(c, status) => {
                     assert_eq!(e_c, c);
                     assert_eq!(e_status, status.status as u16);
                 }

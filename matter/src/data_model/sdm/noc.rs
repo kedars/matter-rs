@@ -14,7 +14,7 @@ use crate::tlv_common::TagType;
 use crate::tlv_writer::TLVWriter;
 use crate::transport::session::SessionMode;
 use crate::utils::writebuf::WriteBuf;
-use crate::{cmd_enter, cmd_path_ib, error::*};
+use crate::{cmd_enter, error::*};
 use log::{error, info};
 use num_derive::FromPrimitive;
 
@@ -61,11 +61,6 @@ pub enum Commands {
     NOCResp = 0x08,
     AddTrustedRootCert = 0x0b,
 }
-
-const CMD_PATH_CSRRESPONSE: ib::CmdPath = cmd_path_ib!(0, ID, Commands::CSRResp);
-const CMD_PATH_NOCRESPONSE: ib::CmdPath = cmd_path_ib!(0, ID, Commands::NOCResp);
-const CMD_PATH_CERTCHAINRESPONSE: ib::CmdPath = cmd_path_ib!(0, ID, Commands::CertChainResp);
-const CMD_PATH_ATTRESPONSE: ib::CmdPath = cmd_path_ib!(0, ID, Commands::AttReqResp);
 
 pub struct NocCluster {
     base: Cluster,
@@ -140,15 +135,17 @@ impl NocCluster {
         if self.failsafe.record_add_noc(fab_idx).is_err() {
             error!("Failed to record NoC in the FailSafe, what to do?");
         }
-        let invoke_resp = ib::InvResponseOut::Cmd(ib::CmdData::new(CMD_PATH_NOCRESPONSE, |t| {
+
+        let cmd_data = &|t: &mut TLVWriter| {
             // Status
             t.put_u8(TagType::Context(0), 0)?;
             // Fabric Index  - hard-coded for now
             t.put_u8(TagType::Context(1), fab_idx)?;
             // Debug string
             t.put_utf8(TagType::Context(2), b"")
-        }));
-        let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
+        };
+        let resp = ib::InvResp::cmd_new(0, ID, Commands::NOCResp as u16, &cmd_data);
+        let _ = cmd_req.resp.put_object(TagType::Anonymous, &resp);
         cmd_req.trans.complete();
         Ok(())
     }
@@ -156,11 +153,11 @@ impl NocCluster {
     fn handle_command_addnoc(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
         cmd_enter!("AddNOC");
         if let Err(e) = self._handle_command_addnoc(cmd_req) {
-            let invoke_resp =
-                ib::InvResponseOut::Cmd(ib::CmdData::new(CMD_PATH_NOCRESPONSE, |t| {
-                    // Status
-                    t.put_u8(TagType::Context(0), e as u8)
-                }));
+            let cmd_data = |t: &mut TLVWriter| {
+                // Status
+                t.put_u8(TagType::Context(0), e as u8)
+            };
+            let invoke_resp = ib::InvResp::cmd_new(0, ID, Commands::NOCResp as u16, &cmd_data);
             let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
             cmd_req.trans.complete();
         }
@@ -181,14 +178,15 @@ impl NocCluster {
         let mut attest_challenge = [0u8; crypto::SYMM_KEY_LEN_BYTES];
         attest_challenge.copy_from_slice(cmd_req.trans.session.get_att_challenge());
 
-        let invoke_resp = ib::InvResponseOut::Cmd(ib::CmdData::new(CMD_PATH_ATTRESPONSE, |t| {
+        let cmd_data = |t: &mut TLVWriter| {
             let mut buf: [u8; RESP_MAX] = [0; RESP_MAX];
             let mut attest_element = WriteBuf::new(&mut buf, RESP_MAX);
 
             add_attestation_element(&self.dev_att, att_nonce, &mut attest_element, t)?;
             add_attestation_signature(&self.dev_att, &mut attest_element, &attest_challenge, t)
-        }));
-        let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
+        };
+        let resp = ib::InvResp::cmd_new(0, ID, Commands::AttReqResp as u16, &cmd_data);
+        let _ = cmd_req.resp.put_object(TagType::Anonymous, &resp);
         cmd_req.trans.complete();
         Ok(())
     }
@@ -210,11 +208,9 @@ impl NocCluster {
             .map_err(|_| IMStatusCode::Failure)?;
         let buf = &buf[0..len];
 
-        let invoke_resp =
-            ib::InvResponseOut::Cmd(ib::CmdData::new(CMD_PATH_CERTCHAINRESPONSE, |t| {
-                t.put_str16(TagType::Context(0), buf)
-            }));
-        let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
+        let cmd_data = |t: &mut TLVWriter| t.put_str16(TagType::Context(0), buf);
+        let resp = ib::InvResp::cmd_new(0, ID, Commands::CertChainResp as u16, &cmd_data);
+        let _ = cmd_req.resp.put_object(TagType::Anonymous, &resp);
         cmd_req.trans.complete();
         Ok(())
     }
@@ -238,15 +234,16 @@ impl NocCluster {
         let mut attest_challenge = [0u8; crypto::SYMM_KEY_LEN_BYTES];
         attest_challenge.copy_from_slice(cmd_req.trans.session.get_att_challenge());
 
-        let invoke_resp = ib::InvResponseOut::Cmd(ib::CmdData::new(CMD_PATH_CSRRESPONSE, |t| {
+        let cmd_data = |t: &mut TLVWriter| {
             let mut buf: [u8; RESP_MAX] = [0; RESP_MAX];
             let mut nocsr_element = WriteBuf::new(&mut buf, RESP_MAX);
 
             add_nocsrelement(&noc_keypair, csr_nonce, &mut nocsr_element, t)?;
             add_attestation_signature(&self.dev_att, &mut nocsr_element, &attest_challenge, t)
-        }));
+        };
+        let resp = ib::InvResp::cmd_new(0, ID, Commands::CSRResp as u16, &cmd_data);
 
-        let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
+        let _ = cmd_req.resp.put_object(TagType::Anonymous, &resp);
         let noc_data = Box::new(NocData::new(noc_keypair));
         // Store this in the session data instead of cluster data, so it gets cleared
         // if the session goes away for some reason

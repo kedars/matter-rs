@@ -178,8 +178,7 @@ impl DataModel {
 
             if let Err(e) = result {
                 let status = ib::Status::new(e, 0);
-                let invoke_resp =
-                    ib::InvResponseOut::Status(cmd_req.cmd, status, ib::cmd_resp_dummy);
+                let invoke_resp = ib::InvResp::Status(cmd_req.cmd, status);
                 let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
             }
         } else {
@@ -194,8 +193,7 @@ impl DataModel {
                     // encoded as CmdStatus
                     if e != IMStatusCode::UnsupportedCommand {
                         let status = ib::Status::new(e, 0);
-                        let invoke_resp =
-                            ib::InvResponseOut::Status(cmd_req.cmd, status, ib::cmd_resp_dummy);
+                        let invoke_resp = ib::InvResp::Status(cmd_req.cmd, status);
                         let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
                     }
                 }
