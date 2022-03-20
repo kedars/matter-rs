@@ -10,15 +10,6 @@ use crate::{
 
 use super::{core::OpCode, messages::msg, InteractionModel, Transaction};
 
-// TODO: This is different between the spec and C++
-enum Tag {
-    SuppressResponse = 0,
-    _TimedRequest = 1,
-    WriteRequests = 2,
-    _MoreChunkedMsgs = 3,
-    FabricFiltered = 4,
-}
-
 impl InteractionModel {
     pub fn handle_write_req(
         &mut self,
@@ -30,8 +21,12 @@ impl InteractionModel {
 
         let mut tw = TLVWriter::new(&mut proto_tx.write_buf);
         let root = get_root_node_struct(rx_buf)?;
-        let fab_scoped = root.find_tag(Tag::FabricFiltered as u32)?.get_bool()?;
-        let supress_response = if root.find_tag(Tag::SuppressResponse as u32).is_ok() {
+        // TODO: This is found in the spec, but not in the C++ implementation
+        let fab_scoped = false;
+        let supress_response = if root
+            .find_tag(msg::WriteReqTag::SuppressResponse as u32)
+            .is_ok()
+        {
             true
         } else {
             false
@@ -39,11 +34,9 @@ impl InteractionModel {
 
         tw.put_start_struct(TagType::Anonymous)?;
 
-        let attr_list_iter = root.find_tag(Tag::WriteRequests as u32);
+        let attr_list_iter = root.find_tag(msg::WriteReqTag::WriteRequests as u32);
         if attr_list_iter.is_ok() {
-            tw.put_start_array(TagType::Context(
-                msg::WriteResponseTag::WriteResponses as u8,
-            ))?;
+            tw.put_start_array(TagType::Context(msg::WriteRespTag::WriteResponses as u8))?;
             self.consumer
                 .consume_write_attr(attr_list_iter?, fab_scoped, &mut tw)?;
             tw.put_end_container()?;

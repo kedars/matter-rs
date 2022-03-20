@@ -136,7 +136,7 @@ impl NocCluster {
             error!("Failed to record NoC in the FailSafe, what to do?");
         }
 
-        let cmd_data = &|t: &mut TLVWriter| {
+        let cmd_data = |t: &mut TLVWriter| {
             // Status
             t.put_u8(TagType::Context(0), 0)?;
             // Fabric Index  - hard-coded for now

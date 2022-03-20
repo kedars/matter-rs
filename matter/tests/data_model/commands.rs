@@ -38,7 +38,7 @@ fn handle_commands(input: &[(CmdPath, Option<u8>)], expected: &[ExpectedInvResp]
 
     let mut index = 0;
     let cmd_list_iter = root
-        .find_tag(msg::InvResponseTag::InvokeResponses as u32)
+        .find_tag(msg::InvRespTag::InvokeResponses as u32)
         .unwrap()
         .confirm_array()
         .unwrap()

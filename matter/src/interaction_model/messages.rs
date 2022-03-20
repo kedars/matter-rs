@@ -38,14 +38,14 @@ pub mod msg {
         tlv_writer::{TLVWriter, ToTLV},
     };
 
-    use super::ib::AttrPath;
+    use super::ib::{AttrData, AttrPath};
 
-    pub enum InvResponseTag {
+    pub enum InvRespTag {
         SupressResponse = 0,
         InvokeResponses = 1,
     }
 
-    pub enum InvRequestTag {
+    pub enum InvReqTag {
         SupressResponse = 0,
         TimedReq = 1,
         InvokeRequests = 2,
@@ -97,6 +97,46 @@ pub mod msg {
         }
     }
 
+    pub enum WriteReqTag {
+        SuppressResponse = 0,
+        _TimedRequest = 1,
+        WriteRequests = 2,
+        _MoreChunkedMsgs = 3,
+    }
+
+    pub struct WriteReq<'a, 'b> {
+        supress_response: bool,
+        write_requests: &'a [AttrData<'b>],
+    }
+
+    impl<'a, 'b> WriteReq<'a, 'b> {
+        pub fn new(supress_response: bool, write_requests: &'a [AttrData<'b>]) -> Self {
+            Self {
+                supress_response,
+                write_requests,
+            }
+        }
+    }
+
+    impl<'a, 'b> ToTLV for WriteReq<'a, 'b> {
+        fn to_tlv(
+            self: &WriteReq<'a, 'b>,
+            tw: &mut TLVWriter,
+            tag_type: TagType,
+        ) -> Result<(), Error> {
+            tw.put_start_struct(tag_type)?;
+            if self.supress_response {
+                tw.put_bool(TagType::Context(WriteReqTag::SuppressResponse as u8), true)?;
+            }
+            tw.put_start_array(TagType::Context(WriteReqTag::WriteRequests as u8))?;
+            for request in self.write_requests {
+                tw.put_object(TagType::Anonymous, request)?;
+            }
+            tw.put_end_container()?;
+            tw.put_end_container()
+        }
+    }
+
     // Report Data
     // TODO: Differs from spec
     pub enum ReportDataTag {
@@ -108,7 +148,7 @@ pub mod msg {
     }
 
     // Write Response
-    pub enum WriteResponseTag {
+    pub enum WriteRespTag {
         WriteResponses = 0,
     }
 }

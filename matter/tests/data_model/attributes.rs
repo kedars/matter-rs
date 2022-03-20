@@ -1,10 +1,14 @@
 use matter::{
-    data_model::{cluster_on_off, objects::GlobalElements},
+    data_model::{
+        cluster_on_off,
+        core::DataModel,
+        objects::{AttrValue, GlobalElements},
+    },
     interaction_model::{
         core::{IMStatusCode, OpCode},
         messages::{
             ib::{AttrData, AttrDataTag, AttrDataType, AttrPath, AttrResp, AttrStatus},
-            msg::ReadReq,
+            msg::{ReadReq, WriteReq},
         },
         messages::{msg, GenericPath},
     },
@@ -75,6 +79,42 @@ fn handle_read_reqs(input: &[AttrPath], expected: &[ExpectedReportData]) {
     assert_eq!(index, expected.len());
 }
 
+// Helper for handling Invoke Command sequences
+fn handle_write_reqs(input: &[AttrData], expected: &[AttrStatus]) -> DataModel {
+    let mut buf = [0u8; 400];
+
+    let buf_len = buf.len();
+    let mut wb = WriteBuf::new(&mut buf, buf_len);
+    let mut tw = TLVWriter::new(&mut wb);
+    let mut out_buf = [0u8; 400];
+    let mut proto_tx = ProtoTx::new(&mut out_buf, 0).unwrap();
+
+    let write_req = WriteReq::new(false, input);
+    tw.put_object(TagType::Anonymous, &write_req).unwrap();
+
+    let dm = im_engine(OpCode::WriteRequest, wb.as_borrow_slice(), &mut proto_tx);
+    tlv::print_tlv_list(proto_tx.write_buf.as_borrow_slice());
+    let root = tlv::get_root_node_struct(proto_tx.write_buf.as_borrow_slice()).unwrap();
+
+    let mut index = 0;
+    let response_iter = root
+        .find_tag(msg::WriteRespTag::WriteResponses as u32)
+        .unwrap()
+        .confirm_array()
+        .unwrap()
+        .iter()
+        .unwrap();
+    for response in response_iter {
+        println!("Validating index {}", index);
+        let status = AttrStatus::from_tlv(&response).unwrap();
+        assert_eq!(expected[index], status);
+        println!("Index {} success", index);
+        index += 1;
+    }
+    assert_eq!(index, expected.len());
+    dm
+}
+
 macro_rules! attr_data {
     ($path:expr, $data:expr) => {
         ExpectedReportData::Data(AttrData {
@@ -141,10 +181,10 @@ fn test_read_unsupported_fields() {
     // 6 reads
     // - endpoint doesn't exist - UnsupportedEndpoint
     // - cluster doesn't exist - UnsupportedCluster
-    // - cluster doesn't exist and endpoint is wildcard - UnsupportedCluster
+    // - cluster doesn't exist and endpoint is wildcard - Silently ignore
     // - attribute doesn't exist - UnsupportedAttribute
-    // - attribute doesn't exist and endpoint is wildcard - UnsupportedAttribute
-    // - attribute doesn't exist and cluster is wildcard - UnsupportedAttribute
+    // - attribute doesn't exist and endpoint is wildcard - Silently ignore
+    // - attribute doesn't exist and cluster is wildcard - Silently ignore
     let _ = env_logger::try_init();
 
     let invalid_endpoint = GenericPath::new(
@@ -345,4 +385,227 @@ fn test_read_wc_endpoint_wc_attribute() {
         ),
     ];
     handle_read_reqs(input, expected);
+}
+
+#[test]
+fn test_write_success() {
+    // 2 Attr Write Request
+    // - first on endpoint 0, AttWrite
+    // - second on endpoint 1, AttWrite
+    let val0 = 10;
+    let val1 = 15;
+    let _ = env_logger::try_init();
+    let attr_data0 = |tag, t: &mut TLVWriter| {
+        let _ = t.put_u16(tag, val0);
+        Ok(())
+    };
+    let attr_data1 = |tag, t: &mut TLVWriter| {
+        let _ = t.put_u16(tag, val1);
+        Ok(())
+    };
+
+    let ep0_att = GenericPath::new(
+        Some(0),
+        Some(echo_cluster::ID),
+        Some(echo_cluster::Attributes::AttWrite as u32),
+    );
+    let ep1_att = GenericPath::new(
+        Some(1),
+        Some(echo_cluster::ID),
+        Some(echo_cluster::Attributes::AttWrite as u32),
+    );
+
+    let input = &[
+        AttrData::new(
+            None,
+            AttrPath::new(&ep0_att),
+            AttrDataType::Closure(&attr_data0),
+        ),
+        AttrData::new(
+            None,
+            AttrPath::new(&ep1_att),
+            AttrDataType::Closure(&attr_data1),
+        ),
+    ];
+    let expected = &[
+        AttrStatus::new(&ep0_att, IMStatusCode::Sucess, 0),
+        AttrStatus::new(&ep1_att, IMStatusCode::Sucess, 0),
+    ];
+
+    let dm = handle_write_reqs(input, expected);
+    let node = dm.node.read().unwrap();
+    let echo = node.get_cluster(0, echo_cluster::ID).unwrap();
+    assert_eq!(
+        AttrValue::Uint16(val0),
+        *echo
+            .base()
+            .read_attribute_raw(echo_cluster::Attributes::AttWrite as u16)
+            .unwrap()
+    );
+    let echo = node.get_cluster(1, echo_cluster::ID).unwrap();
+    assert_eq!(
+        AttrValue::Uint16(val1),
+        *echo
+            .base()
+            .read_attribute_raw(echo_cluster::Attributes::AttWrite as u16)
+            .unwrap()
+    );
+}
+
+#[test]
+fn test_write_wc_endpoint() {
+    // 1 Attr Write Request
+    // - wildcard endpoint, AttWrite
+    let val0 = 10;
+    let _ = env_logger::try_init();
+    let attr_data0 = |tag, t: &mut TLVWriter| {
+        let _ = t.put_u16(tag, val0);
+        Ok(())
+    };
+
+    let ep_att = GenericPath::new(
+        None,
+        Some(echo_cluster::ID),
+        Some(echo_cluster::Attributes::AttWrite as u32),
+    );
+    let input = &[AttrData::new(
+        None,
+        AttrPath::new(&ep_att),
+        AttrDataType::Closure(&attr_data0),
+    )];
+
+    let ep0_att = GenericPath::new(
+        Some(0),
+        Some(echo_cluster::ID),
+        Some(echo_cluster::Attributes::AttWrite as u32),
+    );
+
+    let ep1_att = GenericPath::new(
+        Some(1),
+        Some(echo_cluster::ID),
+        Some(echo_cluster::Attributes::AttWrite as u32),
+    );
+    let expected = &[
+        AttrStatus::new(&ep0_att, IMStatusCode::Sucess, 0),
+        AttrStatus::new(&ep1_att, IMStatusCode::Sucess, 0),
+    ];
+
+    let dm = handle_write_reqs(input, expected);
+    assert_eq!(
+        AttrValue::Uint16(val0),
+        dm.read_attribute_raw(
+            0,
+            echo_cluster::ID,
+            echo_cluster::Attributes::AttWrite as u16
+        )
+        .unwrap()
+    );
+    assert_eq!(
+        AttrValue::Uint16(val0),
+        dm.read_attribute_raw(
+            0,
+            echo_cluster::ID,
+            echo_cluster::Attributes::AttWrite as u16
+        )
+        .unwrap()
+    );
+}
+
+#[test]
+fn test_write_unsupported_fields() {
+    // 7 writes
+    // - endpoint doesn't exist - UnsupportedEndpoint
+    // - cluster doesn't exist - UnsupportedCluster
+    // - attribute doesn't exist - UnsupportedAttribute
+    // - cluster doesn't exist and endpoint is wildcard - Silently ignore
+    // - attribute doesn't exist and endpoint is wildcard - Silently ignore
+    // - cluster is wildcard - Cluster cannot be wildcard - UnsupportedCluster
+    // - attribute is wildcard - Attribute cannot be wildcard - UnsupportedAttribute
+    let _ = env_logger::try_init();
+
+    let val0 = 50;
+    let attr_data0 = |tag, t: &mut TLVWriter| {
+        let _ = t.put_u16(tag, val0);
+        Ok(())
+    };
+
+    let invalid_endpoint = GenericPath::new(
+        Some(4),
+        Some(echo_cluster::ID),
+        Some(echo_cluster::Attributes::AttWrite as u32),
+    );
+    let invalid_cluster = GenericPath::new(
+        Some(0),
+        Some(0x1234),
+        Some(echo_cluster::Attributes::AttWrite as u32),
+    );
+    let invalid_attribute = GenericPath::new(Some(0), Some(echo_cluster::ID), Some(0x1234));
+    let wc_endpoint_invalid_cluster = GenericPath::new(
+        None,
+        Some(0x1234),
+        Some(echo_cluster::Attributes::AttWrite as u32),
+    );
+    let wc_endpoint_invalid_attribute =
+        GenericPath::new(None, Some(echo_cluster::ID), Some(0x1234));
+    let wc_cluster = GenericPath::new(
+        Some(0),
+        None,
+        Some(echo_cluster::Attributes::AttWrite as u32),
+    );
+    let wc_attribute = GenericPath::new(Some(0), Some(echo_cluster::ID), None);
+
+    let input = &[
+        AttrData::new(
+            None,
+            AttrPath::new(&invalid_endpoint),
+            AttrDataType::Closure(&attr_data0),
+        ),
+        AttrData::new(
+            None,
+            AttrPath::new(&invalid_cluster),
+            AttrDataType::Closure(&attr_data0),
+        ),
+        AttrData::new(
+            None,
+            AttrPath::new(&invalid_attribute),
+            AttrDataType::Closure(&attr_data0),
+        ),
+        AttrData::new(
+            None,
+            AttrPath::new(&wc_endpoint_invalid_cluster),
+            AttrDataType::Closure(&attr_data0),
+        ),
+        AttrData::new(
+            None,
+            AttrPath::new(&wc_endpoint_invalid_attribute),
+            AttrDataType::Closure(&attr_data0),
+        ),
+        AttrData::new(
+            None,
+            AttrPath::new(&wc_cluster),
+            AttrDataType::Closure(&attr_data0),
+        ),
+        AttrData::new(
+            None,
+            AttrPath::new(&wc_attribute),
+            AttrDataType::Closure(&attr_data0),
+        ),
+    ];
+    let expected = &[
+        AttrStatus::new(&invalid_endpoint, IMStatusCode::UnsupportedEndpoint, 0),
+        AttrStatus::new(&invalid_cluster, IMStatusCode::UnsupportedCluster, 0),
+        AttrStatus::new(&invalid_attribute, IMStatusCode::UnsupportedAttribute, 0),
+        AttrStatus::new(&wc_cluster, IMStatusCode::UnsupportedCluster, 0),
+        AttrStatus::new(&wc_attribute, IMStatusCode::UnsupportedAttribute, 0),
+    ];
+    let dm = handle_write_reqs(input, expected);
+    assert_eq!(
+        AttrValue::Uint16(echo_cluster::ATTR_WRITE_DEFAULT_VALUE),
+        dm.read_attribute_raw(
+            0,
+            echo_cluster::ID,
+            echo_cluster::Attributes::AttWrite as u16
+        )
+        .unwrap()
+    );
 }

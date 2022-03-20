@@ -39,7 +39,7 @@ impl InteractionModel {
         let root = get_root_node_struct(rx_buf)?;
         // Spec says tag should be 2, but CHIP Tool sends the tag as 0
         let cmd_list_iter = root
-            .find_tag(msg::InvRequestTag::InvokeRequests as u32)?
+            .find_tag(msg::InvReqTag::InvokeRequests as u32)?
             .confirm_array()?
             .iter()
             .ok_or(Error::InvalidData)?;
@@ -47,11 +47,11 @@ impl InteractionModel {
         tw.put_start_struct(TagType::Anonymous)?;
         // Suppress Response -> TODO: Need to revisit this for cases where we send a command back
         tw.put_bool(
-            TagType::Context(msg::InvResponseTag::SupressResponse as u8),
+            TagType::Context(msg::InvRespTag::SupressResponse as u8),
             false,
         )?;
         // Array of InvokeResponse IBs
-        tw.put_start_array(TagType::Context(msg::InvResponseTag::InvokeResponses as u8))?;
+        tw.put_start_array(TagType::Context(msg::InvRespTag::InvokeResponses as u8))?;
         for cmd_data_ib in cmd_list_iter {
             // CommandDataIB has CommandPath(0) + Data(1)
             let cmd_path_ib = ib::CmdPath::from_tlv(&cmd_data_ib.find_tag(0)?.confirm_list()?)?;

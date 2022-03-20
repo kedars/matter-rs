@@ -45,6 +45,17 @@ impl DataModel {
         Ok(dm)
     }
 
+    pub fn read_attribute_raw(
+        &self,
+        endpoint: u16,
+        cluster: u32,
+        attr: u16,
+    ) -> Result<AttrValue, IMStatusCode> {
+        let node = self.node.read().unwrap();
+        let cluster = node.get_cluster(endpoint, cluster)?;
+        cluster.base().read_attribute_raw(attr).map(|a| *a)
+    }
+
     // A valid attribute on a valid cluster should be encoded. Both wildcard and non-wildcard paths end up calling this API
     fn handle_write_attr_data(
         c: &mut dyn ClusterType,
@@ -52,6 +63,7 @@ impl DataModel {
         path: &GenericPath,
         data: &AttrDataType,
         attr_id: u16,
+        skip_error: bool,
     ) {
         let result = match data {
             &AttrDataType::Closure(_) => {
@@ -60,10 +72,19 @@ impl DataModel {
             }
             &AttrDataType::Tlv(t) => c.write_attribute(&t, attr_id),
         };
-        if let Err(e) = result {
-            let attr_status = ib::AttrStatus::new(path, e, 0);
-            let _ = tw.put_object(TagType::Anonymous, &attr_status);
+        if skip_error && result.is_err() {
+            // For wildcard scenarios
+            return;
         }
+
+        let status_code = if let Err(e) = result {
+            e
+        } else {
+            IMStatusCode::Sucess
+        };
+
+        let attr_status = ib::AttrStatus::new(path, status_code, 0);
+        let _ = tw.put_object(TagType::Anonymous, &attr_status);
     }
 
     // Encode a write attribute from a path that may or may not be wildcard
@@ -82,29 +103,30 @@ impl DataModel {
                     &attr_data.path.path,
                     &attr_data.data,
                     a as u16,
+                    false,
                 ),
                 Err(e) => {
                     let attr_status = ib::AttrStatus::new(&attr_data.path.path, e.into(), 0);
-                    let attr_resp = ib::AttrResp::Status(attr_status);
-                    let _ = tw.put_object(TagType::Anonymous, &attr_resp);
+                    let _ = tw.put_object(TagType::Anonymous, &attr_status);
                 }
             }
         } else {
             // The wildcard path
             if attr_data.path.path.cluster.is_none() || attr_data.path.path.leaf.is_none() {
+                let mut error = IMStatusCode::UnsupportedAttribute;
+                if attr_data.path.path.cluster.is_none() {
+                    error = IMStatusCode::UnsupportedCluster;
+                }
                 error!("Cluster/Attribute cannot be wildcard in Write Interaction");
-                let attr_status = ib::AttrStatus::new(
-                    &attr_data.path.path,
-                    IMStatusCode::UnsupportedAttribute,
-                    0,
-                );
+                let attr_status = ib::AttrStatus::new(&attr_data.path.path, error, 0);
                 let _ = tw.put_object(TagType::Anonymous, &attr_status);
                 return;
             }
 
+            // The wildcard path
             node.for_each_cluster_mut(&attr_data.path.path, |path, c| {
                 let attr_id = if let Some(a) = path.leaf { a } else { 0 } as u16;
-                DataModel::handle_write_attr_data(c, tw, path, &attr_data.data, attr_id);
+                DataModel::handle_write_attr_data(c, tw, path, &attr_data.data, attr_id, true);
             });
         }
     }
@@ -235,7 +257,6 @@ impl InteractionConsumer for DataModel {
         let mut node = self.node.write().unwrap();
         for attr_data_ib in attr_list {
             let attr_data = ib::AttrData::from_tlv(&attr_data_ib)?;
-            error!("Received attr data ");
             DataModel::handle_write_attr_path(&mut node, &attr_data, tw);
         }
         Ok(())

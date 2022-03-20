@@ -88,13 +88,13 @@ impl<'a, 'b> TestData<'a, 'b> {
     pub fn commands(&mut self, cmds: &[(CmdPath, Option<u8>)]) -> Result<(), Error> {
         self.tw.put_start_struct(TagType::Anonymous)?;
         self.tw.put_bool(
-            TagType::Context(msg::InvRequestTag::SupressResponse as u8),
+            TagType::Context(msg::InvReqTag::SupressResponse as u8),
             false,
         )?;
         self.tw
-            .put_bool(TagType::Context(msg::InvRequestTag::TimedReq as u8), false)?;
+            .put_bool(TagType::Context(msg::InvReqTag::TimedReq as u8), false)?;
         self.tw
-            .put_start_array(TagType::Context(msg::InvRequestTag::InvokeRequests as u8))?;
+            .put_start_array(TagType::Context(msg::InvReqTag::InvokeRequests as u8))?;
 
         for (cmd, data) in cmds {
             self.tw.put_start_struct(TagType::Anonymous)?;
