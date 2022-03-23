@@ -111,6 +111,13 @@ impl CryptoKeyPair for KeyPair {
         Ok(len)
     }
 
+    fn get_private_key(&self, priv_key: &mut [u8]) -> Result<usize, Error> {
+        let s = self.private_key()?.private_key().to_vec();
+        let len = s.len();
+        priv_key[..len].copy_from_slice(s.as_slice());
+        Ok(len)
+    }
+
     fn derive_secret(self, peer_pub_key: &[u8], secret: &mut [u8]) -> Result<usize, Error> {
         let self_pkey = PKey::from_ec_key(self.private_key()?.clone())?;
 

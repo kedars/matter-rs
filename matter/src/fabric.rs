@@ -1,4 +1,4 @@
-use std::sync::RwLock;
+use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use log::info;
@@ -8,10 +8,23 @@ use crate::{
     cert::Cert,
     crypto::{self, crypto_dummy::KeyPairDummy, hkdf_sha256, CryptoKeyPair, HmacSha256, KeyPair},
     error::Error,
-    sys::{Mdns, MdnsService},
+    sys::{Mdns, MdnsService, Psm},
 };
 
 const COMPRESSED_FABRIC_ID_LEN: usize = 8;
+
+macro_rules! fb_key {
+    ($index:ident, $key:ident) => {
+        &format!("fb{}{}", $index, $key)
+    };
+}
+
+const ST_RCA: &str = "rca";
+const ST_ICA: &str = "ica";
+const ST_NOC: &str = "noc";
+const ST_IPK: &str = "ipk";
+const ST_PBKEY: &str = "pubkey";
+const ST_PRKEY: &str = "privkey";
 
 #[allow(dead_code)]
 pub struct Fabric {
@@ -125,6 +138,50 @@ impl Fabric {
     pub fn get_fabric_id(&self) -> u64 {
         self.fabric_id
     }
+
+    fn store(&self, index: usize, psm: &MutexGuard<Psm>) -> Result<(), Error> {
+        psm.set_kv_slice(fb_key!(index, ST_RCA), self.root_ca.as_slice()?)?;
+        psm.set_kv_slice(fb_key!(index, ST_ICA), self.icac.as_slice()?)?;
+        psm.set_kv_slice(fb_key!(index, ST_NOC), self.noc.as_slice()?)?;
+        psm.set_kv_slice(fb_key!(index, ST_IPK), self.ipk.as_slice()?)?;
+
+        let mut key = [0_u8; crypto::EC_POINT_LEN_BYTES];
+        let len = self.key_pair.get_public_key(&mut key)?;
+        let key = &key[..len];
+        psm.set_kv_slice(fb_key!(index, ST_PBKEY), &key)?;
+
+        let mut key = [0_u8; crypto::BIGNUM_LEN_BYTES];
+        let len = self.key_pair.get_private_key(&mut key)?;
+        let key = &key[..len];
+        psm.set_kv_slice(fb_key!(index, ST_PRKEY), &key)?;
+
+        Ok(())
+    }
+
+    fn load(index: usize, psm: &MutexGuard<Psm>) -> Result<Self, Error> {
+        let mut root_ca = Vec::new();
+        psm.get_kv_slice(fb_key!(index, ST_RCA), &mut root_ca)?;
+        let mut icac = Vec::new();
+        psm.get_kv_slice(fb_key!(index, ST_ICA), &mut icac)?;
+        let mut noc = Vec::new();
+        psm.get_kv_slice(fb_key!(index, ST_NOC), &mut noc)?;
+        let mut ipk = Vec::new();
+        psm.get_kv_slice(fb_key!(index, ST_IPK), &mut ipk)?;
+
+        let mut pub_key = Vec::new();
+        psm.get_kv_slice(fb_key!(index, ST_PBKEY), &mut pub_key)?;
+        let mut priv_key = Vec::new();
+        psm.get_kv_slice(fb_key!(index, ST_PRKEY), &mut priv_key)?;
+        let keypair = KeyPair::new_from_components(pub_key.as_slice(), priv_key.as_slice())?;
+
+        Fabric::new(
+            keypair,
+            Cert::new(root_ca.as_slice()),
+            Cert::new(icac.as_slice()),
+            Cert::new(noc.as_slice()),
+            Cert::new(ipk.as_slice()),
+        )
+    }
 }
 
 const MAX_SUPPORTED_FABRICS: usize = 3;
@@ -135,29 +192,58 @@ pub struct FabricMgrInner {
     pub fabrics: [Option<Fabric>; MAX_SUPPORTED_FABRICS],
 }
 
-pub struct FabricMgr(RwLock<FabricMgrInner>);
+pub struct FabricMgr {
+    inner: RwLock<FabricMgrInner>,
+    psm: Arc<Mutex<Psm>>,
+}
 
 impl FabricMgr {
     pub fn new() -> Result<Self, Error> {
         let dummy_fabric = Fabric::dummy()?;
         let mut mgr = FabricMgrInner::default();
         mgr.fabrics[0] = Some(dummy_fabric);
-        Ok(Self(RwLock::new(mgr)))
+        let mut mgr = Self {
+            inner: RwLock::new(mgr),
+            psm: Psm::get()?,
+        };
+        mgr.load()?;
+        Ok(mgr)
+    }
+
+    fn store(&self, index: usize, fabric: &Fabric) -> Result<(), Error> {
+        let psm = self.psm.lock().unwrap();
+        fabric.store(index, &psm)
+    }
+
+    fn load(&mut self) -> Result<(), Error> {
+        let mut mgr = self.inner.write()?;
+        let psm = self.psm.lock().unwrap();
+        for i in 0..MAX_SUPPORTED_FABRICS {
+            let result = Fabric::load(i, &psm);
+            if let Ok(fabric) = result {
+                info!("Adding new fabric at index {}", i);
+                mgr.fabrics[i] = Some(fabric);
+            }
+        }
+        Ok(())
     }
 
     pub fn add(&self, f: Fabric) -> Result<u8, Error> {
-        let mut mgr = self.0.write()?;
+        let mut mgr = self.inner.write()?;
         let index = mgr
             .fabrics
             .iter()
             .position(|f| f.is_none())
             .ok_or(Error::NoSpace)?;
+
+        self.store(index, &f)?;
+
         mgr.fabrics[index] = Some(f);
         Ok(index as u8)
     }
 
     pub fn match_dest_id(&self, random: &[u8], target: &[u8]) -> Result<usize, Error> {
-        let mgr = self.0.read()?;
+        let mgr = self.inner.read()?;
         for i in 0..MAX_SUPPORTED_FABRICS {
             if let Some(fabric) = &mgr.fabrics[i] {
                 if fabric.match_dest_id(random, target).is_ok() {
@@ -172,6 +258,6 @@ impl FabricMgr {
         &'me self,
         idx: usize,
     ) -> Result<RwLockReadGuardRef<'ret, FabricMgrInner, Option<Fabric>>, Error> {
-        Ok(RwLockReadGuardRef::new(self.0.read()?).map(|fm| &fm.fabrics[idx]))
+        Ok(RwLockReadGuardRef::new(self.inner.read()?).map(|fm| &fm.fabrics[idx]))
     }
 }

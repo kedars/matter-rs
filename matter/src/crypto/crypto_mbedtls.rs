@@ -100,6 +100,15 @@ impl CryptoKeyPair for KeyPair {
         Ok(len)
     }
 
+    fn get_private_key(&self, priv_key: &mut [u8]) -> Result<usize, Error> {
+        let priv_key_mpi = self.key.ec_private()?;
+        let vec = priv_key_mpi.to_binary()?;
+
+        let len = vec.len();
+        priv_key[..len].copy_from_slice(vec.as_slice());
+        Ok(len)
+    }
+
     fn derive_secret(self, peer_pub_key: &[u8], secret: &mut [u8]) -> Result<usize, Error> {
         // mbedtls requires a 'mut' key. Instead of making a change in our Trait,
         // we just clone the key this way

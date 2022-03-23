@@ -2,7 +2,6 @@ use std::sync::{Arc, Mutex, Once};
 
 use crate::error::Error;
 
-
 use log::error;
 
 pub struct Mdns {}
@@ -11,8 +10,7 @@ static mut G_MDNS: Option<Arc<Mutex<Mdns>>> = None;
 static INIT: Once = Once::new();
 
 #[allow(dead_code)]
-pub struct MdnsService {
-}
+pub struct MdnsService {}
 
 impl Mdns {
     fn new() -> Self {
@@ -29,7 +27,7 @@ impl Mdns {
     }
 
     pub fn publish_service(name: &str) -> Result<MdnsService, Error> {
-	error!("Linux is not yet supported for MDNS Service");
-        Ok(MdnsService {  })
+        error!("Linux is not yet supported for MDNS Service");
+        Ok(MdnsService {})
     }
 }

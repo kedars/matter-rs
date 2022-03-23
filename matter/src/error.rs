@@ -1,4 +1,4 @@
-use std::{fmt, sync::PoisonError, time::SystemTimeError};
+use std::{array::TryFromSliceError, fmt, sync::PoisonError, time::SystemTimeError};
 
 use log::error;
 
@@ -74,6 +74,12 @@ impl From<mbedtls::Error> for Error {
 impl From<SystemTimeError> for Error {
     fn from(_e: SystemTimeError) -> Self {
         Self::SysTimeFail
+    }
+}
+
+impl From<TryFromSliceError> for Error {
+    fn from(_e: TryFromSliceError) -> Self {
+        Self::Invalid
     }
 }
 

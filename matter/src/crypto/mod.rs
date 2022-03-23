@@ -22,6 +22,7 @@ pub const EC_SIGNATURE_LEN_BYTES: usize = 64;
 pub trait CryptoKeyPair {
     fn get_csr<'a>(&self, csr: &'a mut [u8]) -> Result<&'a [u8], Error>;
     fn get_public_key(&self, pub_key: &mut [u8]) -> Result<usize, Error>;
+    fn get_private_key(&self, priv_key: &mut [u8]) -> Result<usize, Error>;
     fn derive_secret(self, peer_pub_key: &[u8], secret: &mut [u8]) -> Result<usize, Error>;
     fn sign_msg(&self, msg: &[u8], signature: &mut [u8]) -> Result<usize, Error>;
     fn verify_msg(&self, msg: &[u8], signature: &[u8]) -> Result<(), Error>;
