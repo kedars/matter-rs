@@ -81,19 +81,19 @@ pub mod msg {
 
     impl<'a> ToTLV for ReadReq<'a> {
         fn to_tlv(self: &ReadReq<'a>, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
-            tw.put_start_struct(tag_type)?;
+            tw.start_struct(tag_type)?;
             if let Some(attr_requests) = self.attr_requests {
-                tw.put_start_array(TagType::Context(ReadReqTag::AttrRequests as u8))?;
+                tw.start_array(TagType::Context(ReadReqTag::AttrRequests as u8))?;
                 for request in attr_requests {
-                    tw.put_object(TagType::Anonymous, request)?;
+                    tw.object(TagType::Anonymous, request)?;
                 }
-                tw.put_end_container()?;
+                tw.end_container()?;
             }
-            tw.put_bool(
+            tw.bool(
                 TagType::Context(ReadReqTag::FabricFiltered as u8),
                 self.fabric_filtered,
             )?;
-            tw.put_end_container()
+            tw.end_container()
         }
     }
 
@@ -124,16 +124,16 @@ pub mod msg {
             tw: &mut TLVWriter,
             tag_type: TagType,
         ) -> Result<(), Error> {
-            tw.put_start_struct(tag_type)?;
+            tw.start_struct(tag_type)?;
             if self.supress_response {
-                tw.put_bool(TagType::Context(WriteReqTag::SuppressResponse as u8), true)?;
+                tw.bool(TagType::Context(WriteReqTag::SuppressResponse as u8), true)?;
             }
-            tw.put_start_array(TagType::Context(WriteReqTag::WriteRequests as u8))?;
+            tw.start_array(TagType::Context(WriteReqTag::WriteRequests as u8))?;
             for request in self.write_requests {
-                tw.put_object(TagType::Anonymous, request)?;
+                tw.object(TagType::Anonymous, request)?;
             }
-            tw.put_end_container()?;
-            tw.put_end_container()
+            tw.end_container()?;
+            tw.end_container()
         }
     }
 
@@ -235,19 +235,19 @@ pub mod ib {
 
     impl<'a> ToTLV for InvResp<'a> {
         fn to_tlv(self: &InvResp<'a>, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
-            tw.put_start_struct(tag_type)?;
+            tw.start_struct(tag_type)?;
             match self {
                 InvResp::Cmd(cmd_data) => {
-                    tw.put_object(TagType::Context(InvRespTag::Cmd as u8), cmd_data)?;
+                    tw.object(TagType::Context(InvRespTag::Cmd as u8), cmd_data)?;
                 }
                 InvResp::Status(cmd_path, status) => {
-                    tw.put_start_struct(TagType::Context(InvRespTag::Status as u8))?;
-                    tw.put_object(TagType::Context(CmdStatusTag::Path as u8), cmd_path)?;
-                    tw.put_object(TagType::Context(CmdStatusTag::Status as u8), status)?;
+                    tw.start_struct(TagType::Context(InvRespTag::Status as u8))?;
+                    tw.object(TagType::Context(CmdStatusTag::Path as u8), cmd_path)?;
+                    tw.object(TagType::Context(CmdStatusTag::Status as u8), status)?;
                 }
             }
-            tw.put_end_container()?;
-            tw.put_end_container()
+            tw.end_container()?;
+            tw.end_container()
         }
     }
 
@@ -291,20 +291,20 @@ pub mod ib {
 
     impl<'a> ToTLV for CmdData<'a> {
         fn to_tlv(self: &CmdData<'a>, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
-            tw.put_start_struct(tag_type)?;
-            tw.put_object(TagType::Context(CmdDataTag::Path as u8), &self.path)?;
+            tw.start_struct(tag_type)?;
+            tw.object(TagType::Context(CmdDataTag::Path as u8), &self.path)?;
             // TODO: We are cheating here a little bit. This following 'Data' need
             // not be a 'structure'. Somebody could directly embed u8 at the tag
             // 'CmdDataTag::Data'. We will have to modify this (and all the callers)
             // when we stumble across that scenario
-            tw.put_start_struct(TagType::Context(CmdDataTag::Data as u8))?;
+            tw.start_struct(TagType::Context(CmdDataTag::Data as u8))?;
             match self.data {
                 CmdDataType::Closure(c) => {
                     (c)(tw)?;
                 }
                 CmdDataType::Tlv(_) => (panic!("Not yet implemented")),
             };
-            tw.put_end_container()
+            tw.end_container()
         }
     }
 
@@ -331,16 +331,16 @@ pub mod ib {
 
     impl ToTLV for Status {
         fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
-            tw.put_start_struct(tag_type)?;
-            tw.put_u16(
+            tw.start_struct(tag_type)?;
+            tw.u16(
                 TagType::Context(StatusTag::Status as u8),
                 self.status as u16,
             )?;
-            tw.put_u16(
+            tw.u16(
                 TagType::Context(StatusTag::ClusterStatus as u8),
                 self.cluster_status,
             )?;
-            tw.put_end_container()
+            tw.end_container()
         }
     }
 
@@ -376,7 +376,7 @@ pub mod ib {
         }
 
         pub fn write_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), IMStatusCode> {
-            let _ = tw.put_start_struct(tag_type);
+            let _ = tw.start_struct(tag_type);
             match self {
                 AttrResp::Data(data) => {
                     // In this case, we'll have to add the AttributeDataIb
@@ -385,10 +385,10 @@ pub mod ib {
                 }
                 AttrResp::Status(status) => {
                     // In this case, we'll have to add the AttributeStatusIb
-                    let _ = tw.put_object(TagType::Context(AttrRespTag::Status as u8), status);
+                    let _ = tw.object(TagType::Context(AttrRespTag::Status as u8), status);
                 }
             }
-            let _ = tw.put_end_container();
+            let _ = tw.end_container();
             Ok(())
         }
 
@@ -495,16 +495,16 @@ pub mod ib {
         }
 
         fn write_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), IMStatusCode> {
-            let _ = tw.put_start_struct(tag_type);
+            let _ = tw.start_struct(tag_type);
             if let Some(data_ver) = self.data_ver {
-                let _ = tw.put_u32(TagType::Context(AttrDataTag::DataVersion as u8), data_ver);
+                let _ = tw.u32(TagType::Context(AttrDataTag::DataVersion as u8), data_ver);
             }
-            let _ = tw.put_object(TagType::Context(AttrDataTag::Path as u8), &self.path);
+            let _ = tw.object(TagType::Context(AttrDataTag::Path as u8), &self.path);
             match self.data {
                 AttrDataType::Closure(f) => (f)(TagType::Context(AttrDataTag::Data as u8), tw)?,
                 AttrDataType::Tlv(_) => (panic!("Not yet implemented")),
             }
-            let _ = tw.put_end_container();
+            let _ = tw.end_container();
             Ok(())
         }
     }
@@ -547,12 +547,12 @@ pub mod ib {
 
     impl ToTLV for AttrStatus {
         fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
-            tw.put_start_struct(tag_type)?;
+            tw.start_struct(tag_type)?;
             // Attribute Status IB
-            tw.put_object(TagType::Context(AttrStatusTag::Path as u8), &self.path)?;
+            tw.object(TagType::Context(AttrStatusTag::Path as u8), &self.path)?;
             // Status IB
-            tw.put_object(TagType::Context(AttrStatusTag::Status as u8), &self.status)?;
-            tw.put_end_container()
+            tw.object(TagType::Context(AttrStatusTag::Status as u8), &self.status)?;
+            tw.end_container()
         }
     }
 
@@ -615,17 +615,17 @@ pub mod ib {
 
     impl ToTLV for AttrPath {
         fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
-            tw.put_start_list(tag_type)?;
+            tw.start_list(tag_type)?;
             if let Some(v) = self.path.endpoint {
-                tw.put_u16(TagType::Context(AttrPathTag::Endpoint as u8), v)?;
+                tw.u16(TagType::Context(AttrPathTag::Endpoint as u8), v)?;
             }
             if let Some(v) = self.path.cluster {
-                tw.put_u32(TagType::Context(AttrPathTag::Cluster as u8), v)?;
+                tw.u32(TagType::Context(AttrPathTag::Cluster as u8), v)?;
             }
             if let Some(v) = self.path.leaf {
-                tw.put_u16(TagType::Context(AttrPathTag::Attribute as u8), v as u16)?;
+                tw.u16(TagType::Context(AttrPathTag::Attribute as u8), v as u16)?;
             }
-            tw.put_end_container()
+            tw.end_container()
         }
     }
 
@@ -700,17 +700,17 @@ pub mod ib {
 
     impl ToTLV for CmdPath {
         fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
-            tw.put_start_list(tag_type)?;
+            tw.start_list(tag_type)?;
             if let Some(endpoint) = self.path.endpoint {
-                tw.put_u16(TagType::Context(CmdPathTag::Endpoint as u8), endpoint)?;
+                tw.u16(TagType::Context(CmdPathTag::Endpoint as u8), endpoint)?;
             }
             if let Some(cluster) = self.path.cluster {
-                tw.put_u32(TagType::Context(CmdPathTag::Cluster as u8), cluster)?;
+                tw.u32(TagType::Context(CmdPathTag::Cluster as u8), cluster)?;
             }
             if let Some(v) = self.path.leaf {
-                tw.put_u16(TagType::Context(CmdPathTag::Command as u8), v as u16)?;
+                tw.u16(TagType::Context(CmdPathTag::Command as u8), v as u16)?;
             }
-            tw.put_end_container()
+            tw.end_container()
         }
     }
 }

@@ -44,14 +44,14 @@ impl InteractionModel {
             .iter()
             .ok_or(Error::InvalidData)?;
 
-        tw.put_start_struct(TagType::Anonymous)?;
+        tw.start_struct(TagType::Anonymous)?;
         // Suppress Response -> TODO: Need to revisit this for cases where we send a command back
-        tw.put_bool(
+        tw.bool(
             TagType::Context(msg::InvRespTag::SupressResponse as u8),
             false,
         )?;
         // Array of InvokeResponse IBs
-        tw.put_start_array(TagType::Context(msg::InvRespTag::InvokeResponses as u8))?;
+        tw.start_array(TagType::Context(msg::InvRespTag::InvokeResponses as u8))?;
         for cmd_data_ib in cmd_list_iter {
             // CommandDataIB has CommandPath(0) + Data(1)
             let cmd_path_ib = ib::CmdPath::from_tlv(&cmd_data_ib.find_tag(0)?.confirm_list()?)?;
@@ -65,8 +65,8 @@ impl InteractionModel {
                     e
                 })?;
         }
-        tw.put_end_container()?;
-        tw.put_end_container()?;
+        tw.end_container()?;
+        tw.end_container()?;
         Ok(ResponseRequired::Yes)
     }
 }

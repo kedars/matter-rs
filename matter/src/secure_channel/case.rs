@@ -243,12 +243,12 @@ impl Case {
 
         // Generate our Response Body
         let mut tw = TLVWriter::new(&mut proto_tx.write_buf);
-        tw.put_start_struct(TagType::Anonymous)?;
-        tw.put_str8(TagType::Context(1), &our_random)?;
-        tw.put_u16(TagType::Context(2), local_sessid)?;
-        tw.put_str8(TagType::Context(3), &case_session.our_pub_key)?;
-        tw.put_str16(TagType::Context(4), encrypted)?;
-        tw.put_end_container()?;
+        tw.start_struct(TagType::Anonymous)?;
+        tw.str8(TagType::Context(1), &our_random)?;
+        tw.u16(TagType::Context(2), local_sessid)?;
+        tw.str8(TagType::Context(3), &case_session.our_pub_key)?;
+        tw.str16(TagType::Context(4), encrypted)?;
+        tw.end_container()?;
         case_session
             .tt_hash
             .update(proto_tx.write_buf.as_borrow_slice())?;
@@ -289,12 +289,12 @@ impl Case {
         let mut buf: [u8; MAX_TBS_SIZE] = [0; MAX_TBS_SIZE];
         let mut write_buf = WriteBuf::new(&mut buf, MAX_TBS_SIZE);
         let mut tw = TLVWriter::new(&mut write_buf);
-        tw.put_start_struct(TagType::Anonymous)?;
-        tw.put_str8(TagType::Context(1), initiator_noc)?;
-        tw.put_str8(TagType::Context(2), initiator_icac)?;
-        tw.put_str8(TagType::Context(3), &case_session.peer_pub_key)?;
-        tw.put_str8(TagType::Context(4), &case_session.our_pub_key)?;
-        tw.put_end_container()?;
+        tw.start_struct(TagType::Anonymous)?;
+        tw.str8(TagType::Context(1), initiator_noc)?;
+        tw.str8(TagType::Context(2), initiator_icac)?;
+        tw.str8(TagType::Context(3), &case_session.peer_pub_key)?;
+        tw.str8(TagType::Context(4), &case_session.our_pub_key)?;
+        tw.end_container()?;
 
         let key = KeyPair::new_from_public(initiator_noc_cert.get_pubkey()?)?;
         key.verify_msg(write_buf.as_slice(), sign)?;
@@ -439,12 +439,12 @@ impl Case {
         let fabric = fabric.as_ref().as_ref().unwrap();
         let mut write_buf = WriteBuf::new(out, out.len());
         let mut tw = TLVWriter::new(&mut write_buf);
-        tw.put_start_struct(TagType::Anonymous)?;
-        tw.put_str8(TagType::Context(1), fabric.noc.as_slice()?)?;
-        tw.put_str8(TagType::Context(2), fabric.icac.as_slice()?)?;
-        tw.put_str8(TagType::Context(3), signature)?;
-        tw.put_str8(TagType::Context(4), &resumption_id)?;
-        tw.put_end_container()?;
+        tw.start_struct(TagType::Anonymous)?;
+        tw.str8(TagType::Context(1), fabric.noc.as_slice()?)?;
+        tw.str8(TagType::Context(2), fabric.icac.as_slice()?)?;
+        tw.str8(TagType::Context(3), signature)?;
+        tw.str8(TagType::Context(4), &resumption_id)?;
+        tw.end_container()?;
         //        println!("TBE is {:x?}", write_buf.as_slice());
         let nonce: [u8; crypto::AEAD_NONCE_LEN_BYTES] = [
             0x4e, 0x43, 0x41, 0x53, 0x45, 0x5f, 0x53, 0x69, 0x67, 0x6d, 0x61, 0x32, 0x4e,
@@ -473,12 +473,12 @@ impl Case {
         let mut buf: [u8; MAX_TBS_SIZE] = [0; MAX_TBS_SIZE];
         let mut write_buf = WriteBuf::new(&mut buf, MAX_TBS_SIZE);
         let mut tw = TLVWriter::new(&mut write_buf);
-        tw.put_start_struct(TagType::Anonymous)?;
-        tw.put_str8(TagType::Context(1), fabric.noc.as_slice()?)?;
-        tw.put_str8(TagType::Context(2), fabric.icac.as_slice()?)?;
-        tw.put_str8(TagType::Context(3), our_pub_key)?;
-        tw.put_str8(TagType::Context(4), peer_pub_key)?;
-        tw.put_end_container()?;
+        tw.start_struct(TagType::Anonymous)?;
+        tw.str8(TagType::Context(1), fabric.noc.as_slice()?)?;
+        tw.str8(TagType::Context(2), fabric.icac.as_slice()?)?;
+        tw.str8(TagType::Context(3), our_pub_key)?;
+        tw.str8(TagType::Context(4), peer_pub_key)?;
+        tw.end_container()?;
         fabric.sign_msg(write_buf.as_slice(), signature)
     }
 }

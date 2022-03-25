@@ -84,7 +84,7 @@ impl DataModel {
         };
 
         let attr_status = ib::AttrStatus::new(path, status_code, 0);
-        let _ = tw.put_object(TagType::Anonymous, &attr_status);
+        let _ = tw.object(TagType::Anonymous, &attr_status);
     }
 
     // Encode a write attribute from a path that may or may not be wildcard
@@ -107,7 +107,7 @@ impl DataModel {
                 ),
                 Err(e) => {
                     let attr_status = ib::AttrStatus::new(&attr_data.path.path, e.into(), 0);
-                    let _ = tw.put_object(TagType::Anonymous, &attr_status);
+                    let _ = tw.object(TagType::Anonymous, &attr_status);
                 }
             }
         } else {
@@ -119,7 +119,7 @@ impl DataModel {
                 }
                 error!("Cluster/Attribute cannot be wildcard in Write Interaction");
                 let attr_status = ib::AttrStatus::new(&attr_data.path.path, error, 0);
-                let _ = tw.put_object(TagType::Anonymous, &attr_status);
+                let _ = tw.object(TagType::Anonymous, &attr_status);
                 return;
             }
 
@@ -169,7 +169,7 @@ impl DataModel {
             if let Err(e) = result {
                 let attr_status = ib::AttrStatus::new(&attr_path.path, e, 0);
                 let attr_resp = ib::AttrResp::Status(attr_status);
-                let _ = tw.put_object(TagType::Anonymous, &attr_resp);
+                let _ = tw.object(TagType::Anonymous, &attr_resp);
             }
         } else {
             // The wildcard path
@@ -201,7 +201,7 @@ impl DataModel {
             if let Err(e) = result {
                 let status = ib::Status::new(e, 0);
                 let invoke_resp = ib::InvResp::Status(cmd_req.cmd, status);
-                let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
+                let _ = cmd_req.resp.object(TagType::Anonymous, &invoke_resp);
             }
         } else {
             // The wildcard path
@@ -216,7 +216,7 @@ impl DataModel {
                     if e != IMStatusCode::UnsupportedCommand {
                         let status = ib::Status::new(e, 0);
                         let invoke_resp = ib::InvResp::Status(cmd_req.cmd, status);
-                        let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
+                        let _ = cmd_req.resp.object(TagType::Anonymous, &invoke_resp);
                     }
                 }
             });

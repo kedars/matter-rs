@@ -80,11 +80,11 @@ impl ToTLV for AttrValue {
     fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
         // What is the time complexity of such long match statements?
         match self {
-            AttrValue::Bool(v) => tw.put_bool(tag_type, *v),
-            AttrValue::Uint8(v) => tw.put_u8(tag_type, *v),
-            AttrValue::Uint16(v) => tw.put_u16(tag_type, *v),
-            AttrValue::Uint32(v) => tw.put_u32(tag_type, *v),
-            AttrValue::Uint64(v) => tw.put_u64(tag_type, *v),
+            AttrValue::Bool(v) => tw.bool(tag_type, *v),
+            AttrValue::Uint8(v) => tw.u8(tag_type, *v),
+            AttrValue::Uint16(v) => tw.u16(tag_type, *v),
+            AttrValue::Uint32(v) => tw.u32(tag_type, *v),
+            AttrValue::Uint64(v) => tw.u64(tag_type, *v),
             _ => {
                 error!("Attribute type not yet supported");
                 Err(Error::AttributeNotFound)
@@ -324,16 +324,16 @@ impl Cluster {
         if let Some(global_attr) = global_attr {
             match global_attr {
                 GlobalElements::AttributeList => {
-                    let _ = tw.put_start_list(tag);
+                    let _ = tw.start_list(tag);
                     for a in &self.attributes {
-                        let _ = tw.put_u16(TagType::Anonymous, a.id);
+                        let _ = tw.u16(TagType::Anonymous, a.id);
                     }
-                    let _ = tw.put_end_container();
+                    let _ = tw.end_container();
                     Ok(())
                 }
                 GlobalElements::FeatureMap => {
                     let val = if let Some(m) = self.feature_map { m } else { 0 };
-                    let _ = tw.put_u32(tag, val);
+                    let _ = tw.u32(tag, val);
                     Ok(())
                 }
                 _ => {
@@ -342,7 +342,7 @@ impl Cluster {
                 }
             }
         } else {
-            let _ = tw.put_object(tag, &attr.value);
+            let _ = tw.object(tag, &attr.value);
             Ok(())
         }
     }

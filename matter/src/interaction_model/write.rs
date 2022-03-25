@@ -32,17 +32,17 @@ impl InteractionModel {
             false
         };
 
-        tw.put_start_struct(TagType::Anonymous)?;
+        tw.start_struct(TagType::Anonymous)?;
 
         let attr_list_iter = root.find_tag(msg::WriteReqTag::WriteRequests as u32);
         if attr_list_iter.is_ok() {
-            tw.put_start_array(TagType::Context(msg::WriteRespTag::WriteResponses as u8))?;
+            tw.start_array(TagType::Context(msg::WriteRespTag::WriteResponses as u8))?;
             self.consumer
                 .consume_write_attr(attr_list_iter?, fab_scoped, &mut tw)?;
-            tw.put_end_container()?;
+            tw.end_container()?;
         }
 
-        tw.put_end_container()?;
+        tw.end_container()?;
         trans.complete();
         if supress_response {
             error!("Supress response is set, is this the expected handling?");

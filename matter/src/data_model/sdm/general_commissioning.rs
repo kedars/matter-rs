@@ -116,9 +116,9 @@ impl ClusterType for GenCommCluster {
     ) -> Result<(), IMStatusCode> {
         match num::FromPrimitive::from_u16(attr_id).ok_or(IMStatusCode::UnsupportedAttribute)? {
             Attributes::BasicCommissioningInfo => {
-                let _ = tw.put_start_struct(tag);
-                let _ = tw.put_u16(TagType::Context(0), self.expiry_len);
-                let _ = tw.put_end_container();
+                let _ = tw.start_struct(tag);
+                let _ = tw.u16(TagType::Context(0), self.expiry_len);
+                let _ = tw.end_container();
                 Ok(())
             }
             _ => Err(IMStatusCode::UnsupportedAttribute),
@@ -188,11 +188,11 @@ impl GenCommCluster {
         }
 
         let cmd_data = |t: &mut TLVWriter| {
-            t.put_u8(TagType::Context(0), CommissioningError::Ok as u8)?;
-            t.put_utf8(TagType::Context(1), b"")
+            t.u8(TagType::Context(0), CommissioningError::Ok as u8)?;
+            t.utf8(TagType::Context(1), b"")
         };
         let resp = ib::InvResp::cmd_new(0, ID, Commands::ArmFailsafeResp as u16, &cmd_data);
-        let _ = cmd_req.resp.put_object(TagType::Anonymous, &resp);
+        let _ = cmd_req.resp.object(TagType::Anonymous, &resp);
         cmd_req.trans.complete();
         Ok(())
     }
@@ -212,11 +212,11 @@ impl GenCommCluster {
         info!("Received country code: {:?}", country_code);
 
         let cmd_data = |t: &mut TLVWriter| {
-            t.put_u8(TagType::Context(0), 0)?;
-            t.put_utf8(TagType::Context(1), b"")
+            t.u8(TagType::Context(0), 0)?;
+            t.utf8(TagType::Context(1), b"")
         };
         let resp = ib::InvResp::cmd_new(0, ID, Commands::SetRegulatoryConfigResp as u16, &cmd_data);
-        let _ = cmd_req.resp.put_object(TagType::Anonymous, &resp);
+        let _ = cmd_req.resp.object(TagType::Anonymous, &resp);
         cmd_req.trans.complete();
         Ok(())
     }
@@ -244,13 +244,13 @@ impl GenCommCluster {
         }
 
         let cmd_data = |t: &mut TLVWriter| {
-            t.put_u8(TagType::Context(0), status)?;
-            t.put_utf8(TagType::Context(1), b"")
+            t.u8(TagType::Context(0), status)?;
+            t.utf8(TagType::Context(1), b"")
         };
 
         let resp =
             ib::InvResp::cmd_new(0, ID, Commands::CommissioningCompleteResp as u16, &cmd_data);
-        let _ = cmd_req.resp.put_object(TagType::Anonymous, &resp);
+        let _ = cmd_req.resp.object(TagType::Anonymous, &resp);
         cmd_req.trans.complete();
         Ok(())
     }

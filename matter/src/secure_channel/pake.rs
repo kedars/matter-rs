@@ -7,10 +7,10 @@ use super::{
     common::{create_sc_status_report, SCStatusCodes},
     spake2p::Spake2P,
 };
-use crate::crypto;
 use crate::tlv::*;
 use crate::tlv_common::TagType;
-use crate::tlv_writer::TLVWriter;
+use crate::tlv_writer::{TLVWriter, ToTLV};
+use crate::{crypto, tlv_common::OctetStr};
 use crate::{error::Error, transport::session::CloneData};
 use crate::{
     proto_demux::{ProtoRx, ProtoTx},
@@ -187,10 +187,11 @@ impl PAKE {
         sd.spake2p.handle_pA(pA, &mut pB, &mut cB)?;
 
         let mut tw = TLVWriter::new(&mut proto_tx.write_buf);
-        tw.put_start_struct(TagType::Anonymous)?;
-        tw.put_str8(TagType::Context(1), &pB)?;
-        tw.put_str8(TagType::Context(2), &cB)?;
-        tw.put_end_container()?;
+        let resp = Pake1Resp {
+            pb: OctetStr(&pB),
+            cb: OctetStr(&cB),
+        };
+        resp.to_tlv(&mut tw, TagType::Anonymous)?;
 
         self.state.set_sess_data(sd);
 
@@ -238,22 +239,48 @@ impl PAKE {
 
         // Generate response
         let mut tw = TLVWriter::new(&mut proto_tx.write_buf);
-        tw.put_start_struct(TagType::Anonymous)?;
-        tw.put_str8(TagType::Context(1), initiator_random)?;
-        tw.put_str8(TagType::Context(2), &our_random)?;
-        tw.put_u16(TagType::Context(3), local_sessid)?;
+        let mut resp = PBKDFParamResp {
+            init_random: OctetStr(initiator_random),
+            our_random: OctetStr(&our_random),
+            local_sessid,
+            params: None,
+        };
         if !has_params {
-            tw.put_start_struct(TagType::Context(4))?;
-            tw.put_u32(TagType::Context(1), ITERATION_COUNT)?;
-            tw.put_str8(TagType::Context(2), &self.salt)?;
-            tw.put_end_container()?;
+            let params_resp = PBKDFParamRespParams {
+                count: ITERATION_COUNT,
+                salt: OctetStr(&self.salt),
+            };
+            resp.params = Some(params_resp);
         }
-        tw.put_end_container()?;
+        resp.to_tlv(&mut tw, TagType::Anonymous)?;
 
         spake2p.set_context(proto_rx.buf, proto_tx.write_buf.as_borrow_slice())?;
         self.state.make_in_progress(spake2p, proto_rx);
         Ok(())
     }
+}
+
+#[derive(ToTLV)]
+#[totlv(start = 1)]
+struct Pake1Resp<'a> {
+    pb: OctetStr<'a>,
+    cb: OctetStr<'a>,
+}
+
+#[derive(ToTLV)]
+#[totlv(start = 1)]
+struct PBKDFParamRespParams<'a> {
+    count: u32,
+    salt: OctetStr<'a>,
+}
+
+#[derive(ToTLV)]
+#[totlv(start = 1)]
+struct PBKDFParamResp<'a> {
+    init_random: OctetStr<'a>,
+    our_random: OctetStr<'a>,
+    local_sessid: u16,
+    params: Option<PBKDFParamRespParams<'a>>,
 }
 
 #[allow(non_snake_case)]

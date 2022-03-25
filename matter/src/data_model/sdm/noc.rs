@@ -138,14 +138,14 @@ impl NocCluster {
 
         let cmd_data = |t: &mut TLVWriter| {
             // Status
-            t.put_u8(TagType::Context(0), 0)?;
+            t.u8(TagType::Context(0), 0)?;
             // Fabric Index  - hard-coded for now
-            t.put_u8(TagType::Context(1), fab_idx)?;
+            t.u8(TagType::Context(1), fab_idx)?;
             // Debug string
-            t.put_utf8(TagType::Context(2), b"")
+            t.utf8(TagType::Context(2), b"")
         };
         let resp = ib::InvResp::cmd_new(0, ID, Commands::NOCResp as u16, &cmd_data);
-        let _ = cmd_req.resp.put_object(TagType::Anonymous, &resp);
+        let _ = cmd_req.resp.object(TagType::Anonymous, &resp);
         cmd_req.trans.complete();
         Ok(())
     }
@@ -155,10 +155,10 @@ impl NocCluster {
         if let Err(e) = self._handle_command_addnoc(cmd_req) {
             let cmd_data = |t: &mut TLVWriter| {
                 // Status
-                t.put_u8(TagType::Context(0), e as u8)
+                t.u8(TagType::Context(0), e as u8)
             };
             let invoke_resp = ib::InvResp::cmd_new(0, ID, Commands::NOCResp as u16, &cmd_data);
-            let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
+            let _ = cmd_req.resp.object(TagType::Anonymous, &invoke_resp);
             cmd_req.trans.complete();
         }
         Ok(())
@@ -186,7 +186,7 @@ impl NocCluster {
             add_attestation_signature(&self.dev_att, &mut attest_element, &attest_challenge, t)
         };
         let resp = ib::InvResp::cmd_new(0, ID, Commands::AttReqResp as u16, &cmd_data);
-        let _ = cmd_req.resp.put_object(TagType::Anonymous, &resp);
+        let _ = cmd_req.resp.object(TagType::Anonymous, &resp);
         cmd_req.trans.complete();
         Ok(())
     }
@@ -208,9 +208,9 @@ impl NocCluster {
             .map_err(|_| IMStatusCode::Failure)?;
         let buf = &buf[0..len];
 
-        let cmd_data = |t: &mut TLVWriter| t.put_str16(TagType::Context(0), buf);
+        let cmd_data = |t: &mut TLVWriter| t.str16(TagType::Context(0), buf);
         let resp = ib::InvResp::cmd_new(0, ID, Commands::CertChainResp as u16, &cmd_data);
-        let _ = cmd_req.resp.put_object(TagType::Anonymous, &resp);
+        let _ = cmd_req.resp.object(TagType::Anonymous, &resp);
         cmd_req.trans.complete();
         Ok(())
     }
@@ -243,7 +243,7 @@ impl NocCluster {
         };
         let resp = ib::InvResp::cmd_new(0, ID, Commands::CSRResp as u16, &cmd_data);
 
-        let _ = cmd_req.resp.put_object(TagType::Anonymous, &resp);
+        let _ = cmd_req.resp.object(TagType::Anonymous, &resp);
         let noc_data = Box::new(NocData::new(noc_keypair));
         // Store this in the session data instead of cluster data, so it gets cleared
         // if the session goes away for some reason
@@ -328,13 +328,13 @@ fn add_attestation_element(
 
     let epoch = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as u32;
     let mut writer = TLVWriter::new(write_buf);
-    writer.put_start_struct(TagType::Anonymous)?;
-    writer.put_str16(TagType::Context(1), cert_dec)?;
-    writer.put_str8(TagType::Context(2), att_nonce)?;
-    writer.put_u32(TagType::Context(3), epoch)?;
-    writer.put_end_container()?;
+    writer.start_struct(TagType::Anonymous)?;
+    writer.str16(TagType::Context(1), cert_dec)?;
+    writer.str8(TagType::Context(2), att_nonce)?;
+    writer.u32(TagType::Context(3), epoch)?;
+    writer.end_container()?;
 
-    t.put_str16(TagType::Context(0), write_buf.as_borrow_slice())?;
+    t.str16(TagType::Context(0), write_buf.as_borrow_slice())?;
     Ok(())
 }
 
@@ -354,7 +354,7 @@ fn add_attestation_signature(
     attest_element.copy_from_slice(attest_challenge)?;
     let mut signature = [0u8; crypto::EC_SIGNATURE_LEN_BYTES];
     dac_key.sign_msg(attest_element.as_borrow_slice(), &mut signature)?;
-    resp.put_str8(TagType::Context(1), &signature)
+    resp.str8(TagType::Context(1), &signature)
 }
 
 fn add_nocsrelement(
@@ -366,12 +366,12 @@ fn add_nocsrelement(
     let mut csr: [u8; MAX_CSR_LEN] = [0; MAX_CSR_LEN];
     let csr = noc_keypair.get_csr(&mut csr)?;
     let mut writer = TLVWriter::new(write_buf);
-    writer.put_start_struct(TagType::Anonymous)?;
-    writer.put_str8(TagType::Context(1), csr)?;
-    writer.put_str8(TagType::Context(2), csr_nonce)?;
-    writer.put_end_container()?;
+    writer.start_struct(TagType::Anonymous)?;
+    writer.str8(TagType::Context(1), csr)?;
+    writer.str8(TagType::Context(2), csr_nonce)?;
+    writer.end_container()?;
 
-    resp.put_str8(TagType::Context(0), write_buf.as_borrow_slice())?;
+    resp.str8(TagType::Context(0), write_buf.as_borrow_slice())?;
     Ok(())
 }
 

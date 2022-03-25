@@ -25,3 +25,7 @@ pub static TAG_SIZE_MAP: [usize; MAX_TAG_INDEX] = [
     6, // FullQual48
     8, // FullQual64
 ];
+
+pub struct UtfStr<'a>(pub &'a [u8]);
+
+pub struct OctetStr<'a>(pub &'a [u8]);

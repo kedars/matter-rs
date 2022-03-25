@@ -28,7 +28,7 @@ impl InteractionModel {
             .find_tag(msg::ReadReqTag::FabricFiltered as u32)?
             .get_bool()?;
 
-        tw.put_start_struct(TagType::Anonymous)?;
+        tw.start_struct(TagType::Anonymous)?;
 
         let attr_list_iter = root.find_tag(msg::ReadReqTag::AttrRequests as u32);
         if attr_list_iter.is_ok() {
@@ -37,18 +37,18 @@ impl InteractionModel {
                 error!("Data version filters aren't yet supported");
             }
 
-            tw.put_start_array(TagType::Context(msg::ReportDataTag::AttributeReports as u8))?;
+            tw.start_array(TagType::Context(msg::ReportDataTag::AttributeReports as u8))?;
             self.consumer
                 .consume_read_attr(attr_list_iter?, fab_scoped, &mut tw)?;
-            tw.put_end_container()?;
+            tw.end_container()?;
         }
 
         // Supress response always true for read interaction
-        tw.put_bool(
+        tw.bool(
             TagType::Context(msg::ReportDataTag::SupressResponse as u8),
             true,
         )?;
-        tw.put_end_container()?;
+        tw.end_container()?;
         trans.complete();
         Ok(ResponseRequired::Yes)
     }

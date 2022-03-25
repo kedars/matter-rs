@@ -37,7 +37,7 @@ fn handle_read_reqs(input: &[AttrPath], expected: &[ExpectedReportData]) {
     let mut proto_tx = ProtoTx::new(&mut out_buf, 0).unwrap();
 
     let read_req = ReadReq::new(true).set_attr_requests(input);
-    tw.put_object(TagType::Anonymous, &read_req).unwrap();
+    tw.object(TagType::Anonymous, &read_req).unwrap();
 
     let _ = im_engine(OpCode::ReadRequest, wb.as_borrow_slice(), &mut proto_tx);
     tlv::print_tlv_list(proto_tx.write_buf.as_borrow_slice());
@@ -90,7 +90,7 @@ fn handle_write_reqs(input: &[AttrData], expected: &[AttrStatus]) -> DataModel {
     let mut proto_tx = ProtoTx::new(&mut out_buf, 0).unwrap();
 
     let write_req = WriteReq::new(false, input);
-    tw.put_object(TagType::Anonymous, &write_req).unwrap();
+    tw.object(TagType::Anonymous, &write_req).unwrap();
 
     let dm = im_engine(OpCode::WriteRequest, wb.as_borrow_slice(), &mut proto_tx);
     tlv::print_tlv_list(proto_tx.write_buf.as_borrow_slice());
@@ -287,11 +287,11 @@ fn get_tlvs<'a>(buf: &'a mut [u8], data: &[u16]) -> TLVElement<'a> {
     let buf_len = buf.len();
     let mut wb = WriteBuf::new(buf, buf_len);
     let mut tw = TLVWriter::new(&mut wb);
-    let _ = tw.put_start_array(TagType::Context(2));
+    let _ = tw.start_array(TagType::Context(2));
     for e in data {
-        let _ = tw.put_u16(TagType::Anonymous, *e);
+        let _ = tw.u16(TagType::Anonymous, *e);
     }
-    let _ = tw.put_end_container();
+    let _ = tw.end_container();
     let wb_len = wb.as_borrow_slice().len();
     let tlv_array = TLVList::new(wb.as_slice(), wb_len).iter().next().unwrap();
     tlv_array
@@ -396,11 +396,11 @@ fn test_write_success() {
     let val1 = 15;
     let _ = env_logger::try_init();
     let attr_data0 = |tag, t: &mut TLVWriter| {
-        let _ = t.put_u16(tag, val0);
+        let _ = t.u16(tag, val0);
         Ok(())
     };
     let attr_data1 = |tag, t: &mut TLVWriter| {
-        let _ = t.put_u16(tag, val1);
+        let _ = t.u16(tag, val1);
         Ok(())
     };
 
@@ -459,7 +459,7 @@ fn test_write_wc_endpoint() {
     let val0 = 10;
     let _ = env_logger::try_init();
     let attr_data0 = |tag, t: &mut TLVWriter| {
-        let _ = t.put_u16(tag, val0);
+        let _ = t.u16(tag, val0);
         Ok(())
     };
 
@@ -525,7 +525,7 @@ fn test_write_unsupported_fields() {
 
     let val0 = 50;
     let attr_data0 = |tag, t: &mut TLVWriter| {
-        let _ = t.put_u16(tag, val0);
+        let _ = t.u16(tag, val0);
         Ok(())
     };
 

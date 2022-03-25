@@ -48,7 +48,7 @@ impl ClusterType for EchoCluster {
     ) -> Result<(), IMStatusCode> {
         match num::FromPrimitive::from_u16(attr_id).ok_or(IMStatusCode::UnsupportedAttribute)? {
             Attributes::AttCustom => {
-                let _ = tw.put_u32(tag, ATTR_CUSTOM_VALUE);
+                let _ = tw.u32(tag, ATTR_CUSTOM_VALUE);
                 Ok(())
             }
             _ => Err(IMStatusCode::UnsupportedAttribute),
@@ -73,11 +73,11 @@ impl ClusterType for EchoCluster {
 
                 let cmd_data = |t: &mut TLVWriter| {
                     // Echo = input * self.multiplier
-                    t.put_u8(TagType::Context(0), a * self.multiplier)
+                    t.u8(TagType::Context(0), a * self.multiplier)
                 };
 
                 let invoke_resp = ib::InvResp::Cmd(ib::CmdData::new(echo_response, &cmd_data));
-                let _ = cmd_req.resp.put_object(TagType::Anonymous, &invoke_resp);
+                let _ = cmd_req.resp.object(TagType::Anonymous, &invoke_resp);
                 cmd_req.trans.complete();
             }
             _ => {

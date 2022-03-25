@@ -58,12 +58,12 @@ impl ClusterType for DescriptorCluster {
                     cluster: None,
                     leaf: None,
                 };
-                let _ = tw.put_start_array(tag);
+                let _ = tw.start_array(tag);
                 let dm = self.data_model.node.read().unwrap();
                 dm.for_each_cluster(&path, |_current_path, c| {
-                    let _ = tw.put_u32(TagType::Anonymous, c.base().id());
+                    let _ = tw.u32(TagType::Anonymous, c.base().id());
                 });
-                let _ = tw.put_end_container();
+                let _ = tw.end_container();
             }
             _ => {
                 error!("Not yet supported");

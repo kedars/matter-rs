@@ -86,26 +86,26 @@ impl<'a, 'b> TestData<'a, 'b> {
     }
 
     pub fn commands(&mut self, cmds: &[(CmdPath, Option<u8>)]) -> Result<(), Error> {
-        self.tw.put_start_struct(TagType::Anonymous)?;
-        self.tw.put_bool(
+        self.tw.start_struct(TagType::Anonymous)?;
+        self.tw.bool(
             TagType::Context(msg::InvReqTag::SupressResponse as u8),
             false,
         )?;
         self.tw
-            .put_bool(TagType::Context(msg::InvReqTag::TimedReq as u8), false)?;
+            .bool(TagType::Context(msg::InvReqTag::TimedReq as u8), false)?;
         self.tw
-            .put_start_array(TagType::Context(msg::InvReqTag::InvokeRequests as u8))?;
+            .start_array(TagType::Context(msg::InvReqTag::InvokeRequests as u8))?;
 
         for (cmd, data) in cmds {
-            self.tw.put_start_struct(TagType::Anonymous)?;
-            self.tw.put_object(TagType::Context(0), cmd)?;
+            self.tw.start_struct(TagType::Anonymous)?;
+            self.tw.object(TagType::Context(0), cmd)?;
             if let Some(d) = *data {
-                self.tw.put_u8(TagType::Context(1), d)?;
+                self.tw.u8(TagType::Context(1), d)?;
             }
-            self.tw.put_end_container()?;
+            self.tw.end_container()?;
         }
 
-        self.tw.put_end_container()?;
-        self.tw.put_end_container()
+        self.tw.end_container()?;
+        self.tw.end_container()
     }
 }

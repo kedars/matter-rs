@@ -1,9 +1,10 @@
 use crate::{
     error::*,
-    tlv_common::{TagType, TAG_SHIFT_BITS, TAG_SIZE_MAP},
+    tlv_common::{OctetStr, TagType, UtfStr, TAG_SHIFT_BITS, TAG_SIZE_MAP},
     utils::writebuf::WriteBuf,
 };
 use log::error;
+pub use matter_macro_derive::ToTLV;
 
 #[allow(dead_code)]
 enum WriteElementType {
@@ -71,32 +72,32 @@ impl<'a, 'b> TLVWriter<'a, 'b> {
         Ok(())
     }
 
-    pub fn put_i8(&mut self, tag_type: TagType, data: i8) -> Result<(), Error> {
+    pub fn i8(&mut self, tag_type: TagType, data: i8) -> Result<(), Error> {
         self.put_control_tag(tag_type, WriteElementType::S8)?;
         self.buf.le_i8(data)
     }
 
-    pub fn put_u8(&mut self, tag_type: TagType, data: u8) -> Result<(), Error> {
+    pub fn u8(&mut self, tag_type: TagType, data: u8) -> Result<(), Error> {
         self.put_control_tag(tag_type, WriteElementType::U8)?;
         self.buf.le_u8(data)
     }
 
-    pub fn put_u16(&mut self, tag_type: TagType, data: u16) -> Result<(), Error> {
+    pub fn u16(&mut self, tag_type: TagType, data: u16) -> Result<(), Error> {
         self.put_control_tag(tag_type, WriteElementType::U16)?;
         self.buf.le_u16(data)
     }
 
-    pub fn put_u32(&mut self, tag_type: TagType, data: u32) -> Result<(), Error> {
+    pub fn u32(&mut self, tag_type: TagType, data: u32) -> Result<(), Error> {
         self.put_control_tag(tag_type, WriteElementType::U32)?;
         self.buf.le_u32(data)
     }
 
-    pub fn put_u64(&mut self, tag_type: TagType, data: u64) -> Result<(), Error> {
+    pub fn u64(&mut self, tag_type: TagType, data: u64) -> Result<(), Error> {
         self.put_control_tag(tag_type, WriteElementType::U64)?;
         self.buf.le_u64(data)
     }
 
-    pub fn put_str8(&mut self, tag_type: TagType, data: &[u8]) -> Result<(), Error> {
+    pub fn str8(&mut self, tag_type: TagType, data: &[u8]) -> Result<(), Error> {
         if data.len() > 256 {
             error!("use put_str16() instead");
             return Err(Error::Invalid);
@@ -106,53 +107,53 @@ impl<'a, 'b> TLVWriter<'a, 'b> {
         self.buf.copy_from_slice(data)
     }
 
-    pub fn put_str16(&mut self, tag_type: TagType, data: &[u8]) -> Result<(), Error> {
+    pub fn str16(&mut self, tag_type: TagType, data: &[u8]) -> Result<(), Error> {
         self.put_control_tag(tag_type, WriteElementType::Str16l)?;
         self.buf.le_u16(data.len() as u16)?;
         self.buf.copy_from_slice(data)
     }
 
-    pub fn put_utf8(&mut self, tag_type: TagType, data: &[u8]) -> Result<(), Error> {
+    pub fn utf8(&mut self, tag_type: TagType, data: &[u8]) -> Result<(), Error> {
         self.put_control_tag(tag_type, WriteElementType::Utf8l)?;
         self.buf.le_u8(data.len() as u8)?;
         self.buf.copy_from_slice(data)
     }
 
-    pub fn put_utf16(&mut self, tag_type: TagType, data: &[u8]) -> Result<(), Error> {
+    pub fn utf16(&mut self, tag_type: TagType, data: &[u8]) -> Result<(), Error> {
         self.put_control_tag(tag_type, WriteElementType::Utf16l)?;
         self.buf.le_u16(data.len() as u16)?;
         self.buf.copy_from_slice(data)
     }
 
-    fn put_no_val(&mut self, tag_type: TagType, element: WriteElementType) -> Result<(), Error> {
+    fn no_val(&mut self, tag_type: TagType, element: WriteElementType) -> Result<(), Error> {
         self.put_control_tag(tag_type, element)
     }
 
-    pub fn put_start_struct(&mut self, tag_type: TagType) -> Result<(), Error> {
-        self.put_no_val(tag_type, WriteElementType::Struct)
+    pub fn start_struct(&mut self, tag_type: TagType) -> Result<(), Error> {
+        self.no_val(tag_type, WriteElementType::Struct)
     }
 
-    pub fn put_start_array(&mut self, tag_type: TagType) -> Result<(), Error> {
-        self.put_no_val(tag_type, WriteElementType::Array)
+    pub fn start_array(&mut self, tag_type: TagType) -> Result<(), Error> {
+        self.no_val(tag_type, WriteElementType::Array)
     }
 
-    pub fn put_start_list(&mut self, tag_type: TagType) -> Result<(), Error> {
-        self.put_no_val(tag_type, WriteElementType::List)
+    pub fn start_list(&mut self, tag_type: TagType) -> Result<(), Error> {
+        self.no_val(tag_type, WriteElementType::List)
     }
 
-    pub fn put_end_container(&mut self) -> Result<(), Error> {
-        self.put_no_val(TagType::Anonymous, WriteElementType::EndCnt)
+    pub fn end_container(&mut self) -> Result<(), Error> {
+        self.no_val(TagType::Anonymous, WriteElementType::EndCnt)
     }
 
-    pub fn put_bool(&mut self, tag_type: TagType, val: bool) -> Result<(), Error> {
+    pub fn bool(&mut self, tag_type: TagType, val: bool) -> Result<(), Error> {
         if val {
-            self.put_no_val(tag_type, WriteElementType::True)
+            self.no_val(tag_type, WriteElementType::True)
         } else {
-            self.put_no_val(tag_type, WriteElementType::False)
+            self.no_val(tag_type, WriteElementType::False)
         }
     }
 
-    pub fn put_object(&mut self, tag_type: TagType, object: &dyn ToTLV) -> Result<(), Error> {
+    pub fn object(&mut self, tag_type: TagType, object: &dyn ToTLV) -> Result<(), Error> {
         object.to_tlv(self, tag_type)
     }
 
@@ -168,11 +169,46 @@ pub trait ToTLV {
     fn to_tlv(&self, tw: &mut TLVWriter, tag: TagType) -> Result<(), Error>;
 }
 
+macro_rules! totlv_for {
+    ($($t:ident)*) => {
+        $(
+            impl ToTLV for $t {
+                fn to_tlv(&self, tw: &mut TLVWriter, tag: TagType) -> Result<(), Error> {
+                    tw.$t(tag, *self)
+                }
+            }
+        )*
+    };
+}
+
+// Generate ToTLV for standard data types
+totlv_for!(i8 u8 u16 u32 u64);
+
+impl<'a> ToTLV for OctetStr<'a> {
+    fn to_tlv(&self, tw: &mut TLVWriter, tag: TagType) -> Result<(), Error> {
+        tw.str16(tag, self.0)
+    }
+}
+
+impl<'a> ToTLV for UtfStr<'a> {
+    fn to_tlv(&self, tw: &mut TLVWriter, tag: TagType) -> Result<(), Error> {
+        tw.utf16(tag, self.0)
+    }
+}
+
+impl<T: ToTLV> ToTLV for Option<T> {
+    fn to_tlv(&self, tw: &mut TLVWriter, tag: TagType) -> Result<(), Error> {
+        match self {
+            Some(s) => (s.to_tlv(tw, tag)),
+            None => Ok(()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::{tlv_common::*, utils::writebuf::WriteBuf};
-
     use super::TLVWriter;
+    use crate::{error::Error, tlv_common::*, tlv_writer::ToTLV, utils::writebuf::WriteBuf};
 
     #[test]
     fn test_write_success() {
@@ -181,15 +217,15 @@ mod tests {
         let mut writebuf = WriteBuf::new(&mut buf, buf_len);
         let mut tw = TLVWriter::new(&mut writebuf);
 
-        tw.put_start_struct(TagType::Anonymous).unwrap();
-        tw.put_u8(TagType::Anonymous, 12).unwrap();
-        tw.put_u8(TagType::Context(1), 13).unwrap();
-        tw.put_u16(TagType::Anonymous, 12).unwrap();
-        tw.put_u16(TagType::Context(2), 13).unwrap();
-        tw.put_start_array(TagType::Context(3)).unwrap();
-        tw.put_bool(TagType::Anonymous, true).unwrap();
-        tw.put_end_container().unwrap();
-        tw.put_end_container().unwrap();
+        tw.start_struct(TagType::Anonymous).unwrap();
+        tw.u8(TagType::Anonymous, 12).unwrap();
+        tw.u8(TagType::Context(1), 13).unwrap();
+        tw.u16(TagType::Anonymous, 12).unwrap();
+        tw.u16(TagType::Context(2), 13).unwrap();
+        tw.start_array(TagType::Context(3)).unwrap();
+        tw.bool(TagType::Anonymous, true).unwrap();
+        tw.end_container().unwrap();
+        tw.end_container().unwrap();
         assert_eq!(
             buf,
             [21, 4, 12, 36, 1, 13, 5, 12, 0, 37, 2, 13, 0, 54, 3, 9, 24, 24, 0, 0]
@@ -203,13 +239,13 @@ mod tests {
         let mut writebuf = WriteBuf::new(&mut buf, buf_len);
         let mut tw = TLVWriter::new(&mut writebuf);
 
-        tw.put_u8(TagType::Anonymous, 12).unwrap();
-        tw.put_u8(TagType::Context(1), 13).unwrap();
-        match tw.put_u16(TagType::Anonymous, 12) {
+        tw.u8(TagType::Anonymous, 12).unwrap();
+        tw.u8(TagType::Context(1), 13).unwrap();
+        match tw.u16(TagType::Anonymous, 12) {
             Ok(_) => panic!("This should have returned error"),
             _ => (),
         }
-        match tw.put_u16(TagType::Context(2), 13) {
+        match tw.u16(TagType::Context(2), 13) {
             Ok(_) => panic!("This should have returned error"),
             _ => (),
         }
@@ -223,14 +259,33 @@ mod tests {
         let mut writebuf = WriteBuf::new(&mut buf, buf_len);
         let mut tw = TLVWriter::new(&mut writebuf);
 
-        tw.put_u8(TagType::Context(1), 13).unwrap();
-        tw.put_str8(TagType::Anonymous, &[10, 11, 12, 13, 14])
-            .unwrap();
-        tw.put_u16(TagType::Context(2), 13).unwrap();
-        tw.put_str8(TagType::Context(3), &[20, 21, 22]).unwrap();
+        tw.u8(TagType::Context(1), 13).unwrap();
+        tw.str8(TagType::Anonymous, &[10, 11, 12, 13, 14]).unwrap();
+        tw.u16(TagType::Context(2), 13).unwrap();
+        tw.str8(TagType::Context(3), &[20, 21, 22]).unwrap();
         assert_eq!(
             buf,
             [36, 1, 13, 16, 5, 10, 11, 12, 13, 14, 37, 2, 13, 0, 48, 3, 3, 20, 21, 22]
+        );
+    }
+
+    #[derive(ToTLV)]
+    struct TestDerive {
+        a: u16,
+        b: u32,
+    }
+    #[test]
+    fn test_derive_totlv() {
+        let mut buf: [u8; 20] = [0; 20];
+        let buf_len = buf.len();
+        let mut writebuf = WriteBuf::new(&mut buf, buf_len);
+        let mut tw = TLVWriter::new(&mut writebuf);
+
+        let abc = TestDerive { a: 10, b: 20 };
+        abc.to_tlv(&mut tw, TagType::Anonymous).unwrap();
+        assert_eq!(
+            buf,
+            [21, 37, 0, 10, 0, 38, 1, 20, 0, 0, 0, 24, 0, 0, 0, 0, 0, 0, 0, 0]
         );
     }
 }
