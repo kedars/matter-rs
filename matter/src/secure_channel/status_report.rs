@@ -27,12 +27,16 @@ pub fn create_status_report(
     general_code: GeneralCode,
     proto_id: u32,
     proto_code: u16,
+    proto_data: Option<&[u8]>,
 ) -> Result<(), Error> {
     proto_tx.proto_id = PROTO_ID_SECURE_CHANNEL;
     proto_tx.proto_opcode = OpCode::StatusReport as u8;
     proto_tx.write_buf.le_u16(general_code as u16)?;
     proto_tx.write_buf.le_u32(proto_id)?;
     proto_tx.write_buf.le_u16(proto_code)?;
+    if let Some(s) = proto_data {
+        proto_tx.write_buf.copy_from_slice(s)?;
+    }
 
     Ok(())
 }

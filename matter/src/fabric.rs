@@ -202,12 +202,12 @@ impl FabricMgr {
         let dummy_fabric = Fabric::dummy()?;
         let mut mgr = FabricMgrInner::default();
         mgr.fabrics[0] = Some(dummy_fabric);
-        let mut mgr = Self {
+        let mut fm = Self {
             inner: RwLock::new(mgr),
             psm: Psm::get()?,
         };
-        mgr.load()?;
-        Ok(mgr)
+        fm.load()?;
+        Ok(fm)
     }
 
     fn store(&self, index: usize, fabric: &Fabric) -> Result<(), Error> {
@@ -259,5 +259,15 @@ impl FabricMgr {
         idx: usize,
     ) -> Result<RwLockReadGuardRef<'ret, FabricMgrInner, Option<Fabric>>, Error> {
         Ok(RwLockReadGuardRef::new(self.inner.read()?).map(|fm| &fm.fabrics[idx]))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        let mgr = self.inner.read().unwrap();
+        for i in 1..MAX_SUPPORTED_FABRICS {
+            if mgr.fabrics[i].is_some() {
+                return false;
+            }
+        }
+        return true;
     }
 }

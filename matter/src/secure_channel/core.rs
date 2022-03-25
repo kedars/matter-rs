@@ -27,6 +27,14 @@ impl SecureChannel {
         }
     }
 
+    pub fn open_comm_window(&mut self) {
+        self.pake.enable();
+    }
+
+    pub fn close_comm_window(&mut self) {
+        self.pake.disable();
+    }
+
     fn mrpstandaloneack_handler(
         &mut self,
         _proto_rx: &mut ProtoRx,

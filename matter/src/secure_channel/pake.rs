@@ -1,3 +1,8 @@
+use std::{
+    net::SocketAddr,
+    time::{Duration, SystemTime},
+};
+
 use super::{
     common::{create_sc_status_report, SCStatusCodes},
     spake2p::Spake2P,
@@ -11,7 +16,7 @@ use crate::{
     proto_demux::{ProtoRx, ProtoTx},
     transport::session::SessionMode,
 };
-use log::error;
+use log::{error, info};
 use rand::prelude::*;
 
 // This file basically deals with the handlers for the PASE secure channel protocol
@@ -25,13 +30,85 @@ const ITERATION_COUNT: u32 = 2000;
 // TODO: Password should be passed inside
 const SPAKE2_PASSWORD: u32 = 123456;
 
+const PASE_DISCARD_TIMEOUT_SECS: Duration = Duration::from_secs(60);
+
 const SPAKE2_SESSION_KEYS_INFO: [u8; 11] = *b"SessionKeys";
+
+struct SessionData {
+    start_time: SystemTime,
+    exch_id: u16,
+    peer_addr: SocketAddr,
+    spake2p: Box<Spake2P>,
+}
+
+impl SessionData {
+    fn is_sess_expired(&self) -> Result<bool, Error> {
+        if SystemTime::now().duration_since(self.start_time)? > PASE_DISCARD_TIMEOUT_SECS {
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+}
+
+enum PakeState {
+    Idle,
+    InProgress(SessionData),
+}
+
+impl PakeState {
+    fn take(&mut self) -> Result<SessionData, Error> {
+        let new = std::mem::replace(self, PakeState::Idle);
+        if let PakeState::InProgress(s) = new {
+            Ok(s)
+        } else {
+            Err(Error::InvalidSignature)
+        }
+    }
+
+    fn is_idle(&self) -> bool {
+        std::mem::discriminant(self) == std::mem::discriminant(&PakeState::Idle)
+    }
+
+    fn take_sess_data(&mut self, proto_rx: &ProtoRx) -> Result<SessionData, Error> {
+        let sd = self.take()?;
+        if sd.exch_id != proto_rx.exchange.get_id()
+            || sd.peer_addr != proto_rx.session.get_peer_addr()
+        {
+            Err(Error::InvalidState)
+        } else {
+            Ok(sd)
+        }
+    }
+
+    fn make_in_progress(&mut self, spake2p: Box<Spake2P>, proto_rx: &ProtoRx) {
+        *self = PakeState::InProgress(SessionData {
+            start_time: SystemTime::now(),
+            spake2p,
+            exch_id: proto_rx.exchange.get_id(),
+            peer_addr: proto_rx.session.get_peer_addr(),
+        });
+    }
+
+    fn set_sess_data(&mut self, sd: SessionData) {
+        *self = PakeState::InProgress(sd);
+    }
+}
+
+impl Default for PakeState {
+    fn default() -> Self {
+        Self::Idle
+    }
+}
 
 #[derive(Default)]
 pub struct PAKE {
     // As per the spec the salt should be between 16 to 32 bytes
     salt: [u8; 16],
     passwd: u32,
+    // Whether commissioning window/PASE session is enabled or not
+    enabled: bool,
+    state: PakeState,
 }
 
 impl PAKE {
@@ -45,19 +122,24 @@ impl PAKE {
         pake
     }
 
+    pub fn enable(&mut self) {
+        self.enabled = true;
+    }
+
+    pub fn disable(&mut self) {
+        self.enabled = false;
+    }
+
     #[allow(non_snake_case)]
     pub fn handle_pasepake3(
         &mut self,
         proto_rx: &mut ProtoRx,
         proto_tx: &mut ProtoTx,
     ) -> Result<(), Error> {
-        let mut spake2 = proto_rx
-            .exchange
-            .take_exchange_data::<Spake2P>()
-            .ok_or(Error::InvalidState)?;
+        let mut sd = self.state.take_sess_data(proto_rx)?;
 
         let cA = extract_pasepake_1_or_3_params(proto_rx.buf)?;
-        let (status_code, Ke) = spake2.handle_cA(cA);
+        let (status_code, Ke) = sd.spake2p.handle_cA(cA);
 
         if status_code == SCStatusCodes::SessionEstablishmentSuccess {
             // Get the keys
@@ -67,7 +149,7 @@ impl PAKE {
                 .map_err(|_x| Error::NoSpace)?;
 
             // Create a session
-            let data = spake2.get_app_data();
+            let data = sd.spake2p.get_app_data();
             let peer_sessid: u16 = (data & 0xff) as u16;
             let local_sessid: u16 = ((data >> 16) & 0xff) as u16;
             let mut clone_data = CloneData::new(peer_sessid, local_sessid, SessionMode::Pase);
@@ -79,9 +161,13 @@ impl PAKE {
             proto_tx.new_session = Some(proto_rx.session.clone(&clone_data));
         }
 
-        create_sc_status_report(proto_tx, status_code)?;
+        create_sc_status_report(proto_tx, status_code, None)?;
         proto_rx.exchange.clear_exchange_data();
         proto_rx.exchange.close();
+        // Disable PASE for subsequent sessions
+        self.state = PakeState::Idle;
+        self.disable();
+
         Ok(())
     }
 
@@ -91,23 +177,22 @@ impl PAKE {
         proto_rx: &mut ProtoRx,
         proto_tx: &mut ProtoTx,
     ) -> Result<(), Error> {
-        let mut spake2 = proto_rx
-            .exchange
-            .take_exchange_data::<Spake2P>()
-            .ok_or(Error::InvalidState)?;
+        let mut sd = self.state.take_sess_data(proto_rx)?;
 
         let pA = extract_pasepake_1_or_3_params(proto_rx.buf)?;
         let mut pB: [u8; 65] = [0; 65];
         let mut cB: [u8; 32] = [0; 32];
-        spake2.start_verifier(self.passwd, ITERATION_COUNT, &self.salt)?;
-        spake2.handle_pA(pA, &mut pB, &mut cB)?;
+        sd.spake2p
+            .start_verifier(self.passwd, ITERATION_COUNT, &self.salt)?;
+        sd.spake2p.handle_pA(pA, &mut pB, &mut cB)?;
 
         let mut tw = TLVWriter::new(&mut proto_tx.write_buf);
         tw.put_start_struct(TagType::Anonymous)?;
         tw.put_str8(TagType::Context(1), &pB)?;
         tw.put_str8(TagType::Context(2), &cB)?;
         tw.put_end_container()?;
-        proto_rx.exchange.set_exchange_data(spake2);
+
+        self.state.set_sess_data(sd);
 
         Ok(())
     }
@@ -117,6 +202,25 @@ impl PAKE {
         proto_rx: &mut ProtoRx,
         proto_tx: &mut ProtoTx,
     ) -> Result<(), Error> {
+        if !self.enabled {
+            error!("PASE Not enabled");
+            create_sc_status_report(proto_tx, SCStatusCodes::InvalidParameter, None)?;
+            return Ok(());
+        }
+
+        if !self.state.is_idle() {
+            let sd = self.state.take()?;
+            if sd.is_sess_expired()? {
+                info!("Previous session expired, clearing it");
+                self.state = PakeState::Idle;
+            } else {
+                info!("Previous session in-progress, denying new request");
+                // little-endian timeout (here we've hardcoded 500ms)
+                create_sc_status_report(proto_tx, SCStatusCodes::Busy, Some(&[0xf4, 0x01]))?;
+                return Ok(());
+            }
+        }
+
         let (initiator_random, initiator_sessid, passcode_id, has_params) =
             extract_pbkdfreq_params(proto_rx.buf)?;
         if passcode_id != 0 {
@@ -147,7 +251,7 @@ impl PAKE {
         tw.put_end_container()?;
 
         spake2p.set_context(proto_rx.buf, proto_tx.write_buf.as_borrow_slice())?;
-        proto_rx.exchange.set_exchange_data(spake2p);
+        self.state.make_in_progress(spake2p, proto_rx);
         Ok(())
     }
 }

@@ -97,7 +97,11 @@ impl Case {
 
         let fabric = self.fabric_mgr.get_fabric(case_session.local_fabric_idx)?;
         if fabric.is_none() {
-            common::create_sc_status_report(proto_tx, common::SCStatusCodes::NoSharedTrustRoots)?;
+            common::create_sc_status_report(
+                proto_tx,
+                common::SCStatusCodes::NoSharedTrustRoots,
+                None,
+            )?;
             proto_rx.exchange.close();
             return Ok(());
         }
@@ -108,7 +112,11 @@ impl Case {
         let initiator_icac = Cert::new(initiator_icac_b);
         if let Err(e) = Case::validate_certs(fabric, &initiator_noc, &initiator_icac) {
             error!("Certificate Chain doesn't match: {}", e);
-            common::create_sc_status_report(proto_tx, common::SCStatusCodes::InvalidParameter)?;
+            common::create_sc_status_report(
+                proto_tx,
+                common::SCStatusCodes::InvalidParameter,
+                None,
+            )?;
             proto_rx.exchange.close();
             return Ok(());
         }
@@ -123,7 +131,11 @@ impl Case {
         .is_err()
         {
             error!("Sigma3 Signature doesn't match");
-            common::create_sc_status_report(proto_tx, common::SCStatusCodes::InvalidParameter)?;
+            common::create_sc_status_report(
+                proto_tx,
+                common::SCStatusCodes::InvalidParameter,
+                None,
+            )?;
             proto_rx.exchange.close();
             return Ok(());
         }
@@ -133,7 +145,11 @@ impl Case {
         let clone_data = Case::get_session_clone_data(&dummy_ipk, &case_session)?;
         proto_tx.new_session = Some(proto_rx.session.clone(&clone_data));
 
-        common::create_sc_status_report(proto_tx, SCStatusCodes::SessionEstablishmentSuccess)?;
+        common::create_sc_status_report(
+            proto_tx,
+            SCStatusCodes::SessionEstablishmentSuccess,
+            None,
+        )?;
         proto_rx.exchange.clear_exchange_data();
         proto_rx.exchange.close();
 
@@ -153,7 +169,11 @@ impl Case {
 
         let local_fabric_idx = self.fabric_mgr.match_dest_id(initiator_random, dest_id);
         if local_fabric_idx.is_err() {
-            common::create_sc_status_report(proto_tx, common::SCStatusCodes::NoSharedTrustRoots)?;
+            common::create_sc_status_report(
+                proto_tx,
+                common::SCStatusCodes::NoSharedTrustRoots,
+                None,
+            )?;
             proto_rx.exchange.close();
             return Ok(());
         }
@@ -198,6 +218,7 @@ impl Case {
                 common::create_sc_status_report(
                     proto_tx,
                     common::SCStatusCodes::NoSharedTrustRoots,
+                    None,
                 )?;
                 proto_rx.exchange.close();
                 return Ok(());

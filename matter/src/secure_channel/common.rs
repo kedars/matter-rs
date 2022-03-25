@@ -37,6 +37,7 @@ pub enum SCStatusCodes {
 pub fn create_sc_status_report(
     proto_tx: &mut ProtoTx,
     status_code: SCStatusCodes,
+    proto_data: Option<&[u8]>,
 ) -> Result<(), Error> {
     let general_code = match status_code {
         SCStatusCodes::SessionEstablishmentSuccess | SCStatusCodes::CloseSession => {
@@ -52,6 +53,7 @@ pub fn create_sc_status_report(
         general_code,
         PROTO_ID_SECURE_CHANNEL as u32,
         status_code as u16,
+        proto_data,
     )
 }
 

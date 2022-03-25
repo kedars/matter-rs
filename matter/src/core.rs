@@ -30,6 +30,7 @@ impl Matter {
         dev_att: Box<dyn DevAttDataFetcher>,
     ) -> Result<Box<Matter>, Error> {
         let fabric_mgr = Arc::new(FabricMgr::new()?);
+        let open_comm_window = if fabric_mgr.is_empty() { true } else { false };
         let data_model = DataModel::new(dev_det, dev_att, fabric_mgr.clone())?;
         let mut matter = Box::new(Matter {
             transport_mgr: transport::mgr::Mgr::new()?,
@@ -39,7 +40,10 @@ impl Matter {
         let interaction_model =
             Box::new(InteractionModel::new(Box::new(matter.data_model.clone())));
         matter.transport_mgr.register_protocol(interaction_model)?;
-        let secure_channel = Box::new(SecureChannel::new(matter.fabric_mgr.clone()));
+        let mut secure_channel = Box::new(SecureChannel::new(matter.fabric_mgr.clone()));
+        if open_comm_window {
+            secure_channel.open_comm_window();
+        }
         matter.transport_mgr.register_protocol(secure_channel)?;
         Ok(matter)
     }
