@@ -56,7 +56,7 @@ impl InteractionConsumer for DataModel {
         common_data.cluster = cmd_path_ib.path.cluster.unwrap_or(0);
         common_data.command = cmd_path_ib.path.leaf.unwrap_or(0) as u16;
         data.confirm_struct().unwrap();
-        common_data.variable = data.find_tag(0).unwrap().get_u8().unwrap();
+        common_data.variable = data.find_tag(0).unwrap().u8().unwrap();
         Ok(())
     }
 

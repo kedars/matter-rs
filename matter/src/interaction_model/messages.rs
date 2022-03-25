@@ -346,10 +346,10 @@ pub mod ib {
 
     impl Status {
         pub fn from_tlv(status_tlv: &TLVElement) -> Result<Self, Error> {
-            let status = status_tlv.find_tag(StatusTag::Status as u32)?.get_u16()?;
+            let status = status_tlv.find_tag(StatusTag::Status as u32)?.u16()?;
             let cluster_status = status_tlv
                 .find_tag(StatusTag::ClusterStatus as u32)?
-                .get_u16()?;
+                .u16()?;
             Ok(Self {
                 status: num::FromPrimitive::from_u16(status).ok_or(Error::Invalid)?,
                 cluster_status,
@@ -479,7 +479,7 @@ pub mod ib {
             let data_ver_tag = attr_data.find_tag(AttrDataTag::DataVersion as u32);
             let data_ver = if data_ver_tag.is_ok() {
                 error!("Data Version handling not yet supported");
-                Some(data_ver_tag?.get_u32()?)
+                Some(data_ver_tag?.u32()?)
             } else {
                 None
             };
@@ -594,17 +594,13 @@ pub mod ib {
                     {
                         AttrPathTag::TagCompression => {
                             error!("Tag Compression not yet supported");
-                            ib.tag_compression = i.get_bool()?
+                            ib.tag_compression = i.bool()?
                         }
-                        AttrPathTag::Node => ib.node = i.get_u32().map(|a| a as u64).ok(),
-                        AttrPathTag::Endpoint => {
-                            ib.path.endpoint = i.get_u16().map(|a| a as u16).ok()
-                        }
-                        AttrPathTag::Cluster => {
-                            ib.path.cluster = i.get_u32().map(|a| a as u32).ok()
-                        }
-                        AttrPathTag::Attribute => ib.path.leaf = i.get_u16().map(|a| a as u32).ok(),
-                        AttrPathTag::ListIndex => ib.list_index = i.get_u16().ok(),
+                        AttrPathTag::Node => ib.node = i.u32().map(|a| a as u64).ok(),
+                        AttrPathTag::Endpoint => ib.path.endpoint = i.u16().map(|a| a as u16).ok(),
+                        AttrPathTag::Cluster => ib.path.cluster = i.u32().map(|a| a as u32).ok(),
+                        AttrPathTag::Attribute => ib.path.leaf = i.u16().map(|a| a as u32).ok(),
+                        AttrPathTag::ListIndex => ib.list_index = i.u16().ok(),
                     },
                     _ => error!("Unsupported tag"),
                 }
@@ -676,14 +672,10 @@ pub mod ib {
                     TagType::Context(t) => {
                         match num::FromPrimitive::from_u8(t).ok_or(Error::Invalid)? {
                             CmdPathTag::Endpoint => {
-                                ib.path.endpoint = i.get_u16().map(|a| a as u16).ok()
+                                ib.path.endpoint = i.u16().map(|a| a as u16).ok()
                             }
-                            CmdPathTag::Cluster => {
-                                ib.path.cluster = i.get_u32().map(|a| a as u32).ok()
-                            }
-                            CmdPathTag::Command => {
-                                ib.path.leaf = i.get_u32().map(|a| a as u32).ok()
-                            }
+                            CmdPathTag::Cluster => ib.path.cluster = i.u32().map(|a| a as u32).ok(),
+                            CmdPathTag::Command => ib.path.leaf = i.u32().map(|a| a as u32).ok(),
                         }
                     }
                     _ => error!("Unsupported tag"),

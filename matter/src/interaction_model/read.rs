@@ -26,7 +26,7 @@ impl InteractionModel {
         let root = get_root_node_struct(rx_buf)?;
         let fab_scoped = root
             .find_tag(msg::ReadReqTag::FabricFiltered as u32)?
-            .get_bool()?;
+            .bool()?;
 
         tw.start_struct(TagType::Anonymous)?;
 

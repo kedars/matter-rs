@@ -376,21 +376,21 @@ impl<'a> TLVElement<'a> {
         }
     }
 
-    pub fn get_i8(&self) -> Result<i8, Error> {
+    pub fn i8(&self) -> Result<i8, Error> {
         match self.element_type {
             ElementType::S8(a) => Ok(a),
             _ => Err(Error::TLVTypeMismatch),
         }
     }
 
-    pub fn get_u8(&self) -> Result<u8, Error> {
+    pub fn u8(&self) -> Result<u8, Error> {
         match self.element_type {
             ElementType::U8(a) => Ok(a),
             _ => Err(Error::TLVTypeMismatch),
         }
     }
 
-    pub fn get_u16(&self) -> Result<u16, Error> {
+    pub fn u16(&self) -> Result<u16, Error> {
         match self.element_type {
             ElementType::U8(a) => Ok(a.into()),
             ElementType::U16(a) => Ok(a),
@@ -398,7 +398,7 @@ impl<'a> TLVElement<'a> {
         }
     }
 
-    pub fn get_u32(&self) -> Result<u32, Error> {
+    pub fn u32(&self) -> Result<u32, Error> {
         match self.element_type {
             ElementType::U8(a) => Ok(a.into()),
             ElementType::U16(a) => Ok(a.into()),
@@ -407,7 +407,7 @@ impl<'a> TLVElement<'a> {
         }
     }
 
-    pub fn get_u64(&self) -> Result<u64, Error> {
+    pub fn u64(&self) -> Result<u64, Error> {
         match self.element_type {
             ElementType::U8(a) => Ok(a.into()),
             ElementType::U16(a) => Ok(a.into()),
@@ -417,7 +417,7 @@ impl<'a> TLVElement<'a> {
         }
     }
 
-    pub fn get_slice(&self) -> Result<&'a [u8], Error> {
+    pub fn slice(&self) -> Result<&'a [u8], Error> {
         match self.element_type {
             ElementType::Str8l(s)
             | ElementType::Utf8l(s)
@@ -427,7 +427,7 @@ impl<'a> TLVElement<'a> {
         }
     }
 
-    pub fn get_bool(&self) -> Result<bool, Error> {
+    pub fn bool(&self) -> Result<bool, Error> {
         match self.element_type {
             ElementType::False => Ok(false),
             ElementType::True => Ok(true),

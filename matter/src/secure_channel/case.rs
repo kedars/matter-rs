@@ -74,7 +74,7 @@ impl Case {
         case_session.state = State::Sigma3Rx;
 
         let root = get_root_node_struct(proto_rx.buf)?;
-        let encrypted = root.find_tag(1)?.get_slice()?;
+        let encrypted = root.find_tag(1)?.slice()?;
 
         let mut decrypted: [u8; 800] = [0; 800];
         if encrypted.len() > decrypted.len() {
@@ -90,9 +90,9 @@ impl Case {
         let decrypted = &decrypted[..len];
 
         let root = get_root_node_struct(decrypted)?;
-        let initiator_noc_b = root.find_tag(1)?.get_slice()?;
-        let initiator_icac_b = root.find_tag(2)?.get_slice()?;
-        let signature = root.find_tag(3)?.get_slice()?;
+        let initiator_noc_b = root.find_tag(1)?.slice()?;
+        let initiator_icac_b = root.find_tag(2)?.slice()?;
+        let signature = root.find_tag(3)?.slice()?;
         // TODO: Signature Validation
 
         let fabric = self.fabric_mgr.get_fabric(case_session.local_fabric_idx)?;
@@ -162,10 +162,10 @@ impl Case {
         proto_tx: &mut ProtoTx,
     ) -> Result<(), Error> {
         let root = get_root_node_struct(proto_rx.buf)?;
-        let initiator_random = root.find_tag(1)?.get_slice()?;
-        let initiator_sessid = root.find_tag(2)?.get_u8()?;
-        let dest_id = root.find_tag(3)?.get_slice()?;
-        let peer_pub_key = root.find_tag(4)?.get_slice()?;
+        let initiator_random = root.find_tag(1)?.slice()?;
+        let initiator_sessid = root.find_tag(2)?.u8()?;
+        let dest_id = root.find_tag(3)?.slice()?;
+        let peer_pub_key = root.find_tag(4)?.slice()?;
 
         let local_fabric_idx = self.fabric_mgr.match_dest_id(initiator_random, dest_id);
         if local_fabric_idx.is_err() {

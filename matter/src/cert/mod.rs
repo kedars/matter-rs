@@ -113,7 +113,7 @@ fn get_print_str(key_usage: u16) -> String {
 #[allow(unused_assignments)]
 fn decode_key_usage(t: TLVElement, w: &mut dyn CertConsumer) -> Result<(), Error> {
     // TODO This should be u16, but we get u8 for now
-    let key_usage = t.get_u8()? as u16;
+    let key_usage = t.u8()? as u16;
     let mut key_usage_str = [0u8; 2];
     int_to_bitstring(key_usage, &mut key_usage_str);
     w.bitstr(&get_print_str(key_usage), true, &key_usage_str)?;
@@ -131,7 +131,7 @@ fn decode_extended_key_usage(t: TLVElement, w: &mut dyn CertConsumer) -> Result<
     let iter = t.confirm_array()?.iter().ok_or(Error::Invalid)?;
     w.start_seq("")?;
     for t in iter {
-        let (str, oid) = match t.get_u8()? {
+        let (str, oid) = match t.u8()? {
             1 => ("ServerAuth", OID_SERVER_AUTH),
             2 => ("ClientAuth", OID_CLIENT_AUTH),
             3 => ("CodeSign", OID_CODE_SIGN),
@@ -156,7 +156,7 @@ pub fn decode_basic_constraints(t: TLVElement, w: &mut dyn CertConsumer) -> Resu
         if let TagType::Context(tag) = t.get_tag() {
             match tag {
                 1 => {
-                    if t.get_bool()? {
+                    if t.bool()? {
                         // Encode CA only if true
                         w.bool("CA:", true)?
                     }
@@ -239,18 +239,18 @@ fn decode_extensions(t: TLVElement, w: &mut dyn CertConsumer) -> Result<(), Erro
                 }
                 ExtTags::SubjectKeyId => {
                     decode_extension_start("Subject Key ID", false, &OID_SUBJ_KEY_IDENTIFIER, w)?;
-                    w.ostr("", t.get_slice()?)?;
+                    w.ostr("", t.slice()?)?;
                     decode_extension_end(w)?;
                 }
                 ExtTags::AuthKeyId => {
                     decode_extension_start("Auth Key ID", false, &OID_AUTH_KEY_ID, w)?;
                     w.start_seq("")?;
-                    w.ctx("", 0, t.get_slice()?)?;
+                    w.ctx("", 0, t.slice()?)?;
                     w.end_seq()?;
                     decode_extension_end(w)?;
                 }
                 ExtTags::FutureExt => {
-                    error!("Future Extensions Not Yet Supported: {:x?}", t.get_slice()?)
+                    error!("Future Extensions Not Yet Supported: {:x?}", t.slice()?)
                 }
             }
         }
@@ -293,37 +293,37 @@ fn decode_dn_list(tag: &str, t: TLVElement, w: &mut dyn CertConsumer) -> Result<
                 DnTags::NodeId => {
                     w.start_seq("")?;
                     w.oid("Chip Node Id:", &OID_MATTER_NODE_ID)?;
-                    w.utf8str("", format!("{:016X}", t.get_u32()?).as_str())?;
+                    w.utf8str("", format!("{:016X}", t.u32()?).as_str())?;
                     w.end_seq()?;
                 }
                 DnTags::FirmwareSignId => {
                     w.start_seq("")?;
                     w.oid("Chip Firmware Signing Id:", &OID_MATTER_FW_SIGN_ID)?;
-                    w.utf8str("", format!("{:016X}", t.get_u8()?).as_str())?;
+                    w.utf8str("", format!("{:016X}", t.u8()?).as_str())?;
                     w.end_seq()?;
                 }
                 DnTags::IcaId => {
                     w.start_seq("")?;
                     w.oid("Chip ICA Id:", &OID_MATTER_ICA_ID)?;
-                    w.utf8str("", format!("{:016X}", t.get_u8()?).as_str())?;
+                    w.utf8str("", format!("{:016X}", t.u8()?).as_str())?;
                     w.end_seq()?;
                 }
                 DnTags::RootCaId => {
                     w.start_seq("")?;
                     w.oid("Chip Root CA Id:", &OID_MATTER_ROOT_CA_ID)?;
-                    w.utf8str("", format!("{:016X}", t.get_u8()?).as_str())?;
+                    w.utf8str("", format!("{:016X}", t.u8()?).as_str())?;
                     w.end_seq()?;
                 }
                 DnTags::FabricId => {
                     w.start_seq("")?;
                     w.oid("Chip Fabric Id:", &OID_MATTER_FABRIC_ID)?;
-                    w.utf8str("", format!("{:016X}", t.get_u8()?).as_str())?;
+                    w.utf8str("", format!("{:016X}", t.u8()?).as_str())?;
                     w.end_seq()?;
                 }
                 DnTags::NocCat => {
                     w.start_seq("")?;
                     w.oid("Chip NOC CAT Id:", &OID_MATTER_NOC_CAT_ID)?;
-                    w.utf8str("", format!("{:08X}", t.get_u8()?).as_str())?;
+                    w.utf8str("", format!("{:08X}", t.u8()?).as_str())?;
                     w.end_seq()?;
                 }
             }
@@ -356,11 +356,11 @@ fn decode_cert(buf: &[u8], w: &mut dyn CertConsumer) -> Result<(), Error> {
     w.end_ctx()?;
 
     let mut current = get_next_tag(&mut iter, CertTags::SerialNum)?;
-    w.integer("Serial Num:", current.get_slice()?)?;
+    w.integer("Serial Num:", current.slice()?)?;
 
     current = get_next_tag(&mut iter, CertTags::SignAlgo)?;
     w.start_seq("Signature Algorithm:")?;
-    let (str, oid) = match get_sign_algo(current.get_u8()?).ok_or(Error::Invalid)? {
+    let (str, oid) = match get_sign_algo(current.u8()?).ok_or(Error::Invalid)? {
         SignAlgoValue::ECDSAWithSHA256 => ("ECDSA with SHA256", OID_ECDSA_WITH_SHA256),
     };
     w.oid(str, &oid)?;
@@ -371,9 +371,9 @@ fn decode_cert(buf: &[u8], w: &mut dyn CertConsumer) -> Result<(), Error> {
 
     w.start_seq("Validity:")?;
     current = get_next_tag(&mut iter, CertTags::NotBefore)?;
-    w.utctime("Not Before:", current.get_u32()?)?;
+    w.utctime("Not Before:", current.u32()?)?;
     current = get_next_tag(&mut iter, CertTags::NotAfter)?;
-    w.utctime("Not After:", current.get_u32()?)?;
+    w.utctime("Not After:", current.u32()?)?;
     w.end_seq()?;
 
     current = get_next_tag(&mut iter, CertTags::Subject)?;
@@ -382,19 +382,19 @@ fn decode_cert(buf: &[u8], w: &mut dyn CertConsumer) -> Result<(), Error> {
     w.start_seq("")?;
     w.start_seq("Public Key Algorithm")?;
     current = get_next_tag(&mut iter, CertTags::PubKeyAlgo)?;
-    let (str, pub_key) = match get_pubkey_algo(current.get_u8()?).ok_or(Error::Invalid)? {
+    let (str, pub_key) = match get_pubkey_algo(current.u8()?).ok_or(Error::Invalid)? {
         PubKeyAlgoValue::EcPubKey => ("ECPubKey", OID_PUB_KEY_ECPUBKEY),
     };
     w.oid(str, &pub_key)?;
     current = get_next_tag(&mut iter, CertTags::EcCurveId)?;
-    let (str, curve_id) = match get_ec_curve_id(current.get_u8()?).ok_or(Error::Invalid)? {
+    let (str, curve_id) = match get_ec_curve_id(current.u8()?).ok_or(Error::Invalid)? {
         EcCurveIdValue::Prime256V1 => ("Prime256v1", OID_EC_TYPE_PRIME256V1),
     };
     w.oid(str, &curve_id)?;
     w.end_seq()?;
 
     current = get_next_tag(&mut iter, CertTags::EcPubKey)?;
-    w.bitstr("Public-Key:", false, current.get_slice()?)?;
+    w.bitstr("Public-Key:", false, current.slice()?)?;
     w.end_seq()?;
 
     current = get_next_tag(&mut iter, CertTags::Extensions)?;
@@ -420,7 +420,7 @@ impl Cert {
             .confirm_list()?
             .find_tag(DnTags::NodeId as u32)
             .map_err(|_e| Error::NoNodeId)?
-            .get_u32()
+            .u32()
             .map(|e| e as u64)
     }
 
@@ -430,7 +430,7 @@ impl Cert {
             .confirm_list()?
             .find_tag(DnTags::FabricId as u32)
             .map_err(|_e| Error::NoFabricId)?
-            .get_u8()
+            .u8()
             .map(|e| e as u64)
     }
 
@@ -438,7 +438,7 @@ impl Cert {
         tlv::get_root_node_struct(self.0.as_slice())?
             .find_tag(CertTags::EcPubKey as u32)
             .map_err(|_e| Error::Invalid)?
-            .get_slice()
+            .slice()
     }
 
     pub fn get_subject_key_id(&self) -> Result<&[u8], Error> {
@@ -448,7 +448,7 @@ impl Cert {
             .confirm_list()?
             .find_tag(ExtTags::SubjectKeyId as u32)
             .map_err(|_e| Error::Invalid)?
-            .get_slice()
+            .slice()
     }
 
     pub fn is_authority(&self, their: &Cert) -> Result<bool, Error> {
@@ -458,7 +458,7 @@ impl Cert {
             .confirm_list()?
             .find_tag(ExtTags::AuthKeyId as u32)
             .map_err(|_e| Error::Invalid)?
-            .get_slice()?;
+            .slice()?;
 
         let their_subject = their.get_subject_key_id()?;
         if our_auth == their_subject {
@@ -472,7 +472,7 @@ impl Cert {
         tlv::get_root_node_struct(self.0.as_slice())?
             .find_tag(CertTags::Signature as u32)
             .map_err(|_e| Error::Invalid)?
-            .get_slice()
+            .slice()
     }
 
     pub fn as_slice(&self) -> Result<&[u8], Error> {

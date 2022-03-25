@@ -96,11 +96,11 @@ impl ToTLV for AttrValue {
 impl AttrValue {
     fn update_from_tlv(&mut self, tr: &TLVElement) -> Result<(), Error> {
         match self {
-            AttrValue::Bool(v) => *v = tr.get_bool()?,
-            AttrValue::Uint8(v) => *v = tr.get_u8()?,
-            AttrValue::Uint16(v) => *v = tr.get_u16()?,
-            AttrValue::Uint32(v) => *v = tr.get_u32()?,
-            AttrValue::Uint64(v) => *v = tr.get_u64()?,
+            AttrValue::Bool(v) => *v = tr.bool()?,
+            AttrValue::Uint8(v) => *v = tr.u8()?,
+            AttrValue::Uint16(v) => *v = tr.u16()?,
+            AttrValue::Uint32(v) => *v = tr.u32()?,
+            AttrValue::Uint64(v) => *v = tr.u64()?,
             _ => {
                 error!("Attribute type not yet supported");
                 return Err(Error::AttributeNotFound);

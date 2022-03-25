@@ -53,7 +53,7 @@ fn handle_commands(input: &[(CmdPath, Option<u8>)], expected: &[ExpectedInvResp]
                     assert_eq!(e_c, c.path);
                     match c.data {
                         CmdDataType::Tlv(t) => {
-                            assert_eq!(e_d, t.find_tag(0).unwrap().get_u8().unwrap())
+                            assert_eq!(e_d, t.find_tag(0).unwrap().u8().unwrap())
                         }
                         _ => panic!("Incorrect CmdDataType"),
                     }

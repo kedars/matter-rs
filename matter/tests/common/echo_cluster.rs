@@ -67,7 +67,7 @@ impl ClusterType for EchoCluster {
             // This will generate an echo response on the same endpoint
             // with data multiplied by the multiplier
             Commands::EchoReq => {
-                let a = cmd_req.data.get_u8().unwrap();
+                let a = cmd_req.data.u8().unwrap();
                 let mut echo_response = cmd_req.cmd;
                 echo_response.path.leaf = Some(Commands::EchoResp as u32);
 

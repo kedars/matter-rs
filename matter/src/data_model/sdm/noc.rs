@@ -171,7 +171,7 @@ impl NocCluster {
             .data
             .find_tag(0)
             .map_err(|_| IMStatusCode::InvalidCommand)?
-            .get_slice()
+            .slice()
             .map_err(|_| IMStatusCode::InvalidCommand)?;
         info!("Received Attestation Nonce:{:?}", att_nonce);
 
@@ -222,7 +222,7 @@ impl NocCluster {
             .data
             .find_tag(0)
             .map_err(|_| IMStatusCode::InvalidCommand)?
-            .get_slice()
+            .slice()
             .map_err(|_| IMStatusCode::InvalidCommand)?;
         info!("Received CSR Nonce:{:?}", csr_nonce);
 
@@ -275,7 +275,7 @@ impl NocCluster {
                     .data
                     .find_tag(0)
                     .map_err(|_| IMStatusCode::InvalidCommand)?
-                    .get_slice()
+                    .slice()
                     .map_err(|_| IMStatusCode::InvalidCommand)?;
                 info!("Received Trusted Cert:{:x?}", root_cert);
 
@@ -385,11 +385,11 @@ struct AddNocReq<'a> {
 
 impl<'a> AddNocReq<'a> {
     fn new(data: &'a TLVElement) -> Result<Self, Error> {
-        let noc_value = data.find_tag(0)?.get_slice()?;
-        let icac_value = data.find_tag(1)?.get_slice()?;
-        let ipk_value = data.find_tag(2)?.get_slice()?;
-        let case_admin_node_id = data.find_tag(3)?.get_u32()?;
-        let vendor_id = data.find_tag(4)?.get_u16()?;
+        let noc_value = data.find_tag(0)?.slice()?;
+        let icac_value = data.find_tag(1)?.slice()?;
+        let ipk_value = data.find_tag(2)?.slice()?;
+        let case_admin_node_id = data.find_tag(3)?.u32()?;
+        let vendor_id = data.find_tag(4)?.u16()?;
         Ok(Self {
             noc_value,
             icac_value,
@@ -407,7 +407,7 @@ fn get_certchainrequest_params(data: &TLVElement) -> Result<DataType, Error> {
         .ok_or(Error::Invalid)?
         .next()
         .ok_or(Error::Invalid)?
-        .get_u8()?;
+        .u8()?;
 
     const CERT_TYPE_DAC: u8 = 1;
     const CERT_TYPE_PAI: u8 = 2;

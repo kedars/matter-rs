@@ -84,8 +84,8 @@ fn attr_comm_info_new() -> Result<Box<Attribute>, Error> {
 
 fn get_armfailsafe_params(data: &TLVElement) -> Result<(u8, u8), Error> {
     // These data types don't match the spec
-    let expiry_len = data.find_tag(0)?.get_u8()?;
-    let bread_crumb = data.find_tag(1)?.get_u8()?;
+    let expiry_len = data.find_tag(0)?.u8()?;
+    let bread_crumb = data.find_tag(1)?.u8()?;
 
     info!(
         "Received expiry len: {} breadcrumb: {:x}",
@@ -207,7 +207,7 @@ impl GenCommCluster {
             .data
             .find_tag(1)
             .map_err(|_| IMStatusCode::InvalidCommand)?
-            .get_slice()
+            .slice()
             .map_err(|_| IMStatusCode::InvalidCommand)?;
         info!("Received country code: {:?}", country_code);
 
