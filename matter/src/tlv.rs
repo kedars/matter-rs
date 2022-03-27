@@ -473,6 +473,15 @@ impl<'a> TLVElement<'a> {
         self.tag_type
     }
 
+    pub fn check_ctx_tag(&self, tag: u8) -> bool {
+        if let TagType::Context(our_tag) = self.tag_type {
+            if our_tag == tag {
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn get_element_type(&self) -> ElementType {
         self.element_type
     }
@@ -482,6 +491,14 @@ pub trait FromTLV<'a> {
     fn from_tlv(t: &TLVElement<'a>) -> Result<Self, Error>
     where
         Self: Sized;
+
+    // I don't think anybody except Option<T> will define this
+    fn tlv_not_found() -> Result<Self, Error>
+    where
+        Self: Sized,
+    {
+        Err(Error::TLVNotFound)
+    }
 }
 
 macro_rules! fromtlv_for {
@@ -501,6 +518,19 @@ fromtlv_for!(u8 u16 u32 u64 bool);
 impl<'a> FromTLV<'a> for OctetStr<'a> {
     fn from_tlv(t: &TLVElement<'a>) -> Result<OctetStr<'a>, Error> {
         t.slice().map(|x| OctetStr(x))
+    }
+}
+
+impl<'a, T: FromTLV<'a>> FromTLV<'a> for Option<T> {
+    fn from_tlv(t: &TLVElement<'a>) -> Result<Option<T>, Error> {
+        Ok(Some(T::from_tlv(t)?))
+    }
+
+    fn tlv_not_found() -> Result<Self, Error>
+    where
+        Self: Sized,
+    {
+        Ok(None)
     }
 }
 
@@ -1243,5 +1273,23 @@ mod tests {
         let test = TestDeriveStr::from_tlv(&root).unwrap();
         assert_eq!(test.a, 10);
         assert_eq!(test.b, OctetStr(&[10, 11, 12]));
+    }
+
+    #[derive(FromTLV, Debug)]
+    struct TestDeriveOption {
+        a: u16,
+        b: Option<u16>,
+        c: Option<u16>,
+    }
+
+    #[test]
+    fn test_derive_fromtlv_option() {
+        let b = [21, 37, 0, 10, 0, 37, 2, 11, 0];
+        let root = TLVList::new(&b, b.len()).iter().next().unwrap();
+        let test = TestDeriveOption::from_tlv(&root).unwrap();
+        println!("Got {:?}", test);
+        assert_eq!(test.a, 10);
+        assert_eq!(test.b, None);
+        assert_eq!(test.c, Some(11));
     }
 }

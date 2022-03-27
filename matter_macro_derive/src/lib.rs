@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use proc_macro2::Span;
-use quote::quote;
+use quote::{quote, format_ident};
 use syn::Lit::{Int, Str};
 use syn::NestedMeta::Meta;
 use syn::{parse_macro_input, DeriveInput, Lifetime};
@@ -14,7 +14,9 @@ pub fn derive_totlv(item: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(item as DeriveInput);
     let struct_name = &ast.ident;
 
+    // Overridable stuff
     let mut tag_start = 0_u8;
+    let mut data_type = format_ident!("start_struct");
 
     if ast.attrs.len() > 0 {
         if let List(MetaList {
@@ -34,6 +36,10 @@ pub fn derive_totlv(item: TokenStream) -> TokenStream {
                         if key_path.is_ident("start") {
                             if let Int(litint) = key_val {
                                 tag_start = litint.base10_parse::<u8>().unwrap();
+                            }
+                        } else if key_path.is_ident("datatype") {
+                            if let Str(litstr) = key_val {
+                                data_type = format_ident!("start_{}", litstr.value());
                             }
                         }
                     }
@@ -70,7 +76,7 @@ pub fn derive_totlv(item: TokenStream) -> TokenStream {
     let expanded = quote! {
         impl #generics ToTLV for #struct_name #generics {
             fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
-                tw.start_struct(tag_type)?;
+                tw. #data_type (tag_type)?;
                 let mut tag = #tag_start;
                 #(
                     self.#idents.to_tlv(tw, TagType::Context(tag))?;
@@ -84,13 +90,16 @@ pub fn derive_totlv(item: TokenStream) -> TokenStream {
     expanded.into()
 }
 
+
 #[proc_macro_derive(FromTLV, attributes(tlvargs))]
 pub fn derive_fromtlv(item: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(item as DeriveInput);
     let struct_name = &ast.ident;
 
+    // Overridable items
     let mut tag_start = 0_u8;
     let mut lifetime = Lifetime::new("'_", Span::call_site());
+    let mut data_type = format_ident!("confirm_struct");
 
     if ast.attrs.len() > 0 {
         if let List(MetaList {
@@ -115,6 +124,10 @@ pub fn derive_fromtlv(item: TokenStream) -> TokenStream {
                             if let Str(litstr) = key_val {
                                 lifetime = Lifetime::new(&litstr.value(), Span::call_site());
                                 // panic!("key val is {:?}", litstr.value());
+                            }
+                        } else if key_path.is_ident("datatype") {
+                            if let Str(litstr) = key_val {
+                                data_type = format_ident!("confirm_{}", litstr.value());
                             }
                         }
                     }
@@ -152,17 +165,16 @@ pub fn derive_fromtlv(item: TokenStream) -> TokenStream {
     let expanded = quote! {
         impl #generics FromTLV <#lifetime> for #struct_name #generics {
             fn from_tlv(t: &TLVElement<#lifetime>) -> Result<Self, Error> {
-                let mut t_iter = t.confirm_struct()?.iter().ok_or(Error::Invalid)?;
+                let mut t_iter = t.#data_type ()?.iter().ok_or(Error::Invalid)?;
                 let mut tag = #tag_start;
+                let mut item = t_iter.next();
                 #(
-                    let item = t_iter.next().ok_or(Error::Invalid)?;
-                    let #idents = if let TagType::Context(recvd_tag) = item.get_tag() {
-                        if recvd_tag != tag {
-                            return Err(Error::Invalid);
-                        }
-                        #types::from_tlv(&item)
+                    let #idents = if Some(true) == item.map(|x| x.check_ctx_tag(tag)) {
+                          let backup = item;
+                        item = t_iter.next();
+                        #types::from_tlv(&backup.unwrap())
                     } else {
-                        Err(Error::Invalid)
+                        #types::tlv_not_found()
                     }?;
                     tag += 1;
                 )*
@@ -174,6 +186,6 @@ pub fn derive_fromtlv(item: TokenStream) -> TokenStream {
             }
         }
     };
-    //    panic!("The generated code is {}", expanded);
+//    panic!("The generated code is {}", expanded);
     expanded.into()
 }

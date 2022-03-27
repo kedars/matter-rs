@@ -1,8 +1,14 @@
-use crate::error::Error;
+use crate::{
+    error::Error,
+    tlv::{FromTLV, TLVElement},
+    tlv_common::TagType,
+    tlv_writer::{TLVWriter, ToTLV},
+};
 
 // A generic path with endpoint, clusters, and a leaf
 // The leaf could be command, attribute, event
-#[derive(Default, Clone, Copy, Debug, PartialEq)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, FromTLV, ToTLV)]
+#[tlvargs(datatype = "list")]
 pub struct GenericPath {
     pub endpoint: Option<u16>,
     pub cluster: Option<u32>,
@@ -159,7 +165,7 @@ pub mod ib {
     use crate::{
         error::Error,
         interaction_model::core::IMStatusCode,
-        tlv::TLVElement,
+        tlv::{FromTLV, TLVElement},
         tlv_common::TagType,
         tlv_writer::{TLVWriter, ToTLV},
     };
@@ -662,47 +668,26 @@ pub mod ib {
                 },
             }
         }
+    }
 
-        pub fn from_tlv(cmd_path: &TLVElement) -> Result<Self, Error> {
-            let mut ib = CmdPath::default();
+    impl FromTLV<'_> for CmdPath {
+        fn from_tlv(cmd_path: &TLVElement) -> Result<Self, Error> {
+            let c = CmdPath {
+                path: GenericPath::from_tlv(cmd_path)?,
+            };
 
-            let iter = cmd_path.iter().ok_or(Error::Invalid)?;
-            for i in iter {
-                match i.get_tag() {
-                    TagType::Context(t) => {
-                        match num::FromPrimitive::from_u8(t).ok_or(Error::Invalid)? {
-                            CmdPathTag::Endpoint => {
-                                ib.path.endpoint = i.u16().map(|a| a as u16).ok()
-                            }
-                            CmdPathTag::Cluster => ib.path.cluster = i.u32().map(|a| a as u32).ok(),
-                            CmdPathTag::Command => ib.path.leaf = i.u32().map(|a| a as u32).ok(),
-                        }
-                    }
-                    _ => error!("Unsupported tag"),
-                }
-            }
-            if ib.path.leaf.is_none() {
+            if c.path.leaf.is_none() {
                 error!("Wildcard command parameter not supported");
                 Err(Error::CommandNotFound)
             } else {
-                Ok(ib)
+                Ok(c)
             }
         }
     }
 
     impl ToTLV for CmdPath {
         fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
-            tw.start_list(tag_type)?;
-            if let Some(endpoint) = self.path.endpoint {
-                tw.u16(TagType::Context(CmdPathTag::Endpoint as u8), endpoint)?;
-            }
-            if let Some(cluster) = self.path.cluster {
-                tw.u32(TagType::Context(CmdPathTag::Cluster as u8), cluster)?;
-            }
-            if let Some(v) = self.path.leaf {
-                tw.u16(TagType::Context(CmdPathTag::Command as u8), v as u16)?;
-            }
-            tw.end_container()
+            self.path.to_tlv(tw, tag_type)
         }
     }
 }
