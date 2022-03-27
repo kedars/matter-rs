@@ -26,6 +26,8 @@ pub static TAG_SIZE_MAP: [usize; MAX_TAG_INDEX] = [
     8, // FullQual64
 ];
 
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct UtfStr<'a>(pub &'a [u8]);
 
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct OctetStr<'a>(pub &'a [u8]);

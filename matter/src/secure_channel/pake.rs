@@ -7,7 +7,7 @@ use super::{
     common::{create_sc_status_report, SCStatusCodes},
     spake2p::Spake2P,
 };
-use crate::tlv::*;
+use crate::tlv::{self, *};
 use crate::tlv_common::TagType;
 use crate::tlv_writer::{TLVWriter, ToTLV};
 use crate::{crypto, tlv_common::OctetStr};
@@ -222,9 +222,9 @@ impl PAKE {
             }
         }
 
-        let (initiator_random, initiator_sessid, passcode_id, has_params) =
-            extract_pbkdfreq_params(proto_rx.buf)?;
-        if passcode_id != 0 {
+        let root = tlv::get_root_node(proto_rx.buf)?;
+        let a = PBKDFParamReq::from_tlv(&root)?;
+        if a.passcode_id != 0 {
             error!("Can't yet handle passcode_id != 0");
             return Err(Error::Invalid);
         }
@@ -233,19 +233,19 @@ impl PAKE {
         rand::thread_rng().fill_bytes(&mut our_random);
 
         let local_sessid = proto_rx.session.reserve_new_sess_id();
-        let spake2p_data: u32 = ((local_sessid as u32) << 16) | initiator_sessid as u32;
+        let spake2p_data: u32 = ((local_sessid as u32) << 16) | a.initiator_ssid as u32;
         let mut spake2p = Box::new(Spake2P::new());
         spake2p.set_app_data(spake2p_data as u32);
 
         // Generate response
         let mut tw = TLVWriter::new(&mut proto_tx.write_buf);
         let mut resp = PBKDFParamResp {
-            init_random: OctetStr(initiator_random),
+            init_random: a.initiator_random,
             our_random: OctetStr(&our_random),
             local_sessid,
             params: None,
         };
-        if !has_params {
+        if !a.has_params {
             let params_resp = PBKDFParamRespParams {
                 count: ITERATION_COUNT,
                 salt: OctetStr(&self.salt),
@@ -261,21 +261,21 @@ impl PAKE {
 }
 
 #[derive(ToTLV)]
-#[totlv(start = 1)]
+#[tlvargs(start = 1)]
 struct Pake1Resp<'a> {
     pb: OctetStr<'a>,
     cb: OctetStr<'a>,
 }
 
 #[derive(ToTLV)]
-#[totlv(start = 1)]
+#[tlvargs(start = 1)]
 struct PBKDFParamRespParams<'a> {
     count: u32,
     salt: OctetStr<'a>,
 }
 
 #[derive(ToTLV)]
-#[totlv(start = 1)]
+#[tlvargs(start = 1)]
 struct PBKDFParamResp<'a> {
     init_random: OctetStr<'a>,
     our_random: OctetStr<'a>,
@@ -290,45 +290,11 @@ fn extract_pasepake_1_or_3_params(buf: &[u8]) -> Result<&[u8], Error> {
     Ok(pA)
 }
 
-fn extract_pbkdfreq_params(buf: &[u8]) -> Result<(&[u8], u16, u16, bool), Error> {
-    let root = get_root_node_struct(buf)?;
-    let initiator_random = root.find_tag(1)?.slice()?;
-    let initiator_sessid = root.find_tag(2)?.u8()?;
-    let passcode_id = root.find_tag(3)?.u8()?;
-    let has_params = root.find_tag(4)?.bool()?;
-    Ok((
-        initiator_random,
-        initiator_sessid as u16,
-        passcode_id as u16,
-        has_params,
-    ))
-}
-
-const PBKDF_RANDOM_LEN: usize = 32;
-#[derive(Default)]
-pub struct PBKDFParamReq {
-    pub initiator_random: [u8; PBKDF_RANDOM_LEN],
-    pub initiator_sessid: u16,
-    pub passcode_id: u16,
-    pub has_params: bool,
-}
-
-impl PBKDFParamReq {
-    pub fn new(
-        initiator_random_ref: &[u8],
-        initiator_sessid: u16,
-        passcode_id: u16,
-        has_params: bool,
-    ) -> Option<Self> {
-        if initiator_random_ref.len() != PBKDF_RANDOM_LEN {
-            None
-        } else {
-            let mut req = PBKDFParamReq::default();
-            req.initiator_random.copy_from_slice(initiator_random_ref);
-            req.initiator_sessid = initiator_sessid;
-            req.passcode_id = passcode_id;
-            req.has_params = has_params;
-            Some(req)
-        }
-    }
+#[derive(FromTLV)]
+#[tlvargs(lifetime = "'a", start = 1)]
+struct PBKDFParamReq<'a> {
+    initiator_random: OctetStr<'a>,
+    initiator_ssid: u8,
+    passcode_id: u8,
+    has_params: bool,
 }
