@@ -13,7 +13,7 @@ use matter::{
         messages::{msg, GenericPath},
     },
     proto_demux::ProtoTx,
-    tlv::{self, ElementType, TLVElement, TLVList},
+    tlv::{self, ElementType, FromTLV, TLVElement, TLVList},
     tlv_common::TagType,
     tlv_writer::TLVWriter,
     utils::writebuf::WriteBuf,

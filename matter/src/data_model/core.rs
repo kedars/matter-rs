@@ -17,6 +17,7 @@ use crate::{
         },
         InteractionConsumer, Transaction,
     },
+    tlv::FromTLV,
     tlv::TLVElement,
     tlv_common::TagType,
     tlv_writer::TLVWriter,

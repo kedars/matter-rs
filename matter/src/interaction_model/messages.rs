@@ -315,15 +315,10 @@ pub mod ib {
     }
 
     // Status
-    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[derive(Debug, Clone, Copy, PartialEq, FromTLV, ToTLV)]
     pub struct Status {
         pub status: IMStatusCode,
         pub cluster_status: u16,
-    }
-
-    enum StatusTag {
-        Status = 0,
-        ClusterStatus = 1,
     }
 
     impl Status {
@@ -332,34 +327,6 @@ pub mod ib {
                 status,
                 cluster_status,
             }
-        }
-    }
-
-    impl ToTLV for Status {
-        fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
-            tw.start_struct(tag_type)?;
-            tw.u16(
-                TagType::Context(StatusTag::Status as u8),
-                self.status as u16,
-            )?;
-            tw.u16(
-                TagType::Context(StatusTag::ClusterStatus as u8),
-                self.cluster_status,
-            )?;
-            tw.end_container()
-        }
-    }
-
-    impl Status {
-        pub fn from_tlv(status_tlv: &TLVElement) -> Result<Self, Error> {
-            let status = status_tlv.find_tag(StatusTag::Status as u32)?.u16()?;
-            let cluster_status = status_tlv
-                .find_tag(StatusTag::ClusterStatus as u32)?
-                .u16()?;
-            Ok(Self {
-                status: num::FromPrimitive::from_u16(status).ok_or(Error::Invalid)?,
-                cluster_status,
-            })
         }
     }
 
@@ -481,7 +448,23 @@ pub mod ib {
             }
         }
 
-        pub fn from_tlv(attr_data: &TLVElement<'a>) -> Result<Self, Error> {
+        fn write_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), IMStatusCode> {
+            let _ = tw.start_struct(tag_type);
+            if let Some(data_ver) = self.data_ver {
+                let _ = tw.u32(TagType::Context(AttrDataTag::DataVersion as u8), data_ver);
+            }
+            let _ = tw.object(TagType::Context(AttrDataTag::Path as u8), &self.path);
+            match self.data {
+                AttrDataType::Closure(f) => (f)(TagType::Context(AttrDataTag::Data as u8), tw)?,
+                AttrDataType::Tlv(_) => (panic!("Not yet implemented")),
+            }
+            let _ = tw.end_container();
+            Ok(())
+        }
+    }
+
+    impl<'a> FromTLV<'a> for AttrData<'a> {
+        fn from_tlv(attr_data: &TLVElement<'a>) -> Result<Self, Error> {
             let data_ver_tag = attr_data.find_tag(AttrDataTag::DataVersion as u32);
             let data_ver = if data_ver_tag.is_ok() {
                 error!("Data Version handling not yet supported");
@@ -499,20 +482,6 @@ pub mod ib {
                 data: AttrDataType::Tlv(data),
             })
         }
-
-        fn write_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), IMStatusCode> {
-            let _ = tw.start_struct(tag_type);
-            if let Some(data_ver) = self.data_ver {
-                let _ = tw.u32(TagType::Context(AttrDataTag::DataVersion as u8), data_ver);
-            }
-            let _ = tw.object(TagType::Context(AttrDataTag::Path as u8), &self.path);
-            match self.data {
-                AttrDataType::Closure(f) => (f)(TagType::Context(AttrDataTag::Data as u8), tw)?,
-                AttrDataType::Tlv(_) => (panic!("Not yet implemented")),
-            }
-            let _ = tw.end_container();
-            Ok(())
-        }
     }
 
     impl<'a> ToTLV for AttrData<'a> {
@@ -527,10 +496,10 @@ pub mod ib {
         Status = 1,
     }
 
-    #[derive(Debug, Clone, Copy, PartialEq)]
+    #[derive(Debug, Clone, Copy, PartialEq, FromTLV, ToTLV)]
     pub struct AttrStatus {
         path: AttrPath,
-        status: super::ib::Status,
+        status: Status,
     }
 
     impl AttrStatus {
@@ -539,26 +508,6 @@ pub mod ib {
                 path: AttrPath::new(path),
                 status: super::ib::Status::new(status, cluster_status),
             }
-        }
-
-        pub fn from_tlv<'a>(resp: &TLVElement<'a>) -> Result<Self, Error> {
-            let resp = resp.confirm_struct()?;
-            let path = resp.find_tag(AttrStatusTag::Path as u32)?;
-            let path = AttrPath::from_tlv(&path)?;
-            let status = resp.find_tag(AttrStatusTag::Status as u32)?;
-            let status = Status::from_tlv(&status)?;
-            Ok(Self { path, status })
-        }
-    }
-
-    impl ToTLV for AttrStatus {
-        fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
-            tw.start_struct(tag_type)?;
-            // Attribute Status IB
-            tw.object(TagType::Context(AttrStatusTag::Path as u8), &self.path)?;
-            // Status IB
-            tw.object(TagType::Context(AttrStatusTag::Status as u8), &self.status)?;
-            tw.end_container()
         }
     }
 
@@ -588,8 +537,10 @@ pub mod ib {
                 ..Default::default()
             }
         }
+    }
 
-        pub fn from_tlv(attr_path: &TLVElement) -> Result<Self, Error> {
+    impl FromTLV<'_> for AttrPath {
+        fn from_tlv(attr_path: &TLVElement) -> Result<Self, Error> {
             let mut ib = AttrPath::default();
 
             let iter = attr_path.confirm_list()?.iter().ok_or(Error::Invalid)?;
@@ -635,13 +586,6 @@ pub mod ib {
     #[derive(Default, Debug, Copy, Clone, PartialEq)]
     pub struct CmdPath {
         pub path: GenericPath,
-    }
-
-    #[derive(FromPrimitive)]
-    pub enum CmdPathTag {
-        Endpoint = 0,
-        Cluster = 1,
-        Command = 2,
     }
 
     #[macro_export]

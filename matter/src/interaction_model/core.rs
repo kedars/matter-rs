@@ -3,6 +3,11 @@ use crate::proto_demux;
 use crate::proto_demux::ResponseRequired;
 use crate::proto_demux::{ProtoRx, ProtoTx};
 use crate::tlv;
+use crate::tlv::FromTLV;
+use crate::tlv::TLVElement;
+use crate::tlv_common::TagType;
+use crate::tlv_writer::TLVWriter;
+use crate::tlv_writer::ToTLV;
 use crate::transport::session::SessionHandle;
 use colored::Colorize;
 use log::{error, info};
@@ -132,5 +137,17 @@ impl From<Error> for IMStatusCode {
             Error::CommandNotFound => IMStatusCode::UnsupportedCommand,
             _ => IMStatusCode::Failure,
         }
+    }
+}
+
+impl FromTLV<'_> for IMStatusCode {
+    fn from_tlv(t: &TLVElement) -> Result<Self, Error> {
+        num::FromPrimitive::from_u16(t.u16()?).ok_or(Error::Invalid)
+    }
+}
+
+impl ToTLV for IMStatusCode {
+    fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
+        tw.u16(tag_type, *self as u16)
     }
 }

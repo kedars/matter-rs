@@ -3,9 +3,9 @@ use crate::data_model::objects::*;
 use crate::data_model::sdm::failsafe::FailSafe;
 use crate::interaction_model::core::IMStatusCode;
 use crate::interaction_model::messages::ib;
-use crate::tlv::TLVElement;
+use crate::tlv::{FromTLV, TLVElement};
 use crate::tlv_common::TagType;
-use crate::tlv_writer::TLVWriter;
+use crate::tlv_writer::{TLVWriter, ToTLV};
 use crate::{error::*, interaction_model::command::CommandReq};
 use log::info;
 use num_derive::FromPrimitive;
@@ -82,16 +82,10 @@ fn attr_comm_info_new() -> Result<Box<Attribute>, Error> {
     )
 }
 
-fn get_armfailsafe_params(data: &TLVElement) -> Result<(u8, u8), Error> {
-    // These data types don't match the spec
-    let expiry_len = data.find_tag(0)?.u8()?;
-    let bread_crumb = data.find_tag(1)?.u8()?;
-
-    info!(
-        "Received expiry len: {} breadcrumb: {:x}",
-        expiry_len, bread_crumb
-    );
-    Ok((expiry_len, bread_crumb))
+#[derive(FromTLV, ToTLV)]
+struct FailSafeParams {
+    expiry_len: u8,
+    bread_crumb: u8,
 }
 
 pub struct GenCommCluster {
@@ -176,12 +170,11 @@ impl GenCommCluster {
     fn handle_command_armfailsafe(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
         cmd_enter!("ARM Fail Safe");
 
-        let (expiry_len, _) =
-            get_armfailsafe_params(&cmd_req.data).map_err(|_| IMStatusCode::InvalidCommand)?;
+        let p = FailSafeParams::from_tlv(&cmd_req.data)?;
 
         if self
             .failsafe
-            .arm(expiry_len, cmd_req.trans.session.get_session_mode())
+            .arm(p.expiry_len, cmd_req.trans.session.get_session_mode())
             .is_err()
         {
             return Err(IMStatusCode::Busy);
