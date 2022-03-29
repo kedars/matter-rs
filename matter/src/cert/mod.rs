@@ -3,8 +3,9 @@ use std::fmt;
 use crate::{
     crypto::{CryptoKeyPair, KeyPair},
     error::Error,
-    tlv::{self, TLVContainerIterator, TLVElement},
-    tlv_common::TagType,
+    interaction_model::messages::msg::TLVArray,
+    tlv::{self, FromTLV, TLVContainerIterator, TLVElement},
+    tlv_common::{OctetStr, TagType},
 };
 use log::error;
 use num_derive::FromPrimitive;
@@ -111,66 +112,68 @@ fn get_print_str(key_usage: u16) -> String {
 }
 
 #[allow(unused_assignments)]
-fn decode_key_usage(t: TLVElement, w: &mut dyn CertConsumer) -> Result<(), Error> {
-    // TODO This should be u16, but we get u8 for now
-    let key_usage = t.u8()? as u16;
+fn encode_key_usage(key_usage: u16, w: &mut dyn CertConsumer) -> Result<(), Error> {
     let mut key_usage_str = [0u8; 2];
     int_to_bitstring(key_usage, &mut key_usage_str);
     w.bitstr(&get_print_str(key_usage), true, &key_usage_str)?;
     Ok(())
 }
 
-fn decode_extended_key_usage(t: TLVElement, w: &mut dyn CertConsumer) -> Result<(), Error> {
+fn encode_extended_key_usage(
+    list: &TLVArray<'_, u8>,
+    w: &mut dyn CertConsumer,
+) -> Result<(), Error> {
     const OID_SERVER_AUTH: [u8; 8] = [0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x01];
     const OID_CLIENT_AUTH: [u8; 8] = [0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x02];
     const OID_CODE_SIGN: [u8; 8] = [0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x03];
     const OID_EMAIL_PROT: [u8; 8] = [0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x04];
     const OID_TIMESTAMP: [u8; 8] = [0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x08];
     const OID_OCSP_SIGN: [u8; 8] = [0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x09];
+    let encoding = [
+        ("", &[0; 8]),
+        ("ServerAuth", &OID_SERVER_AUTH),
+        ("ClientAuth", &OID_CLIENT_AUTH),
+        ("CodeSign", &OID_CODE_SIGN),
+        ("EmailProtection", &OID_EMAIL_PROT),
+        ("Timestamp", &OID_TIMESTAMP),
+        ("OCSPSign", &OID_OCSP_SIGN),
+    ];
 
-    let iter = t.confirm_array()?.iter().ok_or(Error::Invalid)?;
     w.start_seq("")?;
-    for t in iter {
-        let (str, oid) = match t.u8()? {
-            1 => ("ServerAuth", OID_SERVER_AUTH),
-            2 => ("ClientAuth", OID_CLIENT_AUTH),
-            3 => ("CodeSign", OID_CODE_SIGN),
-            4 => ("EmailProtection", OID_EMAIL_PROT),
-            5 => ("Timestamp", OID_TIMESTAMP),
-            6 => ("OCSPSign", OID_OCSP_SIGN),
-            _ => {
-                error!("Not Supported");
-                return Err(Error::Invalid);
-            }
-        };
-        w.oid(str, &oid)?;
+    for t in list.iter() {
+        let t = t as usize;
+        if t > 0 && t <= encoding.len() {
+            w.oid(encoding[t].0, encoding[t].1)?;
+        } else {
+            error!("Skipping encoding key usage out of bounds");
+        }
     }
     w.end_seq()?;
     Ok(())
 }
 
-pub fn decode_basic_constraints(t: TLVElement, w: &mut dyn CertConsumer) -> Result<(), Error> {
-    w.start_seq("")?;
-    let iter = t.confirm_struct()?.iter().ok_or(Error::Invalid)?;
-    for t in iter {
-        if let TagType::Context(tag) = t.get_tag() {
-            match tag {
-                1 => {
-                    if t.bool()? {
-                        // Encode CA only if true
-                        w.bool("CA:", true)?
-                    }
-                }
-
-                2 => error!("Path Len is not yet implemented"),
-                _ => error!("Unsupport Tag"),
-            }
-        }
-    }
-    w.end_seq()
+#[derive(FromTLV)]
+#[tlvargs(start = 1)]
+struct BasicConstraints {
+    is_ca: bool,
+    path: Option<u8>,
 }
 
-fn decode_extension_start(
+impl BasicConstraints {
+    pub fn encode(&self, w: &mut dyn CertConsumer) -> Result<(), Error> {
+        w.start_seq("")?;
+        if self.is_ca {
+            // Encode CA only if true
+            w.bool("CA:", true)?
+        }
+        if self.path.is_some() {
+            error!("Path Len is not yet implemented");
+        }
+        w.end_seq()
+    }
+}
+
+fn encode_extension_start(
     tag: &str,
     critical: bool,
     oid: &[u8],
@@ -184,9 +187,20 @@ fn decode_extension_start(
     w.start_compound_ostr("value:")
 }
 
-fn decode_extension_end(w: &mut dyn CertConsumer) -> Result<(), Error> {
+fn encode_extension_end(w: &mut dyn CertConsumer) -> Result<(), Error> {
     w.end_compound_ostr()?;
     w.end_seq()
+}
+
+#[derive(FromTLV)]
+#[tlvargs(start = 1, lifetime = "'a", datatype = "list")]
+struct Extensions<'a> {
+    basic_const: Option<BasicConstraints>,
+    key_usage: Option<u16>,
+    ext_key_usage: Option<TLVArray<'a, u8>>,
+    subj_key_id: Option<OctetStr<'a>>,
+    auth_key_id: Option<OctetStr<'a>>,
+    future_extensions: Option<OctetStr<'a>>,
 }
 
 #[derive(FromPrimitive)]
@@ -198,67 +212,53 @@ enum ExtTags {
     AuthKeyId = 5,
     FutureExt = 6,
 }
-fn decode_extensions(t: TLVElement, w: &mut dyn CertConsumer) -> Result<(), Error> {
-    const OID_BASIC_CONSTRAINTS: [u8; 3] = [0x55, 0x1D, 0x13];
-    const OID_KEY_USAGE: [u8; 3] = [0x55, 0x1D, 0x0F];
-    const OID_EXT_KEY_USAGE: [u8; 3] = [0x55, 0x1D, 0x25];
-    const OID_SUBJ_KEY_IDENTIFIER: [u8; 3] = [0x55, 0x1D, 0x0E];
-    const OID_AUTH_KEY_ID: [u8; 3] = [0x55, 0x1D, 0x23];
 
-    w.start_ctx("X509v3 extensions:", 3)?;
-    w.start_seq("")?;
-    let iter = t.confirm_list()?.iter().ok_or(Error::Invalid)?;
-    for t in iter {
-        if let TagType::Context(tag) = t.get_tag() {
-            let tag = num::FromPrimitive::from_u8(tag).ok_or(Error::InvalidData)?;
-            match tag {
-                ExtTags::BasicConstraints => {
-                    decode_extension_start(
-                        "X509v3 Basic Constraints",
-                        true,
-                        &OID_BASIC_CONSTRAINTS,
-                        w,
-                    )?;
-                    decode_basic_constraints(t, w)?;
-                    decode_extension_end(w)?;
-                }
-                ExtTags::KeyUsage => {
-                    decode_extension_start("X509v3 Key Usage", true, &OID_KEY_USAGE, w)?;
-                    decode_key_usage(t, w)?;
-                    decode_extension_end(w)?;
-                }
-                ExtTags::ExtKeyUsage => {
-                    decode_extension_start(
-                        "X509v3 Extended Key Usage",
-                        true,
-                        &OID_EXT_KEY_USAGE,
-                        w,
-                    )?;
-                    decode_extended_key_usage(t, w)?;
-                    decode_extension_end(w)?;
-                }
-                ExtTags::SubjectKeyId => {
-                    decode_extension_start("Subject Key ID", false, &OID_SUBJ_KEY_IDENTIFIER, w)?;
-                    w.ostr("", t.slice()?)?;
-                    decode_extension_end(w)?;
-                }
-                ExtTags::AuthKeyId => {
-                    decode_extension_start("Auth Key ID", false, &OID_AUTH_KEY_ID, w)?;
-                    w.start_seq("")?;
-                    w.ctx("", 0, t.slice()?)?;
-                    w.end_seq()?;
-                    decode_extension_end(w)?;
-                }
-                ExtTags::FutureExt => {
-                    error!("Future Extensions Not Yet Supported: {:x?}", t.slice()?)
-                }
-            }
+impl<'a> Extensions<'a> {
+    fn encode(&self, w: &mut dyn CertConsumer) -> Result<(), Error> {
+        const OID_BASIC_CONSTRAINTS: [u8; 3] = [0x55, 0x1D, 0x13];
+        const OID_KEY_USAGE: [u8; 3] = [0x55, 0x1D, 0x0F];
+        const OID_EXT_KEY_USAGE: [u8; 3] = [0x55, 0x1D, 0x25];
+        const OID_SUBJ_KEY_IDENTIFIER: [u8; 3] = [0x55, 0x1D, 0x0E];
+        const OID_AUTH_KEY_ID: [u8; 3] = [0x55, 0x1D, 0x23];
+
+        w.start_ctx("X509v3 extensions:", 3)?;
+        w.start_seq("")?;
+        if let Some(t) = &self.basic_const {
+            encode_extension_start("X509v3 Basic Constraints", true, &OID_BASIC_CONSTRAINTS, w)?;
+            t.encode(w)?;
+            encode_extension_end(w)?;
         }
+        if let Some(t) = self.key_usage {
+            encode_extension_start("X509v3 Key Usage", true, &OID_KEY_USAGE, w)?;
+            encode_key_usage(t, w)?;
+            encode_extension_end(w)?;
+        }
+        if let Some(t) = &self.ext_key_usage {
+            encode_extension_start("X509v3 Extended Key Usage", true, &OID_EXT_KEY_USAGE, w)?;
+            encode_extended_key_usage(&t, w)?;
+            encode_extension_end(w)?;
+        }
+        if let Some(t) = &self.subj_key_id {
+            encode_extension_start("Subject Key ID", false, &OID_SUBJ_KEY_IDENTIFIER, w)?;
+            w.ostr("", t.0)?;
+            encode_extension_end(w)?;
+        }
+        if let Some(t) = &self.auth_key_id {
+            encode_extension_start("Auth Key ID", false, &OID_AUTH_KEY_ID, w)?;
+            w.start_seq("")?;
+            w.ctx("", 0, t.0)?;
+            w.end_seq()?;
+            encode_extension_end(w)?;
+        }
+        if let Some(t) = &self.future_extensions {
+            error!("Future Extensions Not Yet Supported: {:x?}", t.0)
+        }
+        w.end_seq()?;
+        w.end_ctx()?;
+        Ok(())
     }
-    w.end_seq()?;
-    w.end_ctx()?;
-    Ok(())
 }
+const MAX_DN_ENTRIES: usize = 5;
 
 #[derive(FromPrimitive)]
 enum DnTags {
@@ -269,85 +269,116 @@ enum DnTags {
     FabricId = 21,
     NocCat = 22,
 }
-fn decode_dn_list(tag: &str, t: TLVElement, w: &mut dyn CertConsumer) -> Result<(), Error> {
-    const OID_MATTER_NODE_ID: [u8; 10] =
-        [0x2B, 0x06, 0x01, 0x04, 0x01, 0x82, 0xA2, 0x7C, 0x01, 0x01];
-    const OID_MATTER_FW_SIGN_ID: [u8; 10] =
-        [0x2B, 0x06, 0x01, 0x04, 0x01, 0x82, 0xA2, 0x7C, 0x01, 0x02];
-    const OID_MATTER_ICA_ID: [u8; 10] =
-        [0x2B, 0x06, 0x01, 0x04, 0x01, 0x82, 0xA2, 0x7C, 0x01, 0x03];
-    const OID_MATTER_ROOT_CA_ID: [u8; 10] =
-        [0x2B, 0x06, 0x01, 0x04, 0x01, 0x82, 0xA2, 0x7C, 0x01, 0x04];
-    const OID_MATTER_FABRIC_ID: [u8; 10] =
-        [0x2B, 0x06, 0x01, 0x04, 0x01, 0x82, 0xA2, 0x7C, 0x01, 0x05];
-    const OID_MATTER_NOC_CAT_ID: [u8; 10] =
-        [0x2B, 0x06, 0x01, 0x04, 0x01, 0x82, 0xA2, 0x7C, 0x01, 0x06];
 
-    let iter = t.confirm_list()?.iter().ok_or(Error::Invalid)?;
-    w.start_seq(tag)?;
-    for t in iter {
-        w.start_set("")?;
-        if let TagType::Context(tag) = t.get_tag() {
-            let tag = num::FromPrimitive::from_u8(tag).ok_or(Error::InvalidData)?;
-            match tag {
-                DnTags::NodeId => {
-                    w.start_seq("")?;
-                    w.oid("Chip Node Id:", &OID_MATTER_NODE_ID)?;
-                    w.utf8str("", format!("{:016X}", t.u32()?).as_str())?;
-                    w.end_seq()?;
-                }
-                DnTags::FirmwareSignId => {
-                    w.start_seq("")?;
-                    w.oid("Chip Firmware Signing Id:", &OID_MATTER_FW_SIGN_ID)?;
-                    w.utf8str("", format!("{:016X}", t.u8()?).as_str())?;
-                    w.end_seq()?;
-                }
-                DnTags::IcaId => {
-                    w.start_seq("")?;
-                    w.oid("Chip ICA Id:", &OID_MATTER_ICA_ID)?;
-                    w.utf8str("", format!("{:016X}", t.u8()?).as_str())?;
-                    w.end_seq()?;
-                }
-                DnTags::RootCaId => {
-                    w.start_seq("")?;
-                    w.oid("Chip Root CA Id:", &OID_MATTER_ROOT_CA_ID)?;
-                    w.utf8str("", format!("{:016X}", t.u8()?).as_str())?;
-                    w.end_seq()?;
-                }
-                DnTags::FabricId => {
-                    w.start_seq("")?;
-                    w.oid("Chip Fabric Id:", &OID_MATTER_FABRIC_ID)?;
-                    w.utf8str("", format!("{:016X}", t.u8()?).as_str())?;
-                    w.end_seq()?;
-                }
-                DnTags::NocCat => {
-                    w.start_seq("")?;
-                    w.oid("Chip NOC CAT Id:", &OID_MATTER_NOC_CAT_ID)?;
-                    w.utf8str("", format!("{:08X}", t.u8()?).as_str())?;
-                    w.end_seq()?;
-                }
-            }
-        }
-        w.end_set()?;
-    }
-    w.end_seq()?;
-    Ok(())
+struct DistNames {
+    // The order in which the DNs arrive is important, as the signing
+    // requires that the ASN1 notation retains the same order
+    dn: Vec<(u8, u64)>,
 }
 
-fn get_next_tag<'a>(
-    iter: &mut TLVContainerIterator<'a>,
-    tag: CertTags,
-) -> Result<TLVElement<'a>, Error> {
-    let current = iter.next().ok_or(Error::Invalid)?;
-    if current.get_tag() != TagType::Context(tag as u8) {
-        Err(Error::TLVTypeMismatch)
-    } else {
-        Ok(current)
+impl<'a> FromTLV<'a> for DistNames {
+    fn from_tlv(t: &TLVElement<'a>) -> Result<Self, Error> {
+        let mut d = Self {
+            dn: Vec::with_capacity(MAX_DN_ENTRIES),
+        };
+        let iter = t.confirm_list()?.iter().ok_or(Error::Invalid)?;
+        for t in iter {
+            if let TagType::Context(tag) = t.get_tag() {
+                let value = t.u64().map_err(|e| {
+                    // Non-integer DNs not yet supported
+                    error!("This DN is not yet supported{}", tag);
+                    e
+                })?;
+                d.dn.push((tag, value));
+            }
+        }
+        Ok(d)
     }
+}
+
+impl DistNames {
+    fn encode(&self, tag: &str, w: &mut dyn CertConsumer) -> Result<(), Error> {
+        const OID_MATTER_NODE_ID: [u8; 10] =
+            [0x2B, 0x06, 0x01, 0x04, 0x01, 0x82, 0xA2, 0x7C, 0x01, 0x01];
+        const OID_MATTER_FW_SIGN_ID: [u8; 10] =
+            [0x2B, 0x06, 0x01, 0x04, 0x01, 0x82, 0xA2, 0x7C, 0x01, 0x02];
+        const OID_MATTER_ICA_ID: [u8; 10] =
+            [0x2B, 0x06, 0x01, 0x04, 0x01, 0x82, 0xA2, 0x7C, 0x01, 0x03];
+        const OID_MATTER_ROOT_CA_ID: [u8; 10] =
+            [0x2B, 0x06, 0x01, 0x04, 0x01, 0x82, 0xA2, 0x7C, 0x01, 0x04];
+        const OID_MATTER_FABRIC_ID: [u8; 10] =
+            [0x2B, 0x06, 0x01, 0x04, 0x01, 0x82, 0xA2, 0x7C, 0x01, 0x05];
+        const OID_MATTER_NOC_CAT_ID: [u8; 10] =
+            [0x2B, 0x06, 0x01, 0x04, 0x01, 0x82, 0xA2, 0x7C, 0x01, 0x06];
+
+        let dn_encoding = [
+            ("Chip Node Id:", &OID_MATTER_NODE_ID),
+            ("Chip Firmware Signing Id:", &OID_MATTER_FW_SIGN_ID),
+            ("Chip ICA Id:", &OID_MATTER_ICA_ID),
+            ("Chip Root CA Id:", &OID_MATTER_ROOT_CA_ID),
+            ("Chip Fabric Id:", &OID_MATTER_FABRIC_ID),
+        ];
+
+        w.start_seq(tag)?;
+        for (id, value) in &self.dn {
+            if let Ok(tag) = num::FromPrimitive::from_u8(*id).ok_or(Error::InvalidData) {
+                match tag {
+                    DnTags::NocCat => {
+                        w.start_set("")?;
+                        w.start_seq("")?;
+                        w.oid("Chip NOC CAT Id:", &OID_MATTER_NOC_CAT_ID)?;
+                        w.utf8str("", format!("{:08X}", value).as_str())?;
+                        w.end_seq()?;
+                        w.end_set()?;
+                    }
+                    _ => {
+                        let index: usize = (*id as usize) - (DnTags::NodeId as usize);
+                        let this = &dn_encoding[index];
+                        encode_u64_dn(*value, this.0, this.1, w)?;
+                    }
+                }
+            } else {
+                error!("Non Matter DNs are not yet supported {}", id);
+            }
+        }
+        w.end_seq()?;
+        Ok(())
+    }
+}
+
+fn encode_u64_dn(
+    value: u64,
+    name: &str,
+    oid: &[u8],
+    w: &mut dyn CertConsumer,
+) -> Result<(), Error> {
+    w.start_set("")?;
+    w.start_seq("")?;
+    w.oid(name, oid)?;
+    w.utf8str("", format!("{:016X}", value).as_str())?;
+    w.end_seq()?;
+    w.end_set()
+}
+
+#[derive(FromTLV)]
+#[tlvargs(start = 1, lifetime = "'a")]
+struct TmpCert<'a> {
+    serial_no: OctetStr<'a>,
+    sign_algo: u8,
+    issuer: DistNames,
+    not_before: u32,
+    not_after: u32,
+    subject: DistNames,
+    pubkey_algo: u8,
+    ec_curve_id: u8,
+    pubkey: OctetStr<'a>,
+    extensions: Extensions<'a>,
+    signature: OctetStr<'a>,
 }
 
 fn decode_cert(buf: &[u8], w: &mut dyn CertConsumer) -> Result<(), Error> {
-    let mut iter = tlv::get_root_node_struct(buf)?.iter().unwrap();
+    let root = tlv::get_root_node_struct(buf)?;
+    let cert = TmpCert::from_tlv(&root)?;
 
     w.start_seq("")?;
 
@@ -355,50 +386,40 @@ fn decode_cert(buf: &[u8], w: &mut dyn CertConsumer) -> Result<(), Error> {
     w.integer("", &[2])?;
     w.end_ctx()?;
 
-    let mut current = get_next_tag(&mut iter, CertTags::SerialNum)?;
-    w.integer("Serial Num:", current.slice()?)?;
+    w.integer("Serial Num:", cert.serial_no.0)?;
 
-    current = get_next_tag(&mut iter, CertTags::SignAlgo)?;
     w.start_seq("Signature Algorithm:")?;
-    let (str, oid) = match get_sign_algo(current.u8()?).ok_or(Error::Invalid)? {
+    let (str, oid) = match get_sign_algo(cert.sign_algo).ok_or(Error::Invalid)? {
         SignAlgoValue::ECDSAWithSHA256 => ("ECDSA with SHA256", OID_ECDSA_WITH_SHA256),
     };
     w.oid(str, &oid)?;
     w.end_seq()?;
 
-    current = get_next_tag(&mut iter, CertTags::Issuer)?;
-    decode_dn_list("Issuer:", current, w)?;
+    cert.issuer.encode("Issuer:", w)?;
 
     w.start_seq("Validity:")?;
-    current = get_next_tag(&mut iter, CertTags::NotBefore)?;
-    w.utctime("Not Before:", current.u32()?)?;
-    current = get_next_tag(&mut iter, CertTags::NotAfter)?;
-    w.utctime("Not After:", current.u32()?)?;
+    w.utctime("Not Before:", cert.not_before)?;
+    w.utctime("Not After:", cert.not_after)?;
     w.end_seq()?;
 
-    current = get_next_tag(&mut iter, CertTags::Subject)?;
-    decode_dn_list("Subject:", current, w)?;
+    cert.subject.encode("Subject:", w)?;
 
     w.start_seq("")?;
     w.start_seq("Public Key Algorithm")?;
-    current = get_next_tag(&mut iter, CertTags::PubKeyAlgo)?;
-    let (str, pub_key) = match get_pubkey_algo(current.u8()?).ok_or(Error::Invalid)? {
+    let (str, pub_key) = match get_pubkey_algo(cert.pubkey_algo).ok_or(Error::Invalid)? {
         PubKeyAlgoValue::EcPubKey => ("ECPubKey", OID_PUB_KEY_ECPUBKEY),
     };
     w.oid(str, &pub_key)?;
-    current = get_next_tag(&mut iter, CertTags::EcCurveId)?;
-    let (str, curve_id) = match get_ec_curve_id(current.u8()?).ok_or(Error::Invalid)? {
+    let (str, curve_id) = match get_ec_curve_id(cert.ec_curve_id).ok_or(Error::Invalid)? {
         EcCurveIdValue::Prime256V1 => ("Prime256v1", OID_EC_TYPE_PRIME256V1),
     };
     w.oid(str, &curve_id)?;
     w.end_seq()?;
 
-    current = get_next_tag(&mut iter, CertTags::EcPubKey)?;
-    w.bitstr("Public-Key:", false, current.slice()?)?;
+    w.bitstr("Public-Key:", false, cert.pubkey.0)?;
     w.end_seq()?;
 
-    current = get_next_tag(&mut iter, CertTags::Extensions)?;
-    decode_extensions(current, w)?;
+    cert.extensions.encode(w)?;
 
     // We do not encode the Signature in the DER certificate
 

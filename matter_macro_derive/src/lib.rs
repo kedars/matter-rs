@@ -100,6 +100,7 @@ pub fn derive_fromtlv(item: TokenStream) -> TokenStream {
     let mut tag_start = 0_u8;
     let mut lifetime = Lifetime::new("'_", Span::call_site());
     let mut data_type = format_ident!("confirm_struct");
+    let mut out_of_order = false;
 
     if ast.attrs.len() > 0 {
         if let List(MetaList {
@@ -129,6 +130,8 @@ pub fn derive_fromtlv(item: TokenStream) -> TokenStream {
                             if let Str(litstr) = key_val {
                                 data_type = format_ident!("confirm_{}", litstr.value());
                             }
+                        } else if key_path.is_ident("unordered") {
+                            out_of_order = true;
                         }
                     }
                 }
@@ -162,7 +165,11 @@ pub fn derive_fromtlv(item: TokenStream) -> TokenStream {
         }
     }
 
-    let expanded = quote! {
+    // Currently we don't use find_tag() because the tags come in sequential
+    // order. If ever the tags start coming out of order, we can use find_tag()
+    // instead
+    let expanded = if !out_of_order {
+     quote! {
         impl #generics FromTLV <#lifetime> for #struct_name #generics {
             fn from_tlv(t: &TLVElement<#lifetime>) -> Result<Self, Error> {
                 let mut t_iter = t.#data_type ()?.iter().ok_or(Error::Invalid)?;
@@ -185,7 +192,33 @@ pub fn derive_fromtlv(item: TokenStream) -> TokenStream {
                 })
             }
         }
+     }
+
+     } else {
+     quote! {
+        impl #generics FromTLV <#lifetime> for #struct_name #generics {
+            fn from_tlv(t: &TLVElement<#lifetime>) -> Result<Self, Error> {
+                let mut tag = #tag_start;
+                #(
+                    let #idents = if let Ok(s) = t.find_tag(tag as u32) {
+                        #types::from_tlv(&s)
+                    } else {
+                        #types::tlv_not_found()
+                    }?;
+                    tag += 1;
+                )*
+                
+                Ok(Self {
+                    #(#idents,
+                    )*
+                })
+            }
+        }
+     }
+    
     };
-//    panic!("The generated code is {}", expanded);
+//    if out_of_order {
+//        panic!("The generated code is {}", expanded);
+//    }
     expanded.into()
 }
