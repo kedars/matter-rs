@@ -38,13 +38,85 @@ impl GenericPath {
 }
 
 pub mod msg {
+    use core::slice::Iter;
+
     use crate::{
         error::Error,
+        tlv::{FromTLV, TLVContainerIterator, TLVElement},
         tlv_common::TagType,
         tlv_writer::{TLVWriter, ToTLV},
     };
 
     use super::ib::{AttrData, AttrPath};
+
+    pub enum TLVArray<'a, T> {
+        // This is used for the to-tlv path
+        Slice(&'a [T]),
+        // This is used for the from-tlv path
+        Ptr(TLVElement<'a>),
+    }
+
+    pub enum TLVArrayIter<'a, T> {
+        Slice(Iter<'a, T>),
+        Ptr(Option<TLVContainerIterator<'a>>),
+    }
+
+    impl<'a, T: ToTLV> TLVArray<'a, T> {
+        pub fn new(slice: &'a [T]) -> Self {
+            Self::Slice(slice)
+        }
+
+        pub fn iter(&self) -> TLVArrayIter<'a, T> {
+            match *self {
+                Self::Slice(s) => TLVArrayIter::Slice(s.iter()),
+                Self::Ptr(p) => TLVArrayIter::Ptr(p.iter()),
+            }
+        }
+    }
+
+    impl<'a, T: FromTLV<'a> + Copy> Iterator for TLVArrayIter<'a, T> {
+        type Item = T;
+        /* Code for going to the next Element */
+        fn next(&mut self) -> Option<Self::Item> {
+            match self {
+                Self::Slice(s_iter) => s_iter.next().map(|x| *x),
+                Self::Ptr(p_iter) => {
+                    if let Some(tlv_iter) = p_iter.as_mut() {
+                        let e = tlv_iter.next();
+                        if let Some(element) = e {
+                            T::from_tlv(&element).ok()
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                }
+            }
+        }
+    }
+
+    impl<'a, T: ToTLV> ToTLV for TLVArray<'a, T> {
+        fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
+            match *self {
+                Self::Slice(s) => {
+                    tw.start_array(tag_type)?;
+                    for a in s {
+                        a.to_tlv(tw, TagType::Anonymous)?;
+                    }
+                    tw.end_container()
+                }
+                Self::Ptr(_) => Err(Error::Invalid),
+            }
+        }
+    }
+
+    impl<'a, T> FromTLV<'a> for TLVArray<'a, T> {
+        fn from_tlv(t: &TLVElement<'a>) -> Result<Self, Error> {
+            t.confirm_array()?;
+            Ok(Self::Ptr(*t))
+        }
+    }
 
     pub enum InvRespTag {
         SupressResponse = 0,
@@ -65,10 +137,15 @@ pub mod msg {
         FabricFiltered = 4,
     }
 
-    #[derive(Default)]
+    #[derive(Default, ToTLV, FromTLV)]
+    #[tlvargs(lifetime = "'a")]
     pub struct ReadReq<'a> {
-        attr_requests: Option<&'a [AttrPath]>,
-        fabric_filtered: bool,
+        pub attr_requests: Option<TLVArray<'a, AttrPath>>,
+        // Placeholder
+        pub dataver_filters: Option<TLVArray<'a, bool>>,
+        event_requests: Option<bool>,
+        event_filters: Option<bool>,
+        pub fabric_filtered: bool,
     }
 
     impl<'a> ReadReq<'a> {
@@ -80,26 +157,8 @@ pub mod msg {
         }
 
         pub fn set_attr_requests(mut self, requests: &'a [AttrPath]) -> Self {
-            self.attr_requests = Some(requests);
+            self.attr_requests = Some(TLVArray::new(requests));
             self
-        }
-    }
-
-    impl<'a> ToTLV for ReadReq<'a> {
-        fn to_tlv(self: &ReadReq<'a>, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
-            tw.start_struct(tag_type)?;
-            if let Some(attr_requests) = self.attr_requests {
-                tw.start_array(TagType::Context(ReadReqTag::AttrRequests as u8))?;
-                for request in attr_requests {
-                    tw.object(TagType::Anonymous, request)?;
-                }
-                tw.end_container()?;
-            }
-            tw.bool(
-                TagType::Context(ReadReqTag::FabricFiltered as u8),
-                self.fabric_filtered,
-            )?;
-            tw.end_container()
         }
     }
 
@@ -110,36 +169,27 @@ pub mod msg {
         _MoreChunkedMsgs = 3,
     }
 
+    #[derive(ToTLV, FromTLV)]
+    #[tlvargs(lifetime = "'b")]
     pub struct WriteReq<'a, 'b> {
-        supress_response: bool,
-        write_requests: &'a [AttrData<'b>],
+        pub supress_response: Option<bool>,
+        timed_request: Option<bool>,
+        pub write_requests: TLVArray<'a, AttrData<'b>>,
+        more_chunked: Option<bool>,
     }
 
     impl<'a, 'b> WriteReq<'a, 'b> {
         pub fn new(supress_response: bool, write_requests: &'a [AttrData<'b>]) -> Self {
-            Self {
-                supress_response,
-                write_requests,
+            let mut w = Self {
+                supress_response: None,
+                write_requests: TLVArray::new(write_requests),
+                timed_request: None,
+                more_chunked: None,
+            };
+            if supress_response {
+                w.supress_response = Some(true);
             }
-        }
-    }
-
-    impl<'a, 'b> ToTLV for WriteReq<'a, 'b> {
-        fn to_tlv(
-            self: &WriteReq<'a, 'b>,
-            tw: &mut TLVWriter,
-            tag_type: TagType,
-        ) -> Result<(), Error> {
-            tw.start_struct(tag_type)?;
-            if self.supress_response {
-                tw.bool(TagType::Context(WriteReqTag::SuppressResponse as u8), true)?;
-            }
-            tw.start_array(TagType::Context(WriteReqTag::WriteRequests as u8))?;
-            for request in self.write_requests {
-                tw.object(TagType::Anonymous, request)?;
-            }
-            tw.end_container()?;
-            tw.end_container()
+            w
         }
     }
 
@@ -512,73 +562,29 @@ pub mod ib {
     }
 
     // Attribute Path
-    #[derive(Default, Clone, Copy, Debug, PartialEq)]
+    #[derive(Default, Clone, Copy, Debug, PartialEq, FromTLV, ToTLV)]
+    #[tlvargs(datatype = "list")]
     pub struct AttrPath {
-        pub tag_compression: bool,
+        pub tag_compression: Option<bool>,
         pub node: Option<u64>,
-        pub path: GenericPath,
+        pub endpoint: Option<u16>,
+        pub cluster: Option<u32>,
+        pub attr: Option<u16>,
         pub list_index: Option<u16>,
-    }
-
-    #[derive(FromPrimitive)]
-    pub enum AttrPathTag {
-        TagCompression = 0,
-        Node = 1,
-        Endpoint = 2,
-        Cluster = 3,
-        Attribute = 4,
-        ListIndex = 5,
     }
 
     impl AttrPath {
         pub fn new(path: &GenericPath) -> Self {
             Self {
-                path: *path,
+                endpoint: path.endpoint,
+                cluster: path.cluster,
+                attr: path.leaf.map(|x| x as u16),
                 ..Default::default()
             }
         }
-    }
 
-    impl FromTLV<'_> for AttrPath {
-        fn from_tlv(attr_path: &TLVElement) -> Result<Self, Error> {
-            let mut ib = AttrPath::default();
-
-            let iter = attr_path.confirm_list()?.iter().ok_or(Error::Invalid)?;
-            for i in iter {
-                match i.get_tag() {
-                    TagType::Context(t) => match num::FromPrimitive::from_u8(t)
-                        .ok_or(Error::Invalid)?
-                    {
-                        AttrPathTag::TagCompression => {
-                            error!("Tag Compression not yet supported");
-                            ib.tag_compression = i.bool()?
-                        }
-                        AttrPathTag::Node => ib.node = i.u32().map(|a| a as u64).ok(),
-                        AttrPathTag::Endpoint => ib.path.endpoint = i.u16().map(|a| a as u16).ok(),
-                        AttrPathTag::Cluster => ib.path.cluster = i.u32().map(|a| a as u32).ok(),
-                        AttrPathTag::Attribute => ib.path.leaf = i.u16().map(|a| a as u32).ok(),
-                        AttrPathTag::ListIndex => ib.list_index = i.u16().ok(),
-                    },
-                    _ => error!("Unsupported tag"),
-                }
-            }
-            Ok(ib)
-        }
-    }
-
-    impl ToTLV for AttrPath {
-        fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
-            tw.start_list(tag_type)?;
-            if let Some(v) = self.path.endpoint {
-                tw.u16(TagType::Context(AttrPathTag::Endpoint as u8), v)?;
-            }
-            if let Some(v) = self.path.cluster {
-                tw.u32(TagType::Context(AttrPathTag::Cluster as u8), v)?;
-            }
-            if let Some(v) = self.path.leaf {
-                tw.u16(TagType::Context(AttrPathTag::Attribute as u8), v as u16)?;
-            }
-            tw.end_container()
+        pub fn to_gp(&self) -> GenericPath {
+            GenericPath::new(self.endpoint, self.cluster, self.attr.map(|x| x as u32))
         }
     }
 

@@ -120,7 +120,9 @@ macro_rules! attr_data {
         ExpectedReportData::Data(AttrData {
             data_ver: None,
             path: AttrPath {
-                path: $path,
+                endpoint: $path.endpoint,
+                cluster: $path.cluster,
+                attr: $path.leaf.map(|x| x as u16),
                 ..Default::default()
             },
             data: AttrDataType::Tlv(TLVElement::new(

@@ -1,17 +1,16 @@
-use log::error;
-
 use crate::{
     error::Error,
     interaction_model::core::OpCode,
     proto_demux::{ProtoTx, ResponseRequired},
-    tlv::get_root_node_struct,
+    tlv::{get_root_node_struct, FromTLV},
     tlv_common::TagType,
     tlv_writer::TLVWriter,
 };
 
-use super::{messages::msg, InteractionModel, Transaction};
-
-// TODO: This is different between the spec and C++
+use super::{
+    messages::msg::{self, ReadReq},
+    InteractionModel, Transaction,
+};
 
 impl InteractionModel {
     pub fn handle_read_req(
@@ -24,31 +23,17 @@ impl InteractionModel {
 
         let mut tw = TLVWriter::new(&mut proto_tx.write_buf);
         let root = get_root_node_struct(rx_buf)?;
-        let fab_scoped = root
-            .find_tag(msg::ReadReqTag::FabricFiltered as u32)?
-            .bool()?;
+        let read_req = ReadReq::from_tlv(&root)?;
 
         tw.start_struct(TagType::Anonymous)?;
-
-        let attr_list_iter = root.find_tag(msg::ReadReqTag::AttrRequests as u32);
-        if attr_list_iter.is_ok() {
-            let dataver_filters_iter = root.find_tag(msg::ReadReqTag::DataVerFilters as u32);
-            if dataver_filters_iter.is_ok() {
-                error!("Data version filters aren't yet supported");
-            }
-
-            tw.start_array(TagType::Context(msg::ReportDataTag::AttributeReports as u8))?;
-            self.consumer
-                .consume_read_attr(attr_list_iter?, fab_scoped, &mut tw)?;
-            tw.end_container()?;
-        }
-
+        self.consumer.consume_read_attr(&read_req, &mut tw)?;
         // Supress response always true for read interaction
         tw.bool(
             TagType::Context(msg::ReportDataTag::SupressResponse as u8),
             true,
         )?;
         tw.end_container()?;
+
         trans.complete();
         Ok(ResponseRequired::Yes)
     }

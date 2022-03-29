@@ -4,7 +4,10 @@ use crate::{
     error::Error, tlv::TLVElement, tlv_writer::TLVWriter, transport::session::SessionHandle,
 };
 
-use self::messages::ib;
+use self::messages::{
+    ib,
+    msg::{ReadReq, WriteReq},
+};
 
 #[derive(PartialEq)]
 pub enum TransactionState {
@@ -26,19 +29,9 @@ pub trait InteractionConsumer {
         tlvwriter: &mut TLVWriter,
     ) -> Result<(), Error>;
 
-    fn consume_read_attr(
-        &self,
-        attr_list: TLVElement,
-        fab_scoped: bool,
-        tlvwriter: &mut TLVWriter,
-    ) -> Result<(), Error>;
+    fn consume_read_attr(&self, req: &ReadReq, tlvwriter: &mut TLVWriter) -> Result<(), Error>;
 
-    fn consume_write_attr(
-        &self,
-        attr_list: TLVElement,
-        fab_scoped: bool,
-        tlvwriter: &mut TLVWriter,
-    ) -> Result<(), Error>;
+    fn consume_write_attr(&self, req: &WriteReq, tlvwriter: &mut TLVWriter) -> Result<(), Error>;
 }
 
 pub struct InteractionModel {

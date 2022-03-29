@@ -1,6 +1,8 @@
 use matter::error::Error;
 use matter::interaction_model::core::OpCode;
 use matter::interaction_model::messages::ib;
+use matter::interaction_model::messages::msg::ReadReq;
+use matter::interaction_model::messages::msg::WriteReq;
 use matter::interaction_model::InteractionConsumer;
 use matter::interaction_model::InteractionModel;
 use matter::interaction_model::Transaction;
@@ -60,21 +62,11 @@ impl InteractionConsumer for DataModel {
         Ok(())
     }
 
-    fn consume_read_attr(
-        &self,
-        _attr_list: TLVElement,
-        _fab_scoped: bool,
-        _tlvwriter: &mut TLVWriter,
-    ) -> Result<(), Error> {
+    fn consume_read_attr(&self, _req: &ReadReq, _tlvwriter: &mut TLVWriter) -> Result<(), Error> {
         Ok(())
     }
 
-    fn consume_write_attr(
-        &self,
-        _attr_list: TLVElement,
-        _fab_scoped: bool,
-        _tlvwriter: &mut TLVWriter,
-    ) -> Result<(), Error> {
+    fn consume_write_attr(&self, _req: &WriteReq, _tlvwriter: &mut TLVWriter) -> Result<(), Error> {
         Ok(())
     }
 }

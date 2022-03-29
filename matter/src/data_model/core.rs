@@ -13,11 +13,11 @@ use crate::{
         core::IMStatusCode,
         messages::{
             ib::{self, AttrData, AttrDataType, AttrPath},
+            msg::{self, ReadReq, WriteReq},
             GenericPath,
         },
         InteractionConsumer, Transaction,
     },
-    tlv::FromTLV,
     tlv::TLVElement,
     tlv_common::TagType,
     tlv_writer::TLVWriter,
@@ -94,38 +94,39 @@ impl DataModel {
         attr_data: &AttrData,
         tw: &mut TLVWriter,
     ) {
-        if let Ok((e, c, a)) = attr_data.path.path.not_wildcard() {
+        let gen_path = attr_data.path.to_gp();
+        if let Ok((e, c, a)) = gen_path.not_wildcard() {
             // The non-wildcard path
             let cluster = node.get_cluster_mut(e, c);
             match cluster {
                 Ok(cluster) => DataModel::handle_write_attr_data(
                     cluster,
                     tw,
-                    &attr_data.path.path,
+                    &gen_path,
                     &attr_data.data,
                     a as u16,
                     false,
                 ),
                 Err(e) => {
-                    let attr_status = ib::AttrStatus::new(&attr_data.path.path, e.into(), 0);
+                    let attr_status = ib::AttrStatus::new(&gen_path, e.into(), 0);
                     let _ = tw.object(TagType::Anonymous, &attr_status);
                 }
             }
         } else {
             // The wildcard path
-            if attr_data.path.path.cluster.is_none() || attr_data.path.path.leaf.is_none() {
+            if attr_data.path.cluster.is_none() || attr_data.path.attr.is_none() {
                 let mut error = IMStatusCode::UnsupportedAttribute;
-                if attr_data.path.path.cluster.is_none() {
+                if attr_data.path.cluster.is_none() {
                     error = IMStatusCode::UnsupportedCluster;
                 }
                 error!("Cluster/Attribute cannot be wildcard in Write Interaction");
-                let attr_status = ib::AttrStatus::new(&attr_data.path.path, error, 0);
+                let attr_status = ib::AttrStatus::new(&gen_path, error, 0);
                 let _ = tw.object(TagType::Anonymous, &attr_status);
                 return;
             }
 
             // The wildcard path
-            node.for_each_cluster_mut(&attr_data.path.path, |path, c| {
+            node.for_each_cluster_mut(&gen_path, |path, c| {
                 let attr_id = if let Some(a) = path.leaf { a } else { 0 } as u16;
                 DataModel::handle_write_attr_data(c, tw, path, &attr_data.data, attr_id, true);
             });
@@ -159,7 +160,8 @@ impl DataModel {
         attr_path: AttrPath,
         tw: &mut TLVWriter,
     ) {
-        if let Ok((e, c, a)) = attr_path.path.not_wildcard() {
+        let gen_path = attr_path.to_gp();
+        if let Ok((e, c, a)) = gen_path.not_wildcard() {
             // The non-wildcard path
             let cluster = node.get_cluster(e, c);
             let result = match cluster {
@@ -168,13 +170,13 @@ impl DataModel {
             };
 
             if let Err(e) = result {
-                let attr_status = ib::AttrStatus::new(&attr_path.path, e, 0);
+                let attr_status = ib::AttrStatus::new(&gen_path, e, 0);
                 let attr_resp = ib::AttrResp::Status(attr_status);
                 let _ = tw.object(TagType::Anonymous, &attr_resp);
             }
         } else {
             // The wildcard path
-            node.for_each_attribute(&attr_path.path, |path, c| {
+            node.for_each_attribute(&gen_path, |path, c| {
                 let attr_id = if let Some(a) = path.leaf { a } else { 0 } as u16;
                 let path = ib::AttrPath::new(path);
                 // Note: In the case of wildcard scenario, we do NOT encode AttrStatus in case of errors
@@ -241,46 +243,35 @@ impl objects::ChangeConsumer for DataModel {
 }
 
 impl InteractionConsumer for DataModel {
-    fn consume_write_attr(
-        &self,
-        attr_list: TLVElement,
-        fab_scoped: bool,
-        tw: &mut TLVWriter,
-    ) -> Result<(), Error> {
-        if fab_scoped {
-            error!("Fabric scoped attribute write not yet supported");
-        }
-        let attr_list = attr_list
-            .confirm_array()?
-            .iter()
-            .ok_or(Error::InvalidData)?;
-
+    fn consume_write_attr(&self, write_req: &WriteReq, tw: &mut TLVWriter) -> Result<(), Error> {
         let mut node = self.node.write().unwrap();
-        for attr_data_ib in attr_list {
-            let attr_data = ib::AttrData::from_tlv(&attr_data_ib)?;
+
+        tw.start_array(TagType::Context(msg::WriteRespTag::WriteResponses as u8))?;
+        for attr_data in write_req.write_requests.iter() {
             DataModel::handle_write_attr_path(&mut node, &attr_data, tw);
         }
+        tw.end_container()?;
+
         Ok(())
     }
 
-    fn consume_read_attr(
-        &self,
-        attr_list: TLVElement,
-        fab_scoped: bool,
-        tw: &mut TLVWriter,
-    ) -> Result<(), Error> {
-        if fab_scoped {
+    fn consume_read_attr(&self, read_req: &ReadReq, tw: &mut TLVWriter) -> Result<(), Error> {
+        if read_req.fabric_filtered {
             error!("Fabric scoped attribute read not yet supported");
         }
-        let attr_list = attr_list
-            .confirm_array()?
-            .iter()
-            .ok_or(Error::InvalidData)?;
+        if read_req.dataver_filters.is_some() {
+            error!("Data Version Filter not yet supported");
+        }
 
         let node = self.node.read().unwrap();
-        for attr_path_ib in attr_list {
-            let attr_path = ib::AttrPath::from_tlv(&attr_path_ib)?;
-            DataModel::handle_read_attr_path(&node, attr_path, tw);
+        if let Some(attr_requests) = &read_req.attr_requests {
+            tw.start_array(TagType::Context(msg::ReportDataTag::AttributeReports as u8))?;
+
+            for attr_path in attr_requests.iter() {
+                DataModel::handle_read_attr_path(&node, attr_path, tw);
+            }
+
+            tw.end_container()?;
         }
         Ok(())
     }
