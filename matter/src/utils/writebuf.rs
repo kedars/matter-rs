@@ -25,6 +25,10 @@ impl<'a> WriteBuf<'a> {
         self.end = new_end;
     }
 
+    pub fn forward_tail_by(&mut self, new_offset: usize) {
+        self.end += new_offset
+    }
+
     pub fn as_borrow_slice(&self) -> &[u8] {
         &self.buf[self.start..self.end]
     }
@@ -35,6 +39,10 @@ impl<'a> WriteBuf<'a> {
 
     pub fn as_mut_slice(&mut self) -> &mut [u8] {
         &mut self.buf[self.start..self.end]
+    }
+
+    pub fn empty_as_mut_slice(&mut self) -> &mut [u8] {
+        &mut self.buf[self.end..]
     }
 
     pub fn reset(&mut self, reserve: usize) {

@@ -135,6 +135,34 @@ impl<'a, 'b> TLVWriter<'a, 'b> {
         }
     }
 
+    // This is quite hacky
+    pub fn str16_as<F>(&mut self, tag_type: TagType, data_gen: F) -> Result<(), Error>
+    where
+        F: FnOnce(&mut [u8]) -> Result<usize, Error>,
+    {
+        let anchor = self.buf.get_tail();
+        self.put_control_tag(tag_type, WriteElementType::Str16l)?;
+
+        let wb = self.buf.empty_as_mut_slice();
+        // Reserve 2 spaces for the control and length
+        let str = &mut wb[2..];
+        let len = data_gen(str).unwrap_or_default();
+        if len <= 0xff {
+            // Shift everything by 1
+            let str = &mut wb[1..];
+            for i in 0..len {
+                str[i] = str[i + 1];
+            }
+            self.buf.rewind_tail_to(anchor);
+            self.put_control_tag(tag_type, WriteElementType::Str8l)?;
+            self.buf.le_u8(len as u8)?;
+        } else {
+            self.buf.le_u16(len as u16)?;
+        }
+        self.buf.forward_tail_by(len);
+        Ok(())
+    }
+
     pub fn utf8(&mut self, tag_type: TagType, data: &[u8]) -> Result<(), Error> {
         self.put_control_tag(tag_type, WriteElementType::Utf8l)?;
         self.buf.le_u8(data.len() as u8)?;
@@ -308,6 +336,29 @@ mod tests {
         assert_eq!(
             buf,
             [36, 1, 13, 16, 5, 10, 11, 12, 13, 14, 37, 2, 0x13, 0x13, 48, 3, 3, 20, 21, 22]
+        );
+    }
+
+    #[test]
+    fn test_put_str16_as() {
+        let mut buf: [u8; 20] = [0; 20];
+        let buf_len = buf.len();
+        let mut writebuf = WriteBuf::new(&mut buf, buf_len);
+        let mut tw = TLVWriter::new(&mut writebuf);
+
+        tw.u8(TagType::Context(1), 13).unwrap();
+        tw.str8(TagType::Context(2), &[10, 11, 12, 13, 14]).unwrap();
+        tw.str16_as(TagType::Context(3), |buf| {
+            buf[0] = 10;
+            buf[1] = 11;
+            Ok(2)
+        })
+        .unwrap();
+        tw.u8(TagType::Context(4), 13).unwrap();
+
+        assert_eq!(
+            buf,
+            [36, 1, 13, 48, 2, 5, 10, 11, 12, 13, 14, 48, 3, 2, 10, 11, 36, 4, 13, 0]
         );
     }
 
