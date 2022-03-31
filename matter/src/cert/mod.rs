@@ -7,6 +7,7 @@ use crate::{
     tlv::{self, FromTLV, TLVElement},
     tlv_common::TagType,
     tlv_writer::{TLVWriter, ToTLV},
+    utils::writebuf::WriteBuf,
 };
 use log::error;
 use num_derive::FromPrimitive;
@@ -153,7 +154,7 @@ fn encode_extended_key_usage(
     Ok(())
 }
 
-#[derive(FromTLV, ToTLV)]
+#[derive(FromTLV, ToTLV, Default)]
 #[tlvargs(start = 1)]
 struct BasicConstraints {
     is_ca: bool,
@@ -193,7 +194,7 @@ fn encode_extension_end(w: &mut dyn CertConsumer) -> Result<(), Error> {
     w.end_seq()
 }
 
-#[derive(FromTLV, ToTLV)]
+#[derive(FromTLV, ToTLV, Default)]
 #[tlvargs(start = 1, datatype = "list")]
 struct Extensions {
     basic_const: Option<BasicConstraints>,
@@ -261,7 +262,7 @@ impl Extensions {
 }
 const MAX_DN_ENTRIES: usize = 5;
 
-#[derive(FromPrimitive)]
+#[derive(FromPrimitive, Copy, Clone)]
 enum DnTags {
     NodeId = 17,
     FirmwareSignId = 18,
@@ -271,10 +272,20 @@ enum DnTags {
     NocCat = 22,
 }
 
+#[derive(Default)]
 struct DistNames {
     // The order in which the DNs arrive is important, as the signing
     // requires that the ASN1 notation retains the same order
     dn: Vec<(u8, u64)>,
+}
+
+impl DistNames {
+    fn u64(&self, match_id: DnTags) -> Option<u64> {
+        self.dn
+            .iter()
+            .find(|(id, _)| *id == match_id as u8)
+            .map(|(_, value)| *value)
+    }
 }
 
 impl<'a> FromTLV<'a> for DistNames {
@@ -371,9 +382,9 @@ fn encode_u64_dn(
     w.end_set()
 }
 
-#[derive(FromTLV, ToTLV)]
+#[derive(FromTLV, ToTLV, Default)]
 #[tlvargs(start = 1)]
-struct TmpCert {
+pub struct Cert {
     serial_no: Vec<u8>,
     sign_algo: u8,
     issuer: DistNames,
@@ -387,159 +398,124 @@ struct TmpCert {
     signature: Vec<u8>,
 }
 
-fn decode_cert(buf: &[u8], w: &mut dyn CertConsumer) -> Result<(), Error> {
-    let root = tlv::get_root_node_struct(buf)?;
-    let cert = TmpCert::from_tlv(&root)?;
-
-    w.start_seq("")?;
-
-    w.start_ctx("Version:", 0)?;
-    w.integer("", &[2])?;
-    w.end_ctx()?;
-
-    w.integer("Serial Num:", cert.serial_no.as_slice())?;
-
-    w.start_seq("Signature Algorithm:")?;
-    let (str, oid) = match get_sign_algo(cert.sign_algo).ok_or(Error::Invalid)? {
-        SignAlgoValue::ECDSAWithSHA256 => ("ECDSA with SHA256", OID_ECDSA_WITH_SHA256),
-    };
-    w.oid(str, &oid)?;
-    w.end_seq()?;
-
-    cert.issuer.encode("Issuer:", w)?;
-
-    w.start_seq("Validity:")?;
-    w.utctime("Not Before:", cert.not_before)?;
-    w.utctime("Not After:", cert.not_after)?;
-    w.end_seq()?;
-
-    cert.subject.encode("Subject:", w)?;
-
-    w.start_seq("")?;
-    w.start_seq("Public Key Algorithm")?;
-    let (str, pub_key) = match get_pubkey_algo(cert.pubkey_algo).ok_or(Error::Invalid)? {
-        PubKeyAlgoValue::EcPubKey => ("ECPubKey", OID_PUB_KEY_ECPUBKEY),
-    };
-    w.oid(str, &pub_key)?;
-    let (str, curve_id) = match get_ec_curve_id(cert.ec_curve_id).ok_or(Error::Invalid)? {
-        EcCurveIdValue::Prime256V1 => ("Prime256v1", OID_EC_TYPE_PRIME256V1),
-    };
-    w.oid(str, &curve_id)?;
-    w.end_seq()?;
-
-    w.bitstr("Public-Key:", false, cert.pubkey.as_slice())?;
-    w.end_seq()?;
-
-    cert.extensions.encode(w)?;
-
-    // We do not encode the Signature in the DER certificate
-
-    w.end_seq()
-}
-
-pub struct Cert(Vec<u8>);
-
 // TODO: Instead of parsing the TLVs everytime, we should just cache this, but the encoding
 // rules in terms of sequence may get complicated. Need to look into this
 impl Cert {
-    pub fn new(cert_bin: &[u8]) -> Self {
-        Self(cert_bin.to_vec())
+    pub fn new(cert_bin: &[u8]) -> Result<Self, Error> {
+        let root = tlv::get_root_node(cert_bin)?;
+        Cert::from_tlv(&root)
     }
 
     pub fn get_node_id(&self) -> Result<u64, Error> {
-        tlv::get_root_node_struct(self.0.as_slice())?
-            .find_tag(CertTags::Subject as u32)?
-            .confirm_list()?
-            .find_tag(DnTags::NodeId as u32)
-            .map_err(|_e| Error::NoNodeId)?
-            .u32()
-            .map(|e| e as u64)
+        self.subject.u64(DnTags::NodeId).ok_or(Error::NoNodeId)
     }
 
     pub fn get_fabric_id(&self) -> Result<u64, Error> {
-        tlv::get_root_node_struct(self.0.as_slice())?
-            .find_tag(CertTags::Subject as u32)?
-            .confirm_list()?
-            .find_tag(DnTags::FabricId as u32)
-            .map_err(|_e| Error::NoFabricId)?
-            .u8()
-            .map(|e| e as u64)
+        self.subject.u64(DnTags::FabricId).ok_or(Error::NoFabricId)
     }
 
-    pub fn get_pubkey(&self) -> Result<&[u8], Error> {
-        tlv::get_root_node_struct(self.0.as_slice())?
-            .find_tag(CertTags::EcPubKey as u32)
-            .map_err(|_e| Error::Invalid)?
-            .slice()
+    pub fn get_pubkey(&self) -> &[u8] {
+        self.pubkey.as_slice()
     }
 
     pub fn get_subject_key_id(&self) -> Result<&[u8], Error> {
-        tlv::get_root_node_struct(self.0.as_slice())?
-            .find_tag(CertTags::Extensions as u32)
-            .map_err(|_e| Error::Invalid)?
-            .confirm_list()?
-            .find_tag(ExtTags::SubjectKeyId as u32)
-            .map_err(|_e| Error::Invalid)?
-            .slice()
+        self.extensions
+            .subj_key_id
+            .as_ref()
+            .map(|x| x.as_slice())
+            .ok_or(Error::Invalid)
     }
 
     pub fn is_authority(&self, their: &Cert) -> Result<bool, Error> {
-        let our_auth = tlv::get_root_node_struct(self.0.as_slice())?
-            .find_tag(CertTags::Extensions as u32)
-            .map_err(|_e| Error::Invalid)?
-            .confirm_list()?
-            .find_tag(ExtTags::AuthKeyId as u32)
-            .map_err(|_e| Error::Invalid)?
-            .slice()?;
-
-        let their_subject = their.get_subject_key_id()?;
-        if our_auth == their_subject {
-            Ok(true)
+        if let Some(our_auth_key) = &self.extensions.auth_key_id {
+            let their_subject = their.get_subject_key_id()?;
+            if our_auth_key == their_subject {
+                Ok(true)
+            } else {
+                Ok(false)
+            }
         } else {
             Ok(false)
         }
     }
 
-    pub fn get_signature(&self) -> Result<&[u8], Error> {
-        tlv::get_root_node_struct(self.0.as_slice())?
-            .find_tag(CertTags::Signature as u32)
-            .map_err(|_e| Error::Invalid)?
-            .slice()
+    pub fn get_signature(&self) -> &[u8] {
+        self.signature.as_slice()
     }
 
-    pub fn as_slice(&self) -> Result<&[u8], Error> {
-        Ok(self.0.as_slice())
+    pub fn as_tlv(&self, buf: &mut [u8]) -> Result<usize, Error> {
+        let mut wb = WriteBuf::new(buf, buf.len());
+        let mut tw = TLVWriter::new(&mut wb);
+        self.to_tlv(&mut tw, TagType::Anonymous)?;
+        Ok(wb.as_slice().len())
     }
 
     pub fn as_asn1(&self, buf: &mut [u8]) -> Result<usize, Error> {
         let mut w = ASN1Writer::new(buf);
-        let _ = decode_cert(self.0.as_slice(), &mut w)?;
+        let _ = self.encode(&mut w)?;
         Ok(w.as_slice().len())
     }
 
     pub fn verify_chain_start(&self) -> CertVerifier {
         CertVerifier::new(self)
     }
-}
 
-impl Default for Cert {
-    fn default() -> Self {
-        Self(Vec::with_capacity(0))
+    fn encode(&self, w: &mut dyn CertConsumer) -> Result<(), Error> {
+        w.start_seq("")?;
+
+        w.start_ctx("Version:", 0)?;
+        w.integer("", &[2])?;
+        w.end_ctx()?;
+
+        w.integer("Serial Num:", self.serial_no.as_slice())?;
+
+        w.start_seq("Signature Algorithm:")?;
+        let (str, oid) = match get_sign_algo(self.sign_algo).ok_or(Error::Invalid)? {
+            SignAlgoValue::ECDSAWithSHA256 => ("ECDSA with SHA256", OID_ECDSA_WITH_SHA256),
+        };
+        w.oid(str, &oid)?;
+        w.end_seq()?;
+
+        self.issuer.encode("Issuer:", w)?;
+
+        w.start_seq("Validity:")?;
+        w.utctime("Not Before:", self.not_before)?;
+        w.utctime("Not After:", self.not_after)?;
+        w.end_seq()?;
+
+        self.subject.encode("Subject:", w)?;
+
+        w.start_seq("")?;
+        w.start_seq("Public Key Algorithm")?;
+        let (str, pub_key) = match get_pubkey_algo(self.pubkey_algo).ok_or(Error::Invalid)? {
+            PubKeyAlgoValue::EcPubKey => ("ECPubKey", OID_PUB_KEY_ECPUBKEY),
+        };
+        w.oid(str, &pub_key)?;
+        let (str, curve_id) = match get_ec_curve_id(self.ec_curve_id).ok_or(Error::Invalid)? {
+            EcCurveIdValue::Prime256V1 => ("Prime256v1", OID_EC_TYPE_PRIME256V1),
+        };
+        w.oid(str, &curve_id)?;
+        w.end_seq()?;
+
+        w.bitstr("Public-Key:", false, self.pubkey.as_slice())?;
+        w.end_seq()?;
+
+        self.extensions.encode(w)?;
+
+        // We do not encode the Signature in the DER certificate
+
+        w.end_seq()
     }
 }
 
 impl fmt::Display for Cert {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut printer = CertPrinter::new(f);
-        let _ = decode_cert(self.0.as_slice(), &mut printer)
+        let _ = self
+            .encode(&mut printer)
             .map_err(|e| error!("Error decoding certificate: {}", e));
         // Signature is not encoded by the Cert Decoder
-        writeln!(
-            f,
-            "Signature: {:x?}",
-            self.get_signature()
-                .map_err(|e| error!("Error decoding signature: {}", e))
-        )
+        writeln!(f, "Signature: {:x?}", self.get_signature())
     }
 }
 
@@ -560,15 +536,14 @@ impl<'a> CertVerifier<'a> {
         let len = self.cert.as_asn1(&mut asn1)?;
         let asn1 = &asn1[..len];
 
-        let k = KeyPair::new_from_public(parent.get_pubkey()?)?;
-        k.verify_msg(asn1, self.cert.get_signature()?)
-            .map_err(|e| {
-                error!(
-                    "Error in signature verification of certificate: {:#02x?}",
-                    self.cert.get_subject_key_id()
-                );
-                e
-            })?;
+        let k = KeyPair::new_from_public(parent.get_pubkey())?;
+        k.verify_msg(asn1, self.cert.get_signature()).map_err(|e| {
+            error!(
+                "Error in signature verification of certificate: {:#02x?}",
+                self.cert.get_subject_key_id()
+            );
+            e
+        })?;
 
         // TODO: other validation checks
         Ok(CertVerifier::new(parent))
@@ -615,20 +590,18 @@ mod tests {
     use crate::tlv_writer::{TLVWriter, ToTLV};
     use crate::utils::writebuf::WriteBuf;
 
-    use super::TmpCert;
-
     #[test]
     fn test_asn1_encode_success() {
         {
             let mut asn1_buf = [0u8; 1000];
-            let c = Cert::new(&test_vectors::ASN1_INPUT1);
+            let c = Cert::new(&test_vectors::ASN1_INPUT1).unwrap();
             let len = c.as_asn1(&mut asn1_buf).unwrap();
             assert_eq!(&test_vectors::ASN1_OUTPUT1, &asn1_buf[..len]);
         }
 
         {
             let mut asn1_buf = [0u8; 1000];
-            let c = Cert::new(&test_vectors::ASN1_INPUT2);
+            let c = Cert::new(&test_vectors::ASN1_INPUT2).unwrap();
             let len = c.as_asn1(&mut asn1_buf).unwrap();
             assert_eq!(&test_vectors::ASN1_OUTPUT2, &asn1_buf[..len]);
         }
@@ -636,9 +609,9 @@ mod tests {
 
     #[test]
     fn test_verify_chain_success() {
-        let noc = Cert::new(&test_vectors::NOC1_SUCCESS);
-        let icac = Cert::new(&test_vectors::ICAC1_SUCCESS);
-        let rca = Cert::new(&test_vectors::RCA1_SUCCESS);
+        let noc = Cert::new(&test_vectors::NOC1_SUCCESS).unwrap();
+        let icac = Cert::new(&test_vectors::ICAC1_SUCCESS).unwrap();
+        let rca = Cert::new(&test_vectors::RCA1_SUCCESS).unwrap();
         let a = noc.verify_chain_start();
         a.add_cert(&icac)
             .unwrap()
@@ -651,8 +624,8 @@ mod tests {
     #[test]
     fn test_verify_chain_incomplete() {
         // The chain doesn't lead up to a self-signed certificate
-        let noc = Cert::new(&test_vectors::NOC1_SUCCESS);
-        let icac = Cert::new(&test_vectors::ICAC1_SUCCESS);
+        let noc = Cert::new(&test_vectors::NOC1_SUCCESS).unwrap();
+        let icac = Cert::new(&test_vectors::ICAC1_SUCCESS).unwrap();
         let a = noc.verify_chain_start();
         assert_eq!(
             Err(Error::InvalidAuthKey),
@@ -662,16 +635,16 @@ mod tests {
 
     #[test]
     fn test_auth_key_chain_incorrect() {
-        let noc = Cert::new(&test_vectors::NOC1_AUTH_KEY_FAIL);
-        let icac = Cert::new(&test_vectors::ICAC1_SUCCESS);
+        let noc = Cert::new(&test_vectors::NOC1_AUTH_KEY_FAIL).unwrap();
+        let icac = Cert::new(&test_vectors::ICAC1_SUCCESS).unwrap();
         let a = noc.verify_chain_start();
         assert_eq!(Err(Error::InvalidAuthKey), a.add_cert(&icac).map(|_| ()));
     }
 
     #[test]
     fn test_cert_corrupted() {
-        let noc = Cert::new(&test_vectors::NOC1_CORRUPT_CERT);
-        let icac = Cert::new(&test_vectors::ICAC1_SUCCESS);
+        let noc = Cert::new(&test_vectors::NOC1_CORRUPT_CERT).unwrap();
+        let icac = Cert::new(&test_vectors::ICAC1_SUCCESS).unwrap();
         let a = noc.verify_chain_start();
         assert_eq!(Err(Error::InvalidSignature), a.add_cert(&icac).map(|_| ()));
     }
@@ -687,7 +660,7 @@ mod tests {
         for input in test_input.iter() {
             println!("Testing next input...");
             let root = tlv::get_root_node(*input).unwrap();
-            let cert = TmpCert::from_tlv(&root).unwrap();
+            let cert = Cert::from_tlv(&root).unwrap();
             let mut buf = [0u8; 1024];
             let buf_len = buf.len();
             let mut wb = WriteBuf::new(&mut buf, buf_len);

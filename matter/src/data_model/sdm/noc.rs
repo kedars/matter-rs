@@ -114,9 +114,9 @@ impl NocCluster {
 
         let r = AddNocReq::new(&cmd_req.data).map_err(|_| NocStatus::InvalidNOC)?;
 
-        let noc_value = Cert::new(r.noc_value);
+        let noc_value = Cert::new(r.noc_value).map_err(|_| NocStatus::InvalidNOC)?;
         info!("Received NOC as: {}", noc_value);
-        let icac_value = Cert::new(r.icac_value);
+        let icac_value = Cert::new(r.icac_value).map_err(|_| NocStatus::InvalidNOC)?;
         info!("Received ICAC as: {}", icac_value);
 
         let fabric = Fabric::new(
@@ -124,7 +124,7 @@ impl NocCluster {
             noc_data.root_ca,
             icac_value,
             noc_value,
-            Cert::new(r.ipk_value),
+            None,
         )
         .map_err(|_| NocStatus::TableFull)?;
         let fab_idx = self
@@ -279,7 +279,7 @@ impl NocCluster {
                     .map_err(|_| IMStatusCode::InvalidCommand)?;
                 info!("Received Trusted Cert:{:x?}", root_cert);
 
-                noc_data.root_ca = Cert::new(root_cert);
+                noc_data.root_ca = Cert::new(root_cert).map_err(|_| IMStatusCode::Failure)?;
             }
             _ => (),
         }
@@ -378,7 +378,7 @@ fn add_nocsrelement(
 struct AddNocReq<'a> {
     noc_value: &'a [u8],
     icac_value: &'a [u8],
-    ipk_value: &'a [u8],
+    _ipk_value: &'a [u8],
     _case_admin_node_id: u32,
     _vendor_id: u16,
 }
@@ -393,7 +393,7 @@ impl<'a> AddNocReq<'a> {
         Ok(Self {
             noc_value,
             icac_value,
-            ipk_value,
+            _ipk_value: ipk_value,
             _case_admin_node_id: case_admin_node_id,
             _vendor_id: vendor_id,
         })

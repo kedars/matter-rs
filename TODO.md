@@ -30,5 +30,3 @@
 * Cert Verification:
   - Time validation (Not Before/Not After)
   - KeyUsage flags and others are pending
-* Cert:
-  - Create an intermediate cert representation, instead of parsing the TLV array everytime
