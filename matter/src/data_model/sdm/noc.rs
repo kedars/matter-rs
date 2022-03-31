@@ -9,8 +9,8 @@ use crate::fabric::{Fabric, FabricMgr};
 use crate::interaction_model::command::CommandReq;
 use crate::interaction_model::core::IMStatusCode;
 use crate::interaction_model::messages::ib;
-use crate::tlv::TLVElement;
-use crate::tlv_common::TagType;
+use crate::tlv::{FromTLV, TLVElement};
+use crate::tlv_common::{OctetStr, TagType};
 use crate::tlv_writer::TLVWriter;
 use crate::transport::session::SessionMode;
 use crate::utils::writebuf::WriteBuf;
@@ -112,11 +112,11 @@ impl NocCluster {
             return Err(NocStatus::InsufficientPrivlege);
         }
 
-        let r = AddNocReq::new(&cmd_req.data).map_err(|_| NocStatus::InvalidNOC)?;
+        let r = AddNocReq::from_tlv(&cmd_req.data).map_err(|_| NocStatus::InvalidNOC)?;
 
-        let noc_value = Cert::new(r.noc_value).map_err(|_| NocStatus::InvalidNOC)?;
+        let noc_value = Cert::new(r.noc_value.0).map_err(|_| NocStatus::InvalidNOC)?;
         info!("Received NOC as: {}", noc_value);
-        let icac_value = Cert::new(r.icac_value).map_err(|_| NocStatus::InvalidNOC)?;
+        let icac_value = Cert::new(r.icac_value.0).map_err(|_| NocStatus::InvalidNOC)?;
         info!("Received ICAC as: {}", icac_value);
 
         let fabric = Fabric::new(
@@ -167,13 +167,8 @@ impl NocCluster {
     fn handle_command_attrequest(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
         cmd_enter!("AttestationRequest");
 
-        let att_nonce = cmd_req
-            .data
-            .find_tag(0)
-            .map_err(|_| IMStatusCode::InvalidCommand)?
-            .slice()
-            .map_err(|_| IMStatusCode::InvalidCommand)?;
-        info!("Received Attestation Nonce:{:?}", att_nonce);
+        let req = CommonReq::from_tlv(&cmd_req.data).map_err(|_| IMStatusCode::InvalidCommand)?;
+        info!("Received Attestation Nonce:{:?}", req.str);
 
         let mut attest_challenge = [0u8; crypto::SYMM_KEY_LEN_BYTES];
         attest_challenge.copy_from_slice(cmd_req.trans.session.get_att_challenge());
@@ -182,7 +177,7 @@ impl NocCluster {
             let mut buf: [u8; RESP_MAX] = [0; RESP_MAX];
             let mut attest_element = WriteBuf::new(&mut buf, RESP_MAX);
 
-            add_attestation_element(&self.dev_att, att_nonce, &mut attest_element, t)?;
+            add_attestation_element(&self.dev_att, req.str.0, &mut attest_element, t)?;
             add_attestation_signature(&self.dev_att, &mut attest_element, &attest_challenge, t)
         };
         let resp = ib::InvResp::cmd_new(0, ID, Commands::AttReqResp as u16, &cmd_data);
@@ -218,13 +213,8 @@ impl NocCluster {
     fn handle_command_csrrequest(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
         cmd_enter!("CSRRequest");
 
-        let csr_nonce = cmd_req
-            .data
-            .find_tag(0)
-            .map_err(|_| IMStatusCode::InvalidCommand)?
-            .slice()
-            .map_err(|_| IMStatusCode::InvalidCommand)?;
-        info!("Received CSR Nonce:{:?}", csr_nonce);
+        let req = CommonReq::from_tlv(&cmd_req.data).map_err(|_| IMStatusCode::InvalidCommand)?;
+        info!("Received CSR Nonce:{:?}", req.str);
 
         if !self.failsafe.is_armed() {
             return Err(IMStatusCode::UnsupportedAccess);
@@ -238,7 +228,7 @@ impl NocCluster {
             let mut buf: [u8; RESP_MAX] = [0; RESP_MAX];
             let mut nocsr_element = WriteBuf::new(&mut buf, RESP_MAX);
 
-            add_nocsrelement(&noc_keypair, csr_nonce, &mut nocsr_element, t)?;
+            add_nocsrelement(&noc_keypair, req.str.0, &mut nocsr_element, t)?;
             add_attestation_signature(&self.dev_att, &mut nocsr_element, &attest_challenge, t)
         };
         let resp = ib::InvResp::cmd_new(0, ID, Commands::CSRResp as u16, &cmd_data);
@@ -271,15 +261,11 @@ impl NocCluster {
                     .get_data::<NocData>()
                     .ok_or(IMStatusCode::Failure)?;
 
-                let root_cert = cmd_req
-                    .data
-                    .find_tag(0)
-                    .map_err(|_| IMStatusCode::InvalidCommand)?
-                    .slice()
-                    .map_err(|_| IMStatusCode::InvalidCommand)?;
-                info!("Received Trusted Cert:{:x?}", root_cert);
+                let req =
+                    CommonReq::from_tlv(&cmd_req.data).map_err(|_| IMStatusCode::InvalidCommand)?;
+                info!("Received Trusted Cert:{:x?}", req.str);
 
-                noc_data.root_ca = Cert::new(root_cert).map_err(|_| IMStatusCode::Failure)?;
+                noc_data.root_ca = Cert::new(req.str.0).map_err(|_| IMStatusCode::Failure)?;
             }
             _ => (),
         }
@@ -375,39 +361,29 @@ fn add_nocsrelement(
     Ok(())
 }
 
+#[derive(FromTLV)]
+#[tlvargs(lifetime = "'a")]
 struct AddNocReq<'a> {
-    noc_value: &'a [u8],
-    icac_value: &'a [u8],
-    _ipk_value: &'a [u8],
+    noc_value: OctetStr<'a>,
+    icac_value: OctetStr<'a>,
+    _ipk_value: OctetStr<'a>,
     _case_admin_node_id: u32,
     _vendor_id: u16,
 }
 
-impl<'a> AddNocReq<'a> {
-    fn new(data: &'a TLVElement) -> Result<Self, Error> {
-        let noc_value = data.find_tag(0)?.slice()?;
-        let icac_value = data.find_tag(1)?.slice()?;
-        let ipk_value = data.find_tag(2)?.slice()?;
-        let case_admin_node_id = data.find_tag(3)?.u32()?;
-        let vendor_id = data.find_tag(4)?.u16()?;
-        Ok(Self {
-            noc_value,
-            icac_value,
-            _ipk_value: ipk_value,
-            _case_admin_node_id: case_admin_node_id,
-            _vendor_id: vendor_id,
-        })
-    }
+#[derive(FromTLV)]
+#[tlvargs(lifetime = "'a")]
+struct CommonReq<'a> {
+    str: OctetStr<'a>,
+}
+
+#[derive(FromTLV)]
+struct CertChainReq {
+    cert_type: u8,
 }
 
 fn get_certchainrequest_params(data: &TLVElement) -> Result<DataType, Error> {
-    let cert_type = data
-        .confirm_struct()?
-        .iter()
-        .ok_or(Error::Invalid)?
-        .next()
-        .ok_or(Error::Invalid)?
-        .u8()?;
+    let cert_type = CertChainReq::from_tlv(data)?.cert_type;
 
     const CERT_TYPE_DAC: u8 = 1;
     const CERT_TYPE_PAI: u8 = 2;
