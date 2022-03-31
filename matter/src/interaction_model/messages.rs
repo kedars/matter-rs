@@ -49,6 +49,36 @@ pub mod msg {
 
     use super::ib::{AttrData, AttrPath};
 
+    pub struct TLVArrayOwned<T>(Vec<T>);
+    impl<'a, T: FromTLV<'a>> FromTLV<'a> for TLVArrayOwned<T> {
+        fn from_tlv(t: &TLVElement<'a>) -> Result<Self, Error> {
+            t.confirm_array()?;
+            let mut vec = Vec::<T>::new();
+            if let Some(tlv_iter) = t.iter() {
+                for element in tlv_iter {
+                    vec.push(T::from_tlv(&element)?);
+                }
+            }
+            Ok(Self(vec))
+        }
+    }
+
+    impl<T: ToTLV> ToTLV for TLVArrayOwned<T> {
+        fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
+            tw.start_array(tag_type)?;
+            for t in &self.0 {
+                t.to_tlv(tw, TagType::Anonymous)?;
+            }
+            tw.end_container()
+        }
+    }
+
+    impl<T> TLVArrayOwned<T> {
+        pub fn iter(&self) -> Iter<T> {
+            self.0.iter()
+        }
+    }
+
     pub enum TLVArray<'a, T> {
         // This is used for the to-tlv path
         Slice(&'a [T]),

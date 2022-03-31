@@ -3,9 +3,10 @@ use std::fmt;
 use crate::{
     crypto::{CryptoKeyPair, KeyPair},
     error::Error,
-    interaction_model::messages::msg::TLVArray,
-    tlv::{self, FromTLV, TLVContainerIterator, TLVElement},
-    tlv_common::{OctetStr, TagType},
+    interaction_model::messages::msg::TLVArrayOwned,
+    tlv::{self, FromTLV, TLVElement},
+    tlv_common::TagType,
+    tlv_writer::{TLVWriter, ToTLV},
 };
 use log::error;
 use num_derive::FromPrimitive;
@@ -120,7 +121,7 @@ fn encode_key_usage(key_usage: u16, w: &mut dyn CertConsumer) -> Result<(), Erro
 }
 
 fn encode_extended_key_usage(
-    list: &TLVArray<'_, u8>,
+    list: &TLVArrayOwned<u8>,
     w: &mut dyn CertConsumer,
 ) -> Result<(), Error> {
     const OID_SERVER_AUTH: [u8; 8] = [0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x01];
@@ -141,7 +142,7 @@ fn encode_extended_key_usage(
 
     w.start_seq("")?;
     for t in list.iter() {
-        let t = t as usize;
+        let t = *t as usize;
         if t > 0 && t <= encoding.len() {
             w.oid(encoding[t].0, encoding[t].1)?;
         } else {
@@ -152,7 +153,7 @@ fn encode_extended_key_usage(
     Ok(())
 }
 
-#[derive(FromTLV)]
+#[derive(FromTLV, ToTLV)]
 #[tlvargs(start = 1)]
 struct BasicConstraints {
     is_ca: bool,
@@ -192,15 +193,15 @@ fn encode_extension_end(w: &mut dyn CertConsumer) -> Result<(), Error> {
     w.end_seq()
 }
 
-#[derive(FromTLV)]
-#[tlvargs(start = 1, lifetime = "'a", datatype = "list")]
-struct Extensions<'a> {
+#[derive(FromTLV, ToTLV)]
+#[tlvargs(start = 1, datatype = "list")]
+struct Extensions {
     basic_const: Option<BasicConstraints>,
     key_usage: Option<u16>,
-    ext_key_usage: Option<TLVArray<'a, u8>>,
-    subj_key_id: Option<OctetStr<'a>>,
-    auth_key_id: Option<OctetStr<'a>>,
-    future_extensions: Option<OctetStr<'a>>,
+    ext_key_usage: Option<TLVArrayOwned<u8>>,
+    subj_key_id: Option<Vec<u8>>,
+    auth_key_id: Option<Vec<u8>>,
+    future_extensions: Option<Vec<u8>>,
 }
 
 #[derive(FromPrimitive)]
@@ -213,7 +214,7 @@ enum ExtTags {
     FutureExt = 6,
 }
 
-impl<'a> Extensions<'a> {
+impl Extensions {
     fn encode(&self, w: &mut dyn CertConsumer) -> Result<(), Error> {
         const OID_BASIC_CONSTRAINTS: [u8; 3] = [0x55, 0x1D, 0x13];
         const OID_KEY_USAGE: [u8; 3] = [0x55, 0x1D, 0x0F];
@@ -240,18 +241,18 @@ impl<'a> Extensions<'a> {
         }
         if let Some(t) = &self.subj_key_id {
             encode_extension_start("Subject Key ID", false, &OID_SUBJ_KEY_IDENTIFIER, w)?;
-            w.ostr("", t.0)?;
+            w.ostr("", t.as_slice())?;
             encode_extension_end(w)?;
         }
         if let Some(t) = &self.auth_key_id {
             encode_extension_start("Auth Key ID", false, &OID_AUTH_KEY_ID, w)?;
             w.start_seq("")?;
-            w.ctx("", 0, t.0)?;
+            w.ctx("", 0, t.as_slice())?;
             w.end_seq()?;
             encode_extension_end(w)?;
         }
         if let Some(t) = &self.future_extensions {
-            error!("Future Extensions Not Yet Supported: {:x?}", t.0)
+            error!("Future Extensions Not Yet Supported: {:x?}", t.as_slice())
         }
         w.end_seq()?;
         w.end_ctx()?;
@@ -293,6 +294,16 @@ impl<'a> FromTLV<'a> for DistNames {
             }
         }
         Ok(d)
+    }
+}
+
+impl ToTLV for DistNames {
+    fn to_tlv(&self, tw: &mut TLVWriter, tag: TagType) -> Result<(), Error> {
+        tw.start_list(tag)?;
+        for (name, value) in &self.dn {
+            tw.u64(TagType::Context(*name), *value)?;
+        }
+        tw.end_container()
     }
 }
 
@@ -360,10 +371,10 @@ fn encode_u64_dn(
     w.end_set()
 }
 
-#[derive(FromTLV)]
-#[tlvargs(start = 1, lifetime = "'a")]
-struct TmpCert<'a> {
-    serial_no: OctetStr<'a>,
+#[derive(FromTLV, ToTLV)]
+#[tlvargs(start = 1)]
+struct TmpCert {
+    serial_no: Vec<u8>,
     sign_algo: u8,
     issuer: DistNames,
     not_before: u32,
@@ -371,9 +382,9 @@ struct TmpCert<'a> {
     subject: DistNames,
     pubkey_algo: u8,
     ec_curve_id: u8,
-    pubkey: OctetStr<'a>,
-    extensions: Extensions<'a>,
-    signature: OctetStr<'a>,
+    pubkey: Vec<u8>,
+    extensions: Extensions,
+    signature: Vec<u8>,
 }
 
 fn decode_cert(buf: &[u8], w: &mut dyn CertConsumer) -> Result<(), Error> {
@@ -386,7 +397,7 @@ fn decode_cert(buf: &[u8], w: &mut dyn CertConsumer) -> Result<(), Error> {
     w.integer("", &[2])?;
     w.end_ctx()?;
 
-    w.integer("Serial Num:", cert.serial_no.0)?;
+    w.integer("Serial Num:", cert.serial_no.as_slice())?;
 
     w.start_seq("Signature Algorithm:")?;
     let (str, oid) = match get_sign_algo(cert.sign_algo).ok_or(Error::Invalid)? {
@@ -416,7 +427,7 @@ fn decode_cert(buf: &[u8], w: &mut dyn CertConsumer) -> Result<(), Error> {
     w.oid(str, &curve_id)?;
     w.end_seq()?;
 
-    w.bitstr("Public-Key:", false, cert.pubkey.0)?;
+    w.bitstr("Public-Key:", false, cert.pubkey.as_slice())?;
     w.end_seq()?;
 
     cert.extensions.encode(w)?;
@@ -599,6 +610,12 @@ mod printer;
 mod tests {
     use crate::cert::Cert;
     use crate::error::Error;
+    use crate::tlv::{self, FromTLV};
+    use crate::tlv_common::TagType;
+    use crate::tlv_writer::{TLVWriter, ToTLV};
+    use crate::utils::writebuf::WriteBuf;
+
+    use super::TmpCert;
 
     #[test]
     fn test_asn1_encode_success() {
@@ -657,6 +674,27 @@ mod tests {
         let icac = Cert::new(&test_vectors::ICAC1_SUCCESS);
         let a = noc.verify_chain_start();
         assert_eq!(Err(Error::InvalidSignature), a.add_cert(&icac).map(|_| ()));
+    }
+
+    #[test]
+    fn test_tlv_conversions() {
+        let test_input: [&[u8]; 3] = [
+            &test_vectors::NOC1_SUCCESS,
+            &test_vectors::ICAC1_SUCCESS,
+            &test_vectors::RCA1_SUCCESS,
+        ];
+
+        for input in test_input.iter() {
+            println!("Testing next input...");
+            let root = tlv::get_root_node(*input).unwrap();
+            let cert = TmpCert::from_tlv(&root).unwrap();
+            let mut buf = [0u8; 1024];
+            let buf_len = buf.len();
+            let mut wb = WriteBuf::new(&mut buf, buf_len);
+            let mut tw = TLVWriter::new(&mut wb);
+            cert.to_tlv(&mut tw, TagType::Anonymous).unwrap();
+            assert_eq!(*input, wb.as_slice());
+        }
     }
 
     mod test_vectors {

@@ -515,6 +515,12 @@ macro_rules! fromtlv_for {
 
 fromtlv_for!(u8 u16 u32 u64 bool);
 
+impl FromTLV<'_> for Vec<u8> {
+    fn from_tlv(t: &TLVElement) -> Result<Vec<u8>, Error> {
+        t.slice().map(|x| x.to_owned())
+    }
+}
+
 impl<'a> FromTLV<'a> for OctetStr<'a> {
     fn from_tlv(t: &TLVElement<'a>) -> Result<OctetStr<'a>, Error> {
         t.slice().map(|x| OctetStr(x))
