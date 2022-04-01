@@ -1,11 +1,10 @@
 use crate::error::Error;
 
-use super::tlv_common::*;
-
 use byteorder::{ByteOrder, LittleEndian};
 use log::{error, info};
-pub use matter_macro_derive::FromTLV;
 use std::fmt;
+
+use super::{TagType, MAX_TAG_INDEX, TAG_MASK, TAG_SHIFT_BITS, TAG_SIZE_MAP, TYPE_MASK};
 
 pub struct TLVList<'a> {
     buf: &'a [u8],
@@ -487,59 +486,6 @@ impl<'a> TLVElement<'a> {
     }
 }
 
-pub trait FromTLV<'a> {
-    fn from_tlv(t: &TLVElement<'a>) -> Result<Self, Error>
-    where
-        Self: Sized;
-
-    // I don't think anybody except Option<T> will define this
-    fn tlv_not_found() -> Result<Self, Error>
-    where
-        Self: Sized,
-    {
-        Err(Error::TLVNotFound)
-    }
-}
-
-macro_rules! fromtlv_for {
-    ($($t:ident)*) => {
-        $(
-            impl<'a> FromTLV<'a> for $t {
-                fn from_tlv(t: &TLVElement) -> Result<Self, Error> {
-                    t.$t()
-                }
-            }
-        )*
-    };
-}
-
-fromtlv_for!(u8 u16 u32 u64 bool);
-
-impl FromTLV<'_> for Vec<u8> {
-    fn from_tlv(t: &TLVElement) -> Result<Vec<u8>, Error> {
-        t.slice().map(|x| x.to_owned())
-    }
-}
-
-impl<'a> FromTLV<'a> for OctetStr<'a> {
-    fn from_tlv(t: &TLVElement<'a>) -> Result<OctetStr<'a>, Error> {
-        t.slice().map(|x| OctetStr(x))
-    }
-}
-
-impl<'a, T: FromTLV<'a>> FromTLV<'a> for Option<T> {
-    fn from_tlv(t: &TLVElement<'a>) -> Result<Option<T>, Error> {
-        Ok(Some(T::from_tlv(t)?))
-    }
-
-    fn tlv_not_found() -> Result<Self, Error>
-    where
-        Self: Sized,
-    {
-        Ok(None)
-    }
-}
-
 impl<'a> fmt::Display for TLVElement<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.tag_type {
@@ -821,7 +767,11 @@ pub fn print_tlv_list(b: &[u8]) {
 
 #[cfg(test)]
 mod tests {
-    use crate::tlv::*;
+    use super::{
+        get_root_node_list, get_root_node_struct, ElementType, Pointer, TLVElement, TLVList,
+        TagType,
+    };
+    use crate::error::Error;
 
     #[test]
     fn test_short_length_tag() {
@@ -1246,56 +1196,5 @@ mod tests {
         // After the end, purposefully try a few more next
         assert_eq!(list_iter.next(), None);
         assert_eq!(list_iter.next(), None);
-    }
-
-    #[derive(FromTLV)]
-    struct TestDeriveSimple {
-        a: u16,
-        b: u32,
-    }
-
-    #[test]
-    fn test_derive_fromtlv() {
-        let b = [
-            21, 37, 0, 10, 0, 38, 1, 20, 0, 0, 0, 24, 0, 0, 0, 0, 0, 0, 0, 0,
-        ];
-        let root = TLVList::new(&b, b.len()).iter().next().unwrap();
-        let test = TestDeriveSimple::from_tlv(&root).unwrap();
-        assert_eq!(test.a, 10);
-        assert_eq!(test.b, 20);
-    }
-
-    #[derive(FromTLV)]
-    #[tlvargs(lifetime = "'a")]
-    struct TestDeriveStr<'a> {
-        a: u16,
-        b: OctetStr<'a>,
-    }
-
-    #[test]
-    fn test_derive_fromtlv_str() {
-        let b = [21, 37, 0, 10, 0, 0x30, 0x01, 0x03, 10, 11, 12, 0];
-        let root = TLVList::new(&b, b.len()).iter().next().unwrap();
-        let test = TestDeriveStr::from_tlv(&root).unwrap();
-        assert_eq!(test.a, 10);
-        assert_eq!(test.b, OctetStr(&[10, 11, 12]));
-    }
-
-    #[derive(FromTLV, Debug)]
-    struct TestDeriveOption {
-        a: u16,
-        b: Option<u16>,
-        c: Option<u16>,
-    }
-
-    #[test]
-    fn test_derive_fromtlv_option() {
-        let b = [21, 37, 0, 10, 0, 37, 2, 11, 0];
-        let root = TLVList::new(&b, b.len()).iter().next().unwrap();
-        let test = TestDeriveOption::from_tlv(&root).unwrap();
-        println!("Got {:?}", test);
-        assert_eq!(test.a, 10);
-        assert_eq!(test.b, None);
-        assert_eq!(test.c, Some(11));
     }
 }

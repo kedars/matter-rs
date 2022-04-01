@@ -2,8 +2,7 @@ use matter::{
     data_model::objects::{Access, AttrValue, Attribute, Cluster, ClusterType, Quality},
     error::Error,
     interaction_model::{command::CommandReq, core::IMStatusCode, messages::ib},
-    tlv_common::TagType,
-    tlv_writer::TLVWriter,
+    tlv::{TLVWriter, TagType, ToTLV},
 };
 use num_derive::FromPrimitive;
 
@@ -77,7 +76,7 @@ impl ClusterType for EchoCluster {
                 };
 
                 let invoke_resp = ib::InvResp::Cmd(ib::CmdData::new(echo_response, &cmd_data));
-                let _ = cmd_req.resp.object(TagType::Anonymous, &invoke_resp);
+                let _ = invoke_resp.to_tlv(cmd_req.resp, TagType::Anonymous);
                 cmd_req.trans.complete();
             }
             _ => {

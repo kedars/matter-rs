@@ -5,8 +5,7 @@ use crate::data_model::objects::*;
 use crate::error::*;
 use crate::interaction_model::core::IMStatusCode;
 use crate::interaction_model::messages::GenericPath;
-use crate::tlv_common::TagType;
-use crate::tlv_writer::TLVWriter;
+use crate::tlv::{TLVWriter, TagType};
 use log::error;
 
 pub const ID: u32 = 0x001D;

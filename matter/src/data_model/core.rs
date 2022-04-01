@@ -18,9 +18,7 @@ use crate::{
         },
         InteractionConsumer, Transaction,
     },
-    tlv::TLVElement,
-    tlv_common::TagType,
-    tlv_writer::TLVWriter,
+    tlv::{TLVElement, TLVWriter, TagType, ToTLV},
 };
 use log::{error, info};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -85,7 +83,7 @@ impl DataModel {
         };
 
         let attr_status = ib::AttrStatus::new(path, status_code, 0);
-        let _ = tw.object(TagType::Anonymous, &attr_status);
+        let _ = attr_status.to_tlv(tw, TagType::Anonymous);
     }
 
     // Encode a write attribute from a path that may or may not be wildcard
@@ -109,7 +107,7 @@ impl DataModel {
                 ),
                 Err(e) => {
                     let attr_status = ib::AttrStatus::new(&gen_path, e.into(), 0);
-                    let _ = tw.object(TagType::Anonymous, &attr_status);
+                    let _ = attr_status.to_tlv(tw, TagType::Anonymous);
                 }
             }
         } else {
@@ -121,7 +119,7 @@ impl DataModel {
                 }
                 error!("Cluster/Attribute cannot be wildcard in Write Interaction");
                 let attr_status = ib::AttrStatus::new(&gen_path, error, 0);
-                let _ = tw.object(TagType::Anonymous, &attr_status);
+                let _ = attr_status.to_tlv(tw, TagType::Anonymous);
                 return;
             }
 
@@ -172,7 +170,7 @@ impl DataModel {
             if let Err(e) = result {
                 let attr_status = ib::AttrStatus::new(&gen_path, e, 0);
                 let attr_resp = ib::AttrResp::Status(attr_status);
-                let _ = tw.object(TagType::Anonymous, &attr_resp);
+                let _ = attr_resp.to_tlv(tw, TagType::Anonymous);
             }
         } else {
             // The wildcard path
@@ -204,7 +202,7 @@ impl DataModel {
             if let Err(e) = result {
                 let status = ib::Status::new(e, 0);
                 let invoke_resp = ib::InvResp::Status(cmd_req.cmd, status);
-                let _ = cmd_req.resp.object(TagType::Anonymous, &invoke_resp);
+                let _ = invoke_resp.to_tlv(cmd_req.resp, TagType::Anonymous);
             }
         } else {
             // The wildcard path
@@ -219,7 +217,7 @@ impl DataModel {
                     if e != IMStatusCode::UnsupportedCommand {
                         let status = ib::Status::new(e, 0);
                         let invoke_resp = ib::InvResp::Status(cmd_req.cmd, status);
-                        let _ = cmd_req.resp.object(TagType::Anonymous, &invoke_resp);
+                        let _ = invoke_resp.to_tlv(cmd_req.resp, TagType::Anonymous);
                     }
                 }
             });

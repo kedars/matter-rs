@@ -10,8 +10,7 @@ use matter::{
     fabric::FabricMgr,
     interaction_model::{core::OpCode, messages::ib::CmdPath, messages::msg, InteractionModel},
     proto_demux::{HandleProto, ProtoRx, ProtoTx},
-    tlv_common::TagType,
-    tlv_writer::TLVWriter,
+    tlv::{TLVWriter, TagType, ToTLV},
     transport::{exchange::Exchange, session::SessionMgr},
     utils::writebuf::WriteBuf,
 };
@@ -98,7 +97,7 @@ impl<'a, 'b> TestData<'a, 'b> {
 
         for (cmd, data) in cmds {
             self.tw.start_struct(TagType::Anonymous)?;
-            self.tw.object(TagType::Context(0), cmd)?;
+            cmd.to_tlv(&mut self.tw, TagType::Context(0))?;
             if let Some(d) = *data {
                 self.tw.u8(TagType::Context(1), d)?;
             }

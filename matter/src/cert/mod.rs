@@ -3,10 +3,7 @@ use std::fmt;
 use crate::{
     crypto::{CryptoKeyPair, KeyPair},
     error::Error,
-    interaction_model::messages::msg::TLVArrayOwned,
-    tlv::{self, FromTLV, TLVElement},
-    tlv_common::TagType,
-    tlv_writer::{TLVWriter, ToTLV},
+    tlv::{self, FromTLV, TLVArrayOwned, TLVElement, TLVWriter, TagType, ToTLV},
     utils::writebuf::WriteBuf,
 };
 use log::error;
@@ -585,9 +582,7 @@ mod printer;
 mod tests {
     use crate::cert::Cert;
     use crate::error::Error;
-    use crate::tlv::{self, FromTLV};
-    use crate::tlv_common::TagType;
-    use crate::tlv_writer::{TLVWriter, ToTLV};
+    use crate::tlv::{self, FromTLV, TLVWriter, TagType, ToTLV};
     use crate::utils::writebuf::WriteBuf;
 
     #[test]

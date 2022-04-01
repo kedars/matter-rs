@@ -3,9 +3,7 @@ use crate::data_model::objects::*;
 use crate::data_model::sdm::failsafe::FailSafe;
 use crate::interaction_model::core::IMStatusCode;
 use crate::interaction_model::messages::ib;
-use crate::tlv::{FromTLV, TLVElement};
-use crate::tlv_common::TagType;
-use crate::tlv_writer::{TLVWriter, ToTLV};
+use crate::tlv::{FromTLV, TLVElement, TLVWriter, TagType, ToTLV};
 use crate::{error::*, interaction_model::command::CommandReq};
 use log::info;
 use num_derive::FromPrimitive;
@@ -185,7 +183,7 @@ impl GenCommCluster {
             t.utf8(TagType::Context(1), b"")
         };
         let resp = ib::InvResp::cmd_new(0, ID, Commands::ArmFailsafeResp as u16, &cmd_data);
-        let _ = cmd_req.resp.object(TagType::Anonymous, &resp);
+        let _ = resp.to_tlv(cmd_req.resp, TagType::Anonymous);
         cmd_req.trans.complete();
         Ok(())
     }
@@ -209,7 +207,7 @@ impl GenCommCluster {
             t.utf8(TagType::Context(1), b"")
         };
         let resp = ib::InvResp::cmd_new(0, ID, Commands::SetRegulatoryConfigResp as u16, &cmd_data);
-        let _ = cmd_req.resp.object(TagType::Anonymous, &resp);
+        let _ = resp.to_tlv(cmd_req.resp, TagType::Anonymous);
         cmd_req.trans.complete();
         Ok(())
     }
@@ -243,7 +241,7 @@ impl GenCommCluster {
 
         let resp =
             ib::InvResp::cmd_new(0, ID, Commands::CommissioningCompleteResp as u16, &cmd_data);
-        let _ = cmd_req.resp.object(TagType::Anonymous, &resp);
+        let _ = resp.to_tlv(cmd_req.resp, TagType::Anonymous);
         cmd_req.trans.complete();
         Ok(())
     }

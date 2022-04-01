@@ -26,12 +26,11 @@ pub static TAG_SIZE_MAP: [usize; MAX_TAG_INDEX] = [
     8, // FullQual64
 ];
 
-// These versions of string only keep references within the
-// original TLVList
-// If you wish to have 'owned' versions, it would be good to implement
-// FromTLV and ToTLV for Vec<u8> and String for Octet and UTF respectively
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct UtfStr<'a>(pub &'a [u8]);
+mod parser;
+mod traits;
+mod writer;
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct OctetStr<'a>(pub &'a [u8]);
+pub use matter_macro_derive::{FromTLV, ToTLV};
+pub use parser::*;
+pub use traits::*;
+pub use writer::*;

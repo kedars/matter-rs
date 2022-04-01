@@ -2,9 +2,7 @@ use crate::{
     error::*,
     interaction_model::{command::CommandReq, core::IMStatusCode, messages::GenericPath},
     // TODO: This layer shouldn't really depend on the TLV layer, should create an abstraction layer
-    tlv::TLVElement,
-    tlv_common::TagType,
-    tlv_writer::{TLVWriter, ToTLV},
+    tlv::{TLVElement, TLVWriter, TagType, ToTLV},
 };
 use bitflags::bitflags;
 use log::error;
@@ -342,7 +340,7 @@ impl Cluster {
                 }
             }
         } else {
-            let _ = tw.object(tag, &attr.value);
+            let _ = attr.value.to_tlv(tw, tag);
             Ok(())
         }
     }

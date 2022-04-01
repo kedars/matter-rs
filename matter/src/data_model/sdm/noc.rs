@@ -9,9 +9,7 @@ use crate::fabric::{Fabric, FabricMgr};
 use crate::interaction_model::command::CommandReq;
 use crate::interaction_model::core::IMStatusCode;
 use crate::interaction_model::messages::ib;
-use crate::tlv::{FromTLV, TLVElement};
-use crate::tlv_common::{OctetStr, TagType};
-use crate::tlv_writer::TLVWriter;
+use crate::tlv::{FromTLV, OctetStr, TLVElement, TLVWriter, TagType, ToTLV};
 use crate::transport::session::SessionMode;
 use crate::utils::writebuf::WriteBuf;
 use crate::{cmd_enter, error::*};
@@ -145,7 +143,7 @@ impl NocCluster {
             t.utf8(TagType::Context(2), b"")
         };
         let resp = ib::InvResp::cmd_new(0, ID, Commands::NOCResp as u16, &cmd_data);
-        let _ = cmd_req.resp.object(TagType::Anonymous, &resp);
+        let _ = resp.to_tlv(cmd_req.resp, TagType::Anonymous);
         cmd_req.trans.complete();
         Ok(())
     }
@@ -158,7 +156,7 @@ impl NocCluster {
                 t.u8(TagType::Context(0), e as u8)
             };
             let invoke_resp = ib::InvResp::cmd_new(0, ID, Commands::NOCResp as u16, &cmd_data);
-            let _ = cmd_req.resp.object(TagType::Anonymous, &invoke_resp);
+            let _ = invoke_resp.to_tlv(cmd_req.resp, TagType::Anonymous);
             cmd_req.trans.complete();
         }
         Ok(())
@@ -181,7 +179,7 @@ impl NocCluster {
             add_attestation_signature(&self.dev_att, &mut attest_element, &attest_challenge, t)
         };
         let resp = ib::InvResp::cmd_new(0, ID, Commands::AttReqResp as u16, &cmd_data);
-        let _ = cmd_req.resp.object(TagType::Anonymous, &resp);
+        let _ = resp.to_tlv(cmd_req.resp, TagType::Anonymous);
         cmd_req.trans.complete();
         Ok(())
     }
@@ -205,7 +203,7 @@ impl NocCluster {
 
         let cmd_data = |t: &mut TLVWriter| t.str16(TagType::Context(0), buf);
         let resp = ib::InvResp::cmd_new(0, ID, Commands::CertChainResp as u16, &cmd_data);
-        let _ = cmd_req.resp.object(TagType::Anonymous, &resp);
+        let _ = resp.to_tlv(cmd_req.resp, TagType::Anonymous);
         cmd_req.trans.complete();
         Ok(())
     }
@@ -233,7 +231,7 @@ impl NocCluster {
         };
         let resp = ib::InvResp::cmd_new(0, ID, Commands::CSRResp as u16, &cmd_data);
 
-        let _ = cmd_req.resp.object(TagType::Anonymous, &resp);
+        let _ = resp.to_tlv(cmd_req.resp, TagType::Anonymous);
         let noc_data = Box::new(NocData::new(noc_keypair));
         // Store this in the session data instead of cluster data, so it gets cleared
         // if the session goes away for some reason

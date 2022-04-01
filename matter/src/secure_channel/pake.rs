@@ -7,10 +7,10 @@ use super::{
     common::{create_sc_status_report, SCStatusCodes},
     spake2p::Spake2P,
 };
-use crate::tlv::{self, *};
-use crate::tlv_common::TagType;
-use crate::tlv_writer::{TLVWriter, ToTLV};
-use crate::{crypto, tlv_common::OctetStr};
+use crate::crypto;
+use crate::tlv::{
+    self, get_root_node_struct, FromTLV, OctetStr, TLVElement, TLVWriter, TagType, ToTLV,
+};
 use crate::{error::Error, transport::session::CloneData};
 use crate::{
     proto_demux::{ProtoRx, ProtoTx},

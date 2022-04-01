@@ -1,10 +1,6 @@
-use crate::{
-    error::*,
-    tlv_common::{OctetStr, TagType, UtfStr, TAG_SHIFT_BITS, TAG_SIZE_MAP},
-    utils::writebuf::WriteBuf,
-};
+use super::{TagType, TAG_SHIFT_BITS, TAG_SIZE_MAP};
+use crate::{error::*, utils::writebuf::WriteBuf};
 use log::error;
-pub use matter_macro_derive::ToTLV;
 
 #[allow(dead_code)]
 enum WriteElementType {
@@ -207,10 +203,6 @@ impl<'a, 'b> TLVWriter<'a, 'b> {
         }
     }
 
-    pub fn object(&mut self, tag_type: TagType, object: &dyn ToTLV) -> Result<(), Error> {
-        object.to_tlv(self, tag_type)
-    }
-
     pub fn get_tail(&self) -> usize {
         self.buf.get_tail()
     }
@@ -219,66 +211,11 @@ impl<'a, 'b> TLVWriter<'a, 'b> {
         self.buf.rewind_tail_to(anchor);
     }
 }
-pub trait ToTLV {
-    fn to_tlv(&self, tw: &mut TLVWriter, tag: TagType) -> Result<(), Error>;
-}
-
-macro_rules! totlv_for {
-    ($($t:ident)*) => {
-        $(
-            impl ToTLV for $t {
-                fn to_tlv(&self, tw: &mut TLVWriter, tag: TagType) -> Result<(), Error> {
-                    tw.$t(tag, *self)
-                }
-            }
-        )*
-    };
-}
-
-impl<'a, T: ToTLV> ToTLV for &'a [T] {
-    fn to_tlv(&self, tw: &mut TLVWriter, tag: TagType) -> Result<(), Error> {
-        tw.start_array(tag)?;
-        for i in *self {
-            i.to_tlv(tw, TagType::Anonymous)?;
-        }
-        tw.end_container()
-    }
-}
-
-// Generate ToTLV for standard data types
-totlv_for!(i8 u8 u16 u32 u64 bool);
-
-impl ToTLV for Vec<u8> {
-    fn to_tlv(&self, tw: &mut TLVWriter, tag: TagType) -> Result<(), Error> {
-        tw.str16(tag, self.as_slice())
-    }
-}
-
-impl<'a> ToTLV for OctetStr<'a> {
-    fn to_tlv(&self, tw: &mut TLVWriter, tag: TagType) -> Result<(), Error> {
-        tw.str16(tag, self.0)
-    }
-}
-
-impl<'a> ToTLV for UtfStr<'a> {
-    fn to_tlv(&self, tw: &mut TLVWriter, tag: TagType) -> Result<(), Error> {
-        tw.utf16(tag, self.0)
-    }
-}
-
-impl<T: ToTLV> ToTLV for Option<T> {
-    fn to_tlv(&self, tw: &mut TLVWriter, tag: TagType) -> Result<(), Error> {
-        match self {
-            Some(s) => (s.to_tlv(tw, tag)),
-            None => Ok(()),
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {
-    use super::TLVWriter;
-    use crate::{error::Error, tlv_common::*, tlv_writer::ToTLV, utils::writebuf::WriteBuf};
+    use super::{TLVWriter, TagType};
+    use crate::utils::writebuf::WriteBuf;
 
     #[test]
     fn test_write_success() {
@@ -359,29 +296,6 @@ mod tests {
         assert_eq!(
             buf,
             [36, 1, 13, 48, 2, 5, 10, 11, 12, 13, 14, 48, 3, 2, 10, 11, 36, 4, 13, 0]
-        );
-    }
-
-    #[derive(ToTLV)]
-    struct TestDerive {
-        a: u16,
-        b: u32,
-    }
-    #[test]
-    fn test_derive_totlv() {
-        let mut buf: [u8; 20] = [0; 20];
-        let buf_len = buf.len();
-        let mut writebuf = WriteBuf::new(&mut buf, buf_len);
-        let mut tw = TLVWriter::new(&mut writebuf);
-
-        let abc = TestDerive {
-            a: 0x1010,
-            b: 0x20202020,
-        };
-        abc.to_tlv(&mut tw, TagType::Anonymous).unwrap();
-        assert_eq!(
-            buf,
-            [21, 37, 0, 0x10, 0x10, 38, 1, 0x20, 0x20, 0x20, 0x20, 24, 0, 0, 0, 0, 0, 0, 0, 0]
         );
     }
 }

@@ -1,8 +1,6 @@
 use crate::{
     error::Error,
-    tlv::{FromTLV, TLVElement},
-    tlv_common::TagType,
-    tlv_writer::{TLVWriter, ToTLV},
+    tlv::{FromTLV, TLVElement, TLVWriter, TagType, ToTLV},
 };
 
 // A generic path with endpoint, clusters, and a leaf
@@ -38,115 +36,13 @@ impl GenericPath {
 }
 
 pub mod msg {
-    use core::slice::Iter;
 
     use crate::{
         error::Error,
-        tlv::{FromTLV, TLVContainerIterator, TLVElement},
-        tlv_common::TagType,
-        tlv_writer::{TLVWriter, ToTLV},
+        tlv::{FromTLV, TLVArray, TLVElement, TLVWriter, TagType, ToTLV},
     };
 
     use super::ib::{AttrData, AttrPath};
-
-    pub struct TLVArrayOwned<T>(Vec<T>);
-    impl<'a, T: FromTLV<'a>> FromTLV<'a> for TLVArrayOwned<T> {
-        fn from_tlv(t: &TLVElement<'a>) -> Result<Self, Error> {
-            t.confirm_array()?;
-            let mut vec = Vec::<T>::new();
-            if let Some(tlv_iter) = t.iter() {
-                for element in tlv_iter {
-                    vec.push(T::from_tlv(&element)?);
-                }
-            }
-            Ok(Self(vec))
-        }
-    }
-
-    impl<T: ToTLV> ToTLV for TLVArrayOwned<T> {
-        fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
-            tw.start_array(tag_type)?;
-            for t in &self.0 {
-                t.to_tlv(tw, TagType::Anonymous)?;
-            }
-            tw.end_container()
-        }
-    }
-
-    impl<T> TLVArrayOwned<T> {
-        pub fn iter(&self) -> Iter<T> {
-            self.0.iter()
-        }
-    }
-
-    pub enum TLVArray<'a, T> {
-        // This is used for the to-tlv path
-        Slice(&'a [T]),
-        // This is used for the from-tlv path
-        Ptr(TLVElement<'a>),
-    }
-
-    pub enum TLVArrayIter<'a, T> {
-        Slice(Iter<'a, T>),
-        Ptr(Option<TLVContainerIterator<'a>>),
-    }
-
-    impl<'a, T: ToTLV> TLVArray<'a, T> {
-        pub fn new(slice: &'a [T]) -> Self {
-            Self::Slice(slice)
-        }
-
-        pub fn iter(&self) -> TLVArrayIter<'a, T> {
-            match *self {
-                Self::Slice(s) => TLVArrayIter::Slice(s.iter()),
-                Self::Ptr(p) => TLVArrayIter::Ptr(p.iter()),
-            }
-        }
-    }
-
-    impl<'a, T: FromTLV<'a> + Copy> Iterator for TLVArrayIter<'a, T> {
-        type Item = T;
-        /* Code for going to the next Element */
-        fn next(&mut self) -> Option<Self::Item> {
-            match self {
-                Self::Slice(s_iter) => s_iter.next().map(|x| *x),
-                Self::Ptr(p_iter) => {
-                    if let Some(tlv_iter) = p_iter.as_mut() {
-                        let e = tlv_iter.next();
-                        if let Some(element) = e {
-                            T::from_tlv(&element).ok()
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                }
-            }
-        }
-    }
-
-    impl<'a, T: ToTLV> ToTLV for TLVArray<'a, T> {
-        fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
-            match *self {
-                Self::Slice(s) => {
-                    tw.start_array(tag_type)?;
-                    for a in s {
-                        a.to_tlv(tw, TagType::Anonymous)?;
-                    }
-                    tw.end_container()
-                }
-                Self::Ptr(_) => Err(Error::Invalid),
-            }
-        }
-    }
-
-    impl<'a, T> FromTLV<'a> for TLVArray<'a, T> {
-        fn from_tlv(t: &TLVElement<'a>) -> Result<Self, Error> {
-            t.confirm_array()?;
-            Ok(Self::Ptr(*t))
-        }
-    }
 
     pub enum InvRespTag {
         SupressResponse = 0,
@@ -245,9 +141,7 @@ pub mod ib {
     use crate::{
         error::Error,
         interaction_model::core::IMStatusCode,
-        tlv::{FromTLV, TLVElement},
-        tlv_common::TagType,
-        tlv_writer::{TLVWriter, ToTLV},
+        tlv::{FromTLV, TLVElement, TLVWriter, TagType, ToTLV},
     };
     use log::error;
     use num_derive::FromPrimitive;
@@ -324,12 +218,12 @@ pub mod ib {
             tw.start_struct(tag_type)?;
             match self {
                 InvResp::Cmd(cmd_data) => {
-                    tw.object(TagType::Context(InvRespTag::Cmd as u8), cmd_data)?;
+                    cmd_data.to_tlv(tw, TagType::Context(InvRespTag::Cmd as u8))?;
                 }
                 InvResp::Status(cmd_path, status) => {
                     tw.start_struct(TagType::Context(InvRespTag::Status as u8))?;
-                    tw.object(TagType::Context(CmdStatusTag::Path as u8), cmd_path)?;
-                    tw.object(TagType::Context(CmdStatusTag::Status as u8), status)?;
+                    cmd_path.to_tlv(tw, TagType::Context(CmdStatusTag::Path as u8))?;
+                    status.to_tlv(tw, TagType::Context(CmdStatusTag::Status as u8))?;
                 }
             }
             tw.end_container()?;
@@ -378,7 +272,8 @@ pub mod ib {
     impl<'a> ToTLV for CmdData<'a> {
         fn to_tlv(self: &CmdData<'a>, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
             tw.start_struct(tag_type)?;
-            tw.object(TagType::Context(CmdDataTag::Path as u8), &self.path)?;
+            self.path
+                .to_tlv(tw, TagType::Context(CmdDataTag::Path as u8))?;
             // TODO: We are cheating here a little bit. This following 'Data' need
             // not be a 'structure'. Somebody could directly embed u8 at the tag
             // 'CmdDataTag::Data'. We will have to modify this (and all the callers)
@@ -438,7 +333,7 @@ pub mod ib {
                 }
                 AttrResp::Status(status) => {
                     // In this case, we'll have to add the AttributeStatusIb
-                    let _ = tw.object(TagType::Context(AttrRespTag::Status as u8), status);
+                    let _ = status.to_tlv(tw, TagType::Context(AttrRespTag::Status as u8));
                 }
             }
             let _ = tw.end_container();
@@ -533,7 +428,9 @@ pub mod ib {
             if let Some(data_ver) = self.data_ver {
                 let _ = tw.u32(TagType::Context(AttrDataTag::DataVersion as u8), data_ver);
             }
-            let _ = tw.object(TagType::Context(AttrDataTag::Path as u8), &self.path);
+            let _ = self
+                .path
+                .to_tlv(tw, TagType::Context(AttrDataTag::Path as u8));
             match self.data {
                 AttrDataType::Closure(f) => (f)(TagType::Context(AttrDataTag::Data as u8), tw)?,
                 AttrDataType::Tlv(_) => (panic!("Not yet implemented")),

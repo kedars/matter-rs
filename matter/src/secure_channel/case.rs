@@ -12,9 +12,7 @@ use crate::{
     proto_demux::{ProtoRx, ProtoTx},
     secure_channel::common,
     secure_channel::common::SCStatusCodes,
-    tlv::get_root_node_struct,
-    tlv_common::TagType,
-    tlv_writer::TLVWriter,
+    tlv::{get_root_node_struct, TLVWriter, TagType},
     transport::session::{CloneData, SessionMode},
     utils::writebuf::WriteBuf,
 };

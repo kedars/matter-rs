@@ -13,9 +13,7 @@ use matter::{
         messages::{msg, GenericPath},
     },
     proto_demux::ProtoTx,
-    tlv::{self, ElementType, FromTLV, TLVElement, TLVList},
-    tlv_common::TagType,
-    tlv_writer::TLVWriter,
+    tlv::{self, ElementType, FromTLV, TLVElement, TLVList, TLVWriter, TagType, ToTLV},
     utils::writebuf::WriteBuf,
 };
 
@@ -37,7 +35,7 @@ fn handle_read_reqs(input: &[AttrPath], expected: &[ExpectedReportData]) {
     let mut proto_tx = ProtoTx::new(&mut out_buf, 0).unwrap();
 
     let read_req = ReadReq::new(true).set_attr_requests(input);
-    tw.object(TagType::Anonymous, &read_req).unwrap();
+    read_req.to_tlv(&mut tw, TagType::Anonymous).unwrap();
 
     let _ = im_engine(OpCode::ReadRequest, wb.as_borrow_slice(), &mut proto_tx);
     tlv::print_tlv_list(proto_tx.write_buf.as_borrow_slice());
@@ -90,7 +88,7 @@ fn handle_write_reqs(input: &[AttrData], expected: &[AttrStatus]) -> DataModel {
     let mut proto_tx = ProtoTx::new(&mut out_buf, 0).unwrap();
 
     let write_req = WriteReq::new(false, input);
-    tw.object(TagType::Anonymous, &write_req).unwrap();
+    write_req.to_tlv(&mut tw, TagType::Anonymous).unwrap();
 
     let dm = im_engine(OpCode::WriteRequest, wb.as_borrow_slice(), &mut proto_tx);
     tlv::print_tlv_list(proto_tx.write_buf.as_borrow_slice());

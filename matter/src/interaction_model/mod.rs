@@ -1,7 +1,9 @@
 use std::any::Any;
 
 use crate::{
-    error::Error, tlv::TLVElement, tlv_writer::TLVWriter, transport::session::SessionHandle,
+    error::Error,
+    tlv::{TLVElement, TLVWriter},
+    transport::session::SessionHandle,
 };
 
 use self::messages::{
