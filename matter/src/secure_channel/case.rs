@@ -12,7 +12,7 @@ use crate::{
     proto_demux::{ProtoRx, ProtoTx},
     secure_channel::common,
     secure_channel::common::SCStatusCodes,
-    tlv::{get_root_node_struct, TLVWriter, TagType},
+    tlv::{get_root_node_struct, FromTLV, OctetStr, TLVElement, TLVWriter, TagType},
     transport::session::{CloneData, SessionMode},
     utils::writebuf::WriteBuf,
 };
@@ -99,12 +99,10 @@ impl Case {
         let decrypted = &decrypted[..len];
 
         let root = get_root_node_struct(decrypted)?;
-        let initiator_noc_b = root.find_tag(1)?.slice()?;
-        let initiator_icac_b = root.find_tag(2)?.slice()?;
-        let signature = root.find_tag(3)?.slice()?;
+        let d = Sigma3Decrypt::from_tlv(&root)?;
 
-        let initiator_noc = Cert::new(initiator_noc_b)?;
-        let initiator_icac = Cert::new(initiator_icac_b)?;
+        let initiator_noc = Cert::new(d.initiator_noc.0)?;
+        let initiator_icac = Cert::new(d.initiator_icac.0)?;
         if let Err(e) = Case::validate_certs(fabric, &initiator_noc, &initiator_icac) {
             error!("Certificate Chain doesn't match: {}", e);
             common::create_sc_status_report(
@@ -117,10 +115,10 @@ impl Case {
         }
 
         if Case::validate_sigma3_sign(
-            initiator_noc_b,
-            initiator_icac_b,
+            d.initiator_noc.0,
+            d.initiator_icac.0,
             &initiator_noc,
-            signature,
+            d.signature.0,
             &case_session,
         )
         .is_err()
@@ -161,15 +159,12 @@ impl Case {
         proto_rx: &mut ProtoRx,
         proto_tx: &mut ProtoTx,
     ) -> Result<(), Error> {
-        println!("here0");
         let root = get_root_node_struct(proto_rx.buf)?;
-        let initiator_random = root.find_tag(1)?.slice()?;
-        let initiator_sessid = root.find_tag(2)?.u8()?;
-        let dest_id = root.find_tag(3)?.slice()?;
-        let peer_pub_key = root.find_tag(4)?.slice()?;
+        let r = Sigma1Req::from_tlv(&root)?;
 
-        println!("here1");
-        let local_fabric_idx = self.fabric_mgr.match_dest_id(initiator_random, dest_id);
+        let local_fabric_idx = self
+            .fabric_mgr
+            .match_dest_id(r.initiator_random.0, r.dest_id.0);
         if local_fabric_idx.is_err() {
             error!("Fabric Index mismatch");
             common::create_sc_status_report(
@@ -181,16 +176,15 @@ impl Case {
             return Ok(());
         }
 
-        println!("here2");
         let local_sessid = proto_rx.session.reserve_new_sess_id();
-        let mut case_session = Box::new(CaseSession::new(initiator_sessid as u16, local_sessid)?);
+        let mut case_session = Box::new(CaseSession::new(r.initiator_sessid, local_sessid)?);
         case_session.tt_hash.update(proto_rx.buf)?;
         case_session.local_fabric_idx = local_fabric_idx?;
-        if peer_pub_key.len() != crypto::EC_POINT_LEN_BYTES {
+        if r.peer_pub_key.0.len() != crypto::EC_POINT_LEN_BYTES {
             error!("Invalid public key length");
             return Err(Error::Invalid);
         }
-        case_session.peer_pub_key.copy_from_slice(peer_pub_key);
+        case_session.peer_pub_key.copy_from_slice(r.peer_pub_key.0);
         trace!(
             "Destination ID matched to fabric index {}",
             case_session.local_fabric_idx
@@ -201,7 +195,7 @@ impl Case {
         let _ = key_pair.get_public_key(&mut case_session.our_pub_key)?;
 
         // Derive the Shared Secret
-        let len = key_pair.derive_secret(peer_pub_key, &mut case_session.shared_secret)?;
+        let len = key_pair.derive_secret(r.peer_pub_key.0, &mut case_session.shared_secret)?;
         if len != 32 {
             error!("Derived secret length incorrect");
             return Err(Error::Invalid);
@@ -268,7 +262,6 @@ impl Case {
         case_session: &CaseSession,
     ) -> Result<CloneData, Error> {
         let mut session_keys = [0_u8; 3 * crypto::SYMM_KEY_LEN_BYTES];
-        println!("Shared secret: {:x?}", &case_session.shared_secret);
         Case::get_session_keys(
             ipk,
             &case_session.tt_hash,
@@ -283,7 +276,6 @@ impl Case {
             case_session.local_sessid,
             SessionMode::Case(case_session.local_fabric_idx as u8),
         );
-        println!("keys: {:x?}", &session_keys);
 
         clone_data.dec_key.copy_from_slice(&session_keys[0..16]);
         clone_data.enc_key.copy_from_slice(&session_keys[16..32]);
@@ -513,4 +505,21 @@ impl Case {
         //println!("TBS is {:x?}", write_buf.as_borrow_slice());
         fabric.sign_msg(write_buf.as_slice(), signature)
     }
+}
+
+#[derive(FromTLV)]
+#[tlvargs(start = 1, lifetime = "'a")]
+struct Sigma1Req<'a> {
+    initiator_random: OctetStr<'a>,
+    initiator_sessid: u16,
+    dest_id: OctetStr<'a>,
+    peer_pub_key: OctetStr<'a>,
+}
+
+#[derive(FromTLV)]
+#[tlvargs(start = 1, lifetime = "'a")]
+struct Sigma3Decrypt<'a> {
+    initiator_noc: OctetStr<'a>,
+    initiator_icac: OctetStr<'a>,
+    signature: OctetStr<'a>,
 }
