@@ -34,6 +34,7 @@ impl Default for SessionMode {
 #[derive(Debug)]
 pub struct Session {
     peer_addr: std::net::SocketAddr,
+    local_nodeid: u64,
     peer_nodeid: Option<u64>,
     // I find the session initiator/responder role getting confused with exchange initiator/responder
     // So, we might keep this as enc_key and dec_key for now
@@ -54,14 +55,24 @@ pub struct CloneData {
     pub att_challenge: [u8; MATTER_AES128_KEY_SIZE],
     local_sess_id: u16,
     peer_sess_id: u16,
+    local_nodeid: u64,
+    peer_nodeid: u64,
     mode: SessionMode,
 }
 impl CloneData {
-    pub fn new(peer_sess_id: u16, local_sess_id: u16, mode: SessionMode) -> CloneData {
+    pub fn new(
+        local_nodeid: u64,
+        peer_nodeid: u64,
+        peer_sess_id: u16,
+        local_sess_id: u16,
+        mode: SessionMode,
+    ) -> CloneData {
         CloneData {
             dec_key: [0; MATTER_AES128_KEY_SIZE],
             enc_key: [0; MATTER_AES128_KEY_SIZE],
             att_challenge: [0; MATTER_AES128_KEY_SIZE],
+            local_nodeid,
+            peer_nodeid,
             peer_sess_id,
             local_sess_id,
             mode,
@@ -75,6 +86,7 @@ impl Session {
     pub fn new(peer_addr: std::net::SocketAddr, peer_nodeid: Option<u64>) -> Session {
         Session {
             peer_addr,
+            local_nodeid: 0,
             peer_nodeid,
             dec_key: [0; MATTER_AES128_KEY_SIZE],
             enc_key: [0; MATTER_AES128_KEY_SIZE],
@@ -91,7 +103,8 @@ impl Session {
     pub fn clone(&mut self, clone_from: &CloneData) -> Session {
         Session {
             peer_addr: self.peer_addr,
-            peer_nodeid: self.peer_nodeid,
+            local_nodeid: clone_from.local_nodeid,
+            peer_nodeid: Some(clone_from.peer_nodeid),
             dec_key: clone_from.dec_key,
             enc_key: clone_from.enc_key,
             att_challenge: clone_from.att_challenge,
@@ -184,7 +197,12 @@ impl Session {
         proto_hdr: &mut ProtoHdr,
         parse_buf: &mut ParseBuf,
     ) -> Result<(), Error> {
-        proto_hdr.decrypt_and_decode(plain_hdr, parse_buf, self.get_dec_key())
+        proto_hdr.decrypt_and_decode(
+            plain_hdr,
+            parse_buf,
+            self.peer_nodeid.unwrap_or_default(),
+            self.get_dec_key(),
+        )
     }
 
     pub fn pre_send(&mut self, plain_hdr: &mut PlainHdr) -> Result<(), Error> {
@@ -209,8 +227,10 @@ impl Session {
         packet_buf.prepend(write_buf.as_slice())?;
 
         // Generate plain-text header
-        if let Some(d) = self.peer_nodeid {
-            plain_hdr.set_dest_u64(d);
+        if self.mode == SessionMode::PlainText {
+            if let Some(d) = self.peer_nodeid {
+                plain_hdr.set_dest_u64(d);
+            }
         }
         let mut tmp_buf: [u8; plain_hdr::max_plain_hdr_len()] = [0; plain_hdr::max_plain_hdr_len()];
         let mut write_buf = WriteBuf::new(&mut tmp_buf[..], plain_hdr::max_plain_hdr_len());
@@ -220,7 +240,13 @@ impl Session {
         trace!("unencrypted packet: {:x?}", packet_buf.as_borrow_slice());
         let enc_key = self.get_enc_key();
         if let Some(e) = enc_key {
-            proto_hdr::encrypt_in_place(plain_hdr.ctr, plain_hdr_bytes, packet_buf, e)?;
+            proto_hdr::encrypt_in_place(
+                plain_hdr.ctr,
+                self.local_nodeid,
+                plain_hdr_bytes,
+                packet_buf,
+                e,
+            )?;
         }
 
         packet_buf.prepend(plain_hdr_bytes)?;

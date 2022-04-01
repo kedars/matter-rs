@@ -202,16 +202,6 @@ struct Extensions {
     future_extensions: Option<Vec<u8>>,
 }
 
-#[derive(FromPrimitive)]
-enum ExtTags {
-    BasicConstraints = 1,
-    KeyUsage = 2,
-    ExtKeyUsage = 3,
-    SubjectKeyId = 4,
-    AuthKeyId = 5,
-    FutureExt = 6,
-}
-
 impl Extensions {
     fn encode(&self, w: &mut dyn CertConsumer) -> Result<(), Error> {
         const OID_BASIC_CONSTRAINTS: [u8; 3] = [0x55, 0x1D, 0x13];

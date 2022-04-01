@@ -75,11 +75,12 @@ impl ProtoHdr {
         &mut self,
         plain_hdr: &plain_hdr::PlainHdr,
         parsebuf: &mut ParseBuf,
+        peer_nodeid: u64,
         dec_key: Option<&[u8]>,
     ) -> Result<(), Error> {
         if let Some(d) = dec_key {
             // We decrypt only if the decryption key is valid
-            decrypt_in_place(plain_hdr.ctr, parsebuf, d)?;
+            decrypt_in_place(plain_hdr.ctr, peer_nodeid, parsebuf, d)?;
         }
 
         self.exch_flags = ExchFlags::from_bits(parsebuf.le_u8()?).ok_or(Error::Invalid)?;
@@ -140,25 +141,26 @@ impl fmt::Display for ProtoHdr {
     }
 }
 
-fn get_iv(recvd_ctr: u32, iv: &mut [u8]) -> Result<(), Error> {
+fn get_iv(recvd_ctr: u32, peer_nodeid: u64, iv: &mut [u8]) -> Result<(), Error> {
     // The IV is the source address (64-bit) followed by the message counter (32-bit)
     let mut write_buf = WriteBuf::new(iv, iv.len());
     // For some reason, this is 0 in the 'bypass' mode
     write_buf.le_u8(0)?;
     write_buf.le_u32(recvd_ctr)?;
-    write_buf.le_u64(0)?;
+    write_buf.le_u64(peer_nodeid)?;
     Ok(())
 }
 
 pub fn encrypt_in_place(
     send_ctr: u32,
+    peer_nodeid: u64,
     plain_hdr: &[u8],
     writebuf: &mut WriteBuf,
     key: &[u8],
 ) -> Result<(), Error> {
     // IV
     let mut iv = [0_u8; crypto::AEAD_NONCE_LEN_BYTES];
-    get_iv(send_ctr, &mut iv)?;
+    get_iv(send_ctr, peer_nodeid, &mut iv)?;
 
     // Cipher Text
     let tag_space = [0u8; crypto::AEAD_MIC_LEN_BYTES];
@@ -177,7 +179,12 @@ pub fn encrypt_in_place(
     Ok(())
 }
 
-fn decrypt_in_place(recvd_ctr: u32, parsebuf: &mut ParseBuf, key: &[u8]) -> Result<(), Error> {
+fn decrypt_in_place(
+    recvd_ctr: u32,
+    peer_nodeid: u64,
+    parsebuf: &mut ParseBuf,
+    key: &[u8],
+) -> Result<(), Error> {
     // AAD:
     //    the unencrypted header of this packet
     let mut aad = [0_u8; crypto::AEAD_AAD_LEN_BYTES];
@@ -193,14 +200,13 @@ fn decrypt_in_place(recvd_ctr: u32, parsebuf: &mut ParseBuf, key: &[u8]) -> Resu
     // IV:
     //   the specific way for creating IV is in get_iv
     let mut iv = [0_u8; crypto::AEAD_NONCE_LEN_BYTES];
-    get_iv(recvd_ctr, &mut iv)?;
+    get_iv(recvd_ctr, peer_nodeid, &mut iv)?;
 
     let cipher_text = parsebuf.as_borrow_slice();
-    // println!("AAD: {:x?}", aad);
-    // println!("Tag: {:x?}", tag);
-    // println!("Cipher Text: {:x?}", cipher_text);
-    // println!("IV: {:x?}", iv);
-    // println!("Key: {:x?}", key);
+    //println!("AAD: {:x?}", aad);
+    //println!("Cipher Text: {:x?}", cipher_text);
+    //println!("IV: {:x?}", iv);
+    //println!("Key: {:x?}", key);
 
     crypto::decrypt_in_place(key, &iv, &aad, cipher_text)?;
     // println!("Plain Text: {:x?}", cipher_text);
@@ -249,7 +255,7 @@ mod tests {
         parsebuf.le_u32().unwrap();
         parsebuf.le_u32().unwrap();
 
-        decrypt_in_place(recvd_ctr, &mut parsebuf, &key).unwrap();
+        decrypt_in_place(recvd_ctr, 0, &mut parsebuf, &key).unwrap();
         assert_eq!(
             parsebuf.as_slice(),
             [
@@ -283,7 +289,7 @@ mod tests {
             0x1b, 0x33,
         ];
 
-        encrypt_in_place(send_ctr, &plain_hdr, &mut writebuf, &key).unwrap();
+        encrypt_in_place(send_ctr, 0, &plain_hdr, &mut writebuf, &key).unwrap();
         assert_eq!(
             writebuf.as_slice(),
             [

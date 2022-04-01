@@ -122,7 +122,7 @@ impl NocCluster {
             noc_data.root_ca,
             icac_value,
             noc_value,
-            None,
+            r.ipk_value.0,
         )
         .map_err(|_| NocStatus::TableFull)?;
         let fab_idx = self
@@ -364,7 +364,7 @@ fn add_nocsrelement(
 struct AddNocReq<'a> {
     noc_value: OctetStr<'a>,
     icac_value: OctetStr<'a>,
-    _ipk_value: OctetStr<'a>,
+    ipk_value: OctetStr<'a>,
     _case_admin_node_id: u32,
     _vendor_id: u16,
 }

@@ -123,6 +123,12 @@ impl Mgr {
         trace!("payload: {:x?}", proto_tx.write_buf.as_borrow_slice());
         proto_hdr.proto_id = proto_tx.proto_id as u16;
         proto_hdr.proto_opcode = proto_tx.proto_opcode;
+        info!(
+            "{} with proto id: {} opcode: {}",
+            "Sending".blue(),
+            proto_hdr.proto_id,
+            proto_hdr.proto_opcode
+        );
 
         exchange.send(&mut proto_hdr)?;
 

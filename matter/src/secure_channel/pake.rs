@@ -152,7 +152,7 @@ impl PAKE {
             let data = sd.spake2p.get_app_data();
             let peer_sessid: u16 = (data & 0xff) as u16;
             let local_sessid: u16 = ((data >> 16) & 0xff) as u16;
-            let mut clone_data = CloneData::new(peer_sessid, local_sessid, SessionMode::Pase);
+            let mut clone_data = CloneData::new(0, 0, peer_sessid, local_sessid, SessionMode::Pase);
             clone_data.dec_key.copy_from_slice(&session_keys[0..16]);
             clone_data.enc_key.copy_from_slice(&session_keys[16..32]);
             clone_data

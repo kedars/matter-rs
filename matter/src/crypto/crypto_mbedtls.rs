@@ -332,7 +332,10 @@ pub fn decrypt_in_place(
     cipher
         .decrypt_auth_inplace(ad, data, tag)
         .map(|(len, _)| len)
-        .map_err(|_e| Error::TLSStack)
+        .map_err(|e| {
+            error!("Error during decryption: {:?}", e);
+            Error::TLSStack
+        })
 }
 
 #[derive(Clone)]

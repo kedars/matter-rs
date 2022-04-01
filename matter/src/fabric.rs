@@ -8,6 +8,7 @@ use crate::{
     cert::Cert,
     crypto::{self, crypto_dummy::KeyPairDummy, hkdf_sha256, CryptoKeyPair, HmacSha256, KeyPair},
     error::Error,
+    group_keys::KeySet,
     sys::{Mdns, MdnsService, Psm},
 };
 
@@ -35,7 +36,7 @@ pub struct Fabric {
     pub root_ca: Cert,
     pub icac: Cert,
     pub noc: Cert,
-    ipk: Option<Cert>,
+    pub ipk: KeySet,
     compressed_id: [u8; COMPRESSED_FABRIC_ID_LEN],
     mdns_service: Option<MdnsService>,
 }
@@ -46,7 +47,7 @@ impl Fabric {
         root_ca: Cert,
         icac: Cert,
         noc: Cert,
-        ipk: Option<Cert>,
+        ipk: &[u8],
     ) -> Result<Self, Error> {
         let node_id = noc.get_node_id()?;
         let fabric_id = noc.get_fabric_id()?;
@@ -58,11 +59,13 @@ impl Fabric {
             root_ca,
             icac,
             noc,
-            ipk,
+            ipk: KeySet::default(),
             compressed_id: [0; COMPRESSED_FABRIC_ID_LEN],
             mdns_service: None,
         };
         Fabric::get_compressed_id(f.root_ca.get_pubkey(), fabric_id, &mut f.compressed_id)?;
+        f.ipk = KeySet::new(ipk, &f.compressed_id)?;
+
         let mut mdns_service_name = String::with_capacity(33);
         for c in f.compressed_id {
             mdns_service_name.push_str(&format!("{:02X}", c));
@@ -86,7 +89,7 @@ impl Fabric {
             root_ca: Cert::default(),
             icac: Cert::default(),
             noc: Cert::default(),
-            ipk: None,
+            ipk: KeySet::default(),
             compressed_id: [0; COMPRESSED_FABRIC_ID_LEN],
             mdns_service: None,
         })
@@ -105,9 +108,7 @@ impl Fabric {
     }
 
     pub fn match_dest_id(&self, random: &[u8], target: &[u8]) -> Result<(), Error> {
-        // TODO: Currently chip-tool expect ipk as all zeroes
-        let dummy_ipk: [u8; 16] = [0; 16];
-        let mut mac = HmacSha256::new(&dummy_ipk)?;
+        let mut mac = HmacSha256::new(self.ipk.op_key())?;
 
         mac.update(random)?;
         mac.update(self.root_ca.get_pubkey())?;
@@ -148,10 +149,7 @@ impl Fabric {
         psm.set_kv_slice(fb_key!(index, ST_ICA), &key[..len])?;
         let len = self.noc.as_tlv(&mut key)?;
         psm.set_kv_slice(fb_key!(index, ST_NOC), &key[..len])?;
-        if let Some(ipk) = &self.ipk {
-            let len = ipk.as_tlv(&mut key)?;
-            psm.set_kv_slice(fb_key!(index, ST_IPK), &key[..len])?;
-        }
+        psm.set_kv_slice(fb_key!(index, ST_IPK), self.ipk.epoch_key())?;
 
         let mut key = [0_u8; crypto::EC_POINT_LEN_BYTES];
         let len = self.key_pair.get_public_key(&mut key)?;
@@ -180,11 +178,7 @@ impl Fabric {
         let noc = Cert::new(noc.as_slice())?;
 
         let mut ipk = Vec::new();
-        let ipk = if psm.get_kv_slice(fb_key!(index, ST_IPK), &mut ipk).is_err() {
-            None
-        } else {
-            Some(Cert::new(ipk.as_slice())?)
-        };
+        psm.get_kv_slice(fb_key!(index, ST_IPK), &mut ipk)?;
 
         let mut pub_key = Vec::new();
         psm.get_kv_slice(fb_key!(index, ST_PBKEY), &mut pub_key)?;
@@ -192,7 +186,7 @@ impl Fabric {
         psm.get_kv_slice(fb_key!(index, ST_PRKEY), &mut priv_key)?;
         let keypair = KeyPair::new_from_components(pub_key.as_slice(), priv_key.as_slice())?;
 
-        Fabric::new(keypair, root_ca, icac, noc, ipk)
+        Fabric::new(keypair, root_ca, icac, noc, ipk.as_slice())
     }
 }
 
