@@ -333,11 +333,10 @@ impl<'a> PartialEq for TLVElement<'a> {
                                 {
                                     return false;
                                 }
-                            } else {
-                                if ours.element_type != theirs.element_type {
-                                    return false;
-                                }
+                            } else if ours.element_type != theirs.element_type {
+                                return false;
                             }
+
                             if ours.tag_type != theirs.tag_type {
                                 return false;
                             }

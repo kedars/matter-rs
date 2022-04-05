@@ -73,7 +73,7 @@ impl ClusterType for DescriptorCluster {
     }
 }
 
-fn attr_serverlist_new() -> Result<Box<Attribute>, Error> {
+fn attr_serverlist_new() -> Result<Attribute, Error> {
     Attribute::new(
         Attributes::ServerList as u16,
         AttrValue::Custom,

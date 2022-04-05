@@ -133,13 +133,13 @@ impl Attribute {
         value: AttrValue,
         access: Access,
         quality: Quality,
-    ) -> Result<Box<Attribute>, Error> {
-        Ok(Box::new(Attribute {
+    ) -> Result<Attribute, Error> {
+        Ok(Attribute {
             id,
             value,
             access,
             quality,
-        }))
+        })
     }
 
     pub fn set_value(&mut self, value: AttrValue) -> Result<(), Error> {
@@ -199,7 +199,7 @@ pub trait ClusterType {
 
 pub struct Cluster {
     id: u32,
-    attributes: Vec<Box<Attribute>>,
+    attributes: Vec<Attribute>,
     feature_map: Option<u32>,
     data_ver: u32,
 }
@@ -249,7 +249,7 @@ impl Cluster {
         )?)
     }
 
-    pub fn add_attribute(&mut self, attr: Box<Attribute>) -> Result<(), Error> {
+    pub fn add_attribute(&mut self, attr: Attribute) -> Result<(), Error> {
         if self.attributes.len() < self.attributes.capacity() {
             self.attributes.push(attr);
             Ok(())
@@ -266,29 +266,28 @@ impl Cluster {
         let index = self
             .get_attribute_index(attr_id)
             .ok_or(Error::AttributeNotFound)?;
-        Ok(self.attributes[index].as_ref())
+        Ok(&self.attributes[index])
     }
 
     fn get_attribute_mut(&mut self, attr_id: u16) -> Result<&mut Attribute, Error> {
         let index = self
             .get_attribute_index(attr_id)
             .ok_or(Error::AttributeNotFound)?;
-        Ok(self.attributes[index].as_mut())
+        Ok(&mut self.attributes[index])
     }
 
     // Returns a slice of attribute, with either a single attribute or all (wildcard)
-    pub fn get_wildcard_attribute(&self, attribute: Option<u16>) -> &[Box<Attribute>] {
-        let attributes = if let Some(a) = attribute {
+    pub fn get_wildcard_attribute(&self, attribute: Option<u16>) -> &[Attribute] {
+        if let Some(a) = attribute {
             if let Some(i) = self.get_attribute_index(a) {
                 &self.attributes[i..i + 1]
             } else {
                 // empty slice
-                &[] as &[Box<Attribute>]
+                &[] as &[Attribute]
             }
         } else {
             &self.attributes[..]
-        };
-        attributes
+        }
     }
 
     pub fn read_attribute(
@@ -430,7 +429,7 @@ impl Endpoint {
 
     // Returns a slice of clusters, with either a single cluster or all (wildcard)
     pub fn get_wildcard_clusters(&self, cluster: Option<u32>) -> &[Box<dyn ClusterType>] {
-        let clusters = if let Some(c) = cluster {
+        if let Some(c) = cluster {
             if let Some(i) = self.get_cluster_index(c) {
                 &self.clusters[i..i + 1]
             } else {
@@ -438,9 +437,8 @@ impl Endpoint {
                 &[] as &[Box<dyn ClusterType>]
             }
         } else {
-            &self.clusters.as_slice()
-        };
-        clusters
+            self.clusters.as_slice()
+        }
     }
 
     // Returns a slice of clusters, with either a single cluster or all (wildcard)
@@ -448,7 +446,7 @@ impl Endpoint {
         &mut self,
         cluster: Option<u32>,
     ) -> &mut [Box<dyn ClusterType>] {
-        let clusters = if let Some(c) = cluster {
+        if let Some(c) = cluster {
             if let Some(i) = self.get_cluster_index(c) {
                 &mut self.clusters[i..i + 1]
             } else {
@@ -457,8 +455,7 @@ impl Endpoint {
             }
         } else {
             &mut self.clusters[..]
-        };
-        clusters
+        }
     }
 }
 
@@ -571,7 +568,7 @@ impl Node {
         &self,
         endpoint: Option<u16>,
     ) -> (&[Option<Box<Endpoint>>], usize) {
-        let endpoints = if let Some(e) = endpoint {
+        if let Some(e) = endpoint {
             let e = e as usize;
             if self.endpoints[e].is_none() {
                 // empty slice
@@ -581,15 +578,14 @@ impl Node {
             }
         } else {
             (&self.endpoints[..], 0)
-        };
-        endpoints
+        }
     }
 
     pub fn get_wildcard_endpoints_mut(
         &mut self,
         endpoint: Option<u16>,
     ) -> (&mut [Option<Box<Endpoint>>], usize) {
-        let endpoints = if let Some(e) = endpoint {
+        if let Some(e) = endpoint {
             let e = e as usize;
             if self.endpoints[e].is_none() {
                 // empty slice
@@ -599,8 +595,7 @@ impl Node {
             }
         } else {
             (&mut self.endpoints[..], 0)
-        };
-        endpoints
+        }
     }
 
     pub fn for_each_endpoint<T>(&self, path: &GenericPath, mut f: T)

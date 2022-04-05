@@ -86,7 +86,12 @@ pub trait HandleProto {
         proto_rx: &mut ProtoRx,
         proto_tx: &mut ProtoTx,
     ) -> Result<ResponseRequired, Error>;
+
     fn get_proto_id(&self) -> usize;
+
+    fn handle_session_event(&self) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 impl Default for ProtoDemux {

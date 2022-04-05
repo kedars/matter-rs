@@ -43,11 +43,11 @@ impl Psm {
 
     pub fn set_kv_slice(&self, key: &str, val: &[u8]) -> Result<(), Error> {
         let mut f = File::create(psm_path!(key))?;
-        f.write(val)?;
+        f.write_all(val)?;
         Ok(())
     }
 
-    pub fn get_kv_slice<'a>(&self, key: &str, val: &mut Vec<u8>) -> Result<usize, Error> {
+    pub fn get_kv_slice(&self, key: &str, val: &mut Vec<u8>) -> Result<usize, Error> {
         let mut f = File::open(psm_path!(key))?;
         let len = f.read_to_end(val)?;
         Ok(len)
@@ -55,7 +55,7 @@ impl Psm {
 
     pub fn set_kv_u64(&self, key: &str, val: u64) -> Result<(), Error> {
         let mut f = File::create(psm_path!(key))?;
-        f.write(&val.to_be_bytes())?;
+        f.write_all(&val.to_be_bytes())?;
         Ok(())
     }
 

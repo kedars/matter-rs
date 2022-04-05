@@ -85,7 +85,7 @@ pub struct OctetStr<'a>(pub &'a [u8]);
 
 impl<'a> FromTLV<'a> for OctetStr<'a> {
     fn from_tlv(t: &TLVElement<'a>) -> Result<OctetStr<'a>, Error> {
-        t.slice().map(|x| OctetStr(x))
+        t.slice().map(OctetStr)
     }
 }
 
@@ -192,7 +192,7 @@ impl<'a, T: FromTLV<'a> + Copy> Iterator for TLVArrayIter<'a, T> {
     /* Code for going to the next Element */
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            Self::Slice(s_iter) => s_iter.next().map(|x| *x),
+            Self::Slice(s_iter) => s_iter.next().copied(),
             Self::Ptr(p_iter) => {
                 if let Some(tlv_iter) = p_iter.as_mut() {
                     let e = tlv_iter.next();

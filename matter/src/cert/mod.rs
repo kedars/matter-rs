@@ -224,7 +224,7 @@ impl Extensions {
         }
         if let Some(t) = &self.ext_key_usage {
             encode_extension_start("X509v3 Extended Key Usage", true, &OID_EXT_KEY_USAGE, w)?;
-            encode_extended_key_usage(&t, w)?;
+            encode_extended_key_usage(t, w)?;
             encode_extension_end(w)?;
         }
         if let Some(t) = &self.subj_key_id {
@@ -406,11 +406,7 @@ impl Cert {
     }
 
     pub fn get_subject_key_id(&self) -> Result<&[u8], Error> {
-        self.extensions
-            .subj_key_id
-            .as_ref()
-            .map(|x| x.as_slice())
-            .ok_or(Error::Invalid)
+        self.extensions.subj_key_id.as_deref().ok_or(Error::Invalid)
     }
 
     pub fn is_authority(&self, their: &Cert) -> Result<bool, Error> {

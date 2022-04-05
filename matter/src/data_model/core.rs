@@ -65,11 +65,11 @@ impl DataModel {
         skip_error: bool,
     ) {
         let result = match data {
-            &AttrDataType::Closure(_) => {
+            AttrDataType::Closure(_) => {
                 error!("Not supported");
                 Err(IMStatusCode::Failure)
             }
-            &AttrDataType::Tlv(t) => c.write_attribute(&t, attr_id),
+            AttrDataType::Tlv(t) => c.write_attribute(t, attr_id),
         };
         if skip_error && result.is_err() {
             // For wildcard scenarios

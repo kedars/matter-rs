@@ -30,7 +30,7 @@ impl Matter {
         dev_att: Box<dyn DevAttDataFetcher>,
     ) -> Result<Box<Matter>, Error> {
         let fabric_mgr = Arc::new(FabricMgr::new()?);
-        let open_comm_window = if fabric_mgr.is_empty() { true } else { false };
+        let open_comm_window = fabric_mgr.is_empty();
         let data_model = DataModel::new(dev_det, dev_att, fabric_mgr.clone())?;
         let mut matter = Box::new(Matter {
             transport_mgr: transport::mgr::Mgr::new()?,

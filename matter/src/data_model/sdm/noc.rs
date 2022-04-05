@@ -175,8 +175,13 @@ impl NocCluster {
             let mut buf: [u8; RESP_MAX] = [0; RESP_MAX];
             let mut attest_element = WriteBuf::new(&mut buf, RESP_MAX);
 
-            add_attestation_element(&self.dev_att, req.str.0, &mut attest_element, t)?;
-            add_attestation_signature(&self.dev_att, &mut attest_element, &attest_challenge, t)
+            add_attestation_element(self.dev_att.as_ref(), req.str.0, &mut attest_element, t)?;
+            add_attestation_signature(
+                self.dev_att.as_ref(),
+                &mut attest_element,
+                &attest_challenge,
+                t,
+            )
         };
         let resp = ib::InvResp::cmd_new(0, ID, Commands::AttReqResp as u16, &cmd_data);
         let _ = resp.to_tlv(cmd_req.resp, TagType::Anonymous);
@@ -227,7 +232,12 @@ impl NocCluster {
             let mut nocsr_element = WriteBuf::new(&mut buf, RESP_MAX);
 
             add_nocsrelement(&noc_keypair, req.str.0, &mut nocsr_element, t)?;
-            add_attestation_signature(&self.dev_att, &mut nocsr_element, &attest_challenge, t)
+            add_attestation_signature(
+                self.dev_att.as_ref(),
+                &mut nocsr_element,
+                &attest_challenge,
+                t,
+            )
         };
         let resp = ib::InvResp::cmd_new(0, ID, Commands::CSRResp as u16, &cmd_data);
 
@@ -286,7 +296,7 @@ impl ClusterType for NocCluster {
             .cmd
             .path
             .leaf
-            .map(|c| num::FromPrimitive::from_u32(c))
+            .map(num::FromPrimitive::from_u32)
             .ok_or(IMStatusCode::UnsupportedCommand)?
             .ok_or(IMStatusCode::UnsupportedCommand)?;
         match cmd {
@@ -301,7 +311,7 @@ impl ClusterType for NocCluster {
 }
 
 fn add_attestation_element(
-    dev_att: &Box<dyn DevAttDataFetcher>,
+    dev_att: &dyn DevAttDataFetcher,
     att_nonce: &[u8],
     write_buf: &mut WriteBuf,
     t: &mut TLVWriter,
@@ -323,7 +333,7 @@ fn add_attestation_element(
 }
 
 fn add_attestation_signature(
-    dev_att: &Box<dyn DevAttDataFetcher>,
+    dev_att: &dyn DevAttDataFetcher,
     attest_element: &mut WriteBuf,
     attest_challenge: &[u8],
     resp: &mut TLVWriter,

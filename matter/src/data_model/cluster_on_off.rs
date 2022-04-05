@@ -20,7 +20,7 @@ pub enum Commands {
     Toggle = 0x02,
 }
 
-fn attr_on_off_new() -> Result<Box<Attribute>, Error> {
+fn attr_on_off_new() -> Result<Attribute, Error> {
     // OnOff, Value: false
     Attribute::new(
         Attributes::OnOff as u16,
@@ -57,7 +57,7 @@ impl ClusterType for OnOffCluster {
             .cmd
             .path
             .leaf
-            .map(|c| num::FromPrimitive::from_u32(c))
+            .map(num::FromPrimitive::from_u32)
             .ok_or(IMStatusCode::UnsupportedCommand)?
             .ok_or(IMStatusCode::UnsupportedCommand)?;
         match cmd {

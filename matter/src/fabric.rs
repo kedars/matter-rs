@@ -154,12 +154,12 @@ impl Fabric {
         let mut key = [0_u8; crypto::EC_POINT_LEN_BYTES];
         let len = self.key_pair.get_public_key(&mut key)?;
         let key = &key[..len];
-        psm.set_kv_slice(fb_key!(index, ST_PBKEY), &key)?;
+        psm.set_kv_slice(fb_key!(index, ST_PBKEY), key)?;
 
         let mut key = [0_u8; crypto::BIGNUM_LEN_BYTES];
         let len = self.key_pair.get_private_key(&mut key)?;
         let key = &key[..len];
-        psm.set_kv_slice(fb_key!(index, ST_PRKEY), &key)?;
+        psm.set_kv_slice(fb_key!(index, ST_PRKEY), key)?;
 
         Ok(())
     }
@@ -274,6 +274,6 @@ impl FabricMgr {
                 return false;
             }
         }
-        return true;
+        true
     }
 }

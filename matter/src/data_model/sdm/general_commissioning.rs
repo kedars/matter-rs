@@ -44,7 +44,7 @@ pub enum RegLocationType {
     IndoorOutdoor = 2,
 }
 
-fn attr_bread_crumb_new(bread_crumb: u64) -> Result<Box<Attribute>, Error> {
+fn attr_bread_crumb_new(bread_crumb: u64) -> Result<Attribute, Error> {
     Attribute::new(
         Attributes::BreadCrumb as u16,
         AttrValue::Uint64(bread_crumb),
@@ -53,7 +53,7 @@ fn attr_bread_crumb_new(bread_crumb: u64) -> Result<Box<Attribute>, Error> {
     )
 }
 
-fn attr_reg_config_new(reg_config: RegLocationType) -> Result<Box<Attribute>, Error> {
+fn attr_reg_config_new(reg_config: RegLocationType) -> Result<Attribute, Error> {
     Attribute::new(
         Attributes::RegConfig as u16,
         AttrValue::Uint8(reg_config as u8),
@@ -62,7 +62,7 @@ fn attr_reg_config_new(reg_config: RegLocationType) -> Result<Box<Attribute>, Er
     )
 }
 
-fn attr_location_capability_new(reg_config: RegLocationType) -> Result<Box<Attribute>, Error> {
+fn attr_location_capability_new(reg_config: RegLocationType) -> Result<Attribute, Error> {
     Attribute::new(
         Attributes::LocationCapability as u16,
         AttrValue::Uint8(reg_config as u8),
@@ -71,7 +71,7 @@ fn attr_location_capability_new(reg_config: RegLocationType) -> Result<Box<Attri
     )
 }
 
-fn attr_comm_info_new() -> Result<Box<Attribute>, Error> {
+fn attr_comm_info_new() -> Result<Attribute, Error> {
     Attribute::new(
         Attributes::BasicCommissioningInfo as u16,
         AttrValue::Custom,
@@ -126,7 +126,7 @@ impl ClusterType for GenCommCluster {
             .cmd
             .path
             .leaf
-            .map(|c| num::FromPrimitive::from_u32(c))
+            .map(num::FromPrimitive::from_u32)
             .ok_or(IMStatusCode::UnsupportedCommand)?
             .ok_or(IMStatusCode::UnsupportedCommand)?;
         match cmd {
@@ -145,7 +145,7 @@ impl GenCommCluster {
         let mut c = Box::new(GenCommCluster {
             // TODO: Arch-Specific
             expiry_len: 120,
-            failsafe: failsafe,
+            failsafe,
             base: Cluster::new(ID)?,
         });
         c.base.add_attribute(attr_bread_crumb_new(0)?)?;

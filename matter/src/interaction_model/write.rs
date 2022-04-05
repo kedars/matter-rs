@@ -22,11 +22,7 @@ impl InteractionModel {
         let write_req = WriteReq::from_tlv(&root)?;
         // TODO: This is found in the spec, but not in the C++ implementation
         let _fab_scoped = false;
-        let supress_response = if write_req.supress_response.is_some() {
-            true
-        } else {
-            false
-        };
+        let supress_response = write_req.supress_response.is_some();
 
         tw.start_struct(TagType::Anonymous)?;
         self.consumer.consume_write_attr(&write_req, &mut tw)?;
