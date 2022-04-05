@@ -3,6 +3,7 @@ use std::{
     any::Any,
     net::SocketAddr,
     ops::{Deref, DerefMut},
+    time::SystemTime,
 };
 
 use crate::{
@@ -46,6 +47,7 @@ pub struct Session {
     msg_ctr: u32,
     mode: SessionMode,
     data: Option<Box<dyn Any>>,
+    last_use: SystemTime,
 }
 
 #[derive(Debug)]
@@ -96,6 +98,7 @@ impl Session {
             msg_ctr: rand::thread_rng().gen_range(0..MATTER_MSG_CTR_RANGE),
             mode: SessionMode::PlainText,
             data: None,
+            last_use: SystemTime::now(),
         }
     }
 
@@ -113,6 +116,7 @@ impl Session {
             msg_ctr: rand::thread_rng().gen_range(0..MATTER_MSG_CTR_RANGE),
             mode: clone_from.mode,
             data: None,
+            last_use: SystemTime::now(),
         }
     }
 
@@ -192,11 +196,12 @@ impl Session {
     }
 
     pub fn recv(
-        &self,
+        &mut self,
         plain_hdr: &PlainHdr,
         proto_hdr: &mut ProtoHdr,
         parse_buf: &mut ParseBuf,
     ) -> Result<(), Error> {
+        self.last_use = SystemTime::now();
         proto_hdr.decrypt_and_decode(
             plain_hdr,
             parse_buf,
@@ -215,11 +220,12 @@ impl Session {
     }
 
     pub fn send(
-        &self,
+        &mut self,
         plain_hdr: &mut PlainHdr,
         proto_hdr: &mut ProtoHdr,
         packet_buf: &mut WriteBuf,
     ) -> Result<(), Error> {
+        self.last_use = SystemTime::now();
         // Generate encrypted header
         let mut tmp_buf: [u8; proto_hdr::max_proto_hdr_len()] = [0; proto_hdr::max_proto_hdr_len()];
         let mut write_buf = WriteBuf::new(&mut tmp_buf[..], proto_hdr::max_proto_hdr_len());
@@ -276,10 +282,11 @@ impl fmt::Display for Session {
     }
 }
 
+const MAX_SESSIONS: usize = 16;
 #[derive(Debug)]
 pub struct SessionMgr {
     next_sess_id: u16,
-    sessions: [Option<Session>; 16],
+    sessions: [Option<Session>; MAX_SESSIONS],
 }
 
 impl SessionMgr {
@@ -313,6 +320,20 @@ impl SessionMgr {
         self.sessions.iter().position(|x| x.is_none())
     }
 
+    fn evict_lru(&mut self) -> usize {
+        let mut lru_index = 0;
+        let mut lru_ts = SystemTime::now();
+        for i in 0..MAX_SESSIONS {
+            if let Some(s) = &self.sessions[i] {
+                if s.last_use < lru_ts {
+                    lru_ts = s.last_use;
+                    lru_index = i;
+                }
+            }
+        }
+        lru_index
+    }
+
     pub fn add(
         &mut self,
         peer_addr: std::net::SocketAddr,
@@ -324,6 +345,7 @@ impl SessionMgr {
 
     pub fn add_session(&mut self, session: Session) -> Result<SessionHandle, Error> {
         let index = self.get_empty_slot().ok_or(Error::NoSpace)?;
+        //        let index = self.get_empty_slot().unwrap_or_else(|| self.evict_lru());
         self.sessions[index] = Some(session);
         Ok(self.get_session_handle(index))
     }

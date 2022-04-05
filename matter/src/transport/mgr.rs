@@ -63,7 +63,7 @@ impl Mgr {
 
         // Get session
         //      Ok to use unwrap here since we know 'src' is certainly not None
-        let session = sess_mgr.recv(&mut plain_hdr, &mut parse_buf, src)?;
+        let mut session = sess_mgr.recv(&mut plain_hdr, &mut parse_buf, src)?;
 
         // Read encrypted header
         session.recv(&plain_hdr, &mut proto_hdr, &mut parse_buf)?;
