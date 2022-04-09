@@ -5,8 +5,8 @@ use matter::{
         messages::ib::{CmdDataType, CmdPath, InvResp},
         messages::msg,
     },
-    proto_demux::ProtoTx,
     tlv,
+    transport::proto_demux::ProtoTx,
     utils::writebuf::WriteBuf,
 };
 

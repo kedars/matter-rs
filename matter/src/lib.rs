@@ -48,7 +48,6 @@ pub mod error;
 pub mod fabric;
 pub mod group_keys;
 pub mod interaction_model;
-pub mod proto_demux;
 pub mod secure_channel;
 pub mod sys;
 pub mod tlv;

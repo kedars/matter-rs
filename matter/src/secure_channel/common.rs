@@ -1,6 +1,6 @@
 use num_derive::FromPrimitive;
 
-use crate::{error::Error, proto_demux::ProtoTx};
+use crate::{error::Error, transport::proto_demux::ProtoTx};
 
 use super::status_report::{create_status_report, GeneralCode};
 

@@ -3,10 +3,11 @@ use super::messages::ib;
 use super::messages::msg;
 use super::InteractionModel;
 use super::Transaction;
-use crate::error::*;
-use crate::proto_demux::ProtoTx;
-use crate::proto_demux::ResponseRequired;
-use crate::tlv::{get_root_node_struct, print_tlv_list, FromTLV, TLVElement, TLVWriter, TagType};
+use crate::{
+    error::*,
+    tlv::{get_root_node_struct, print_tlv_list, FromTLV, TLVElement, TLVWriter, TagType},
+    transport::proto_demux::{ProtoTx, ResponseRequired},
+};
 use log::error;
 
 #[macro_export]

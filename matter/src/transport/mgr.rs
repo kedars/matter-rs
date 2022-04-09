@@ -2,15 +2,14 @@ use heapless::LinearMap;
 use log::{debug, error, info, trace};
 
 use crate::error::*;
-use crate::proto_demux;
-use crate::proto_demux::ProtoRx;
-use crate::proto_demux::ProtoTx;
-use crate::transport::exchange;
-use crate::transport::mrp;
-use crate::transport::plain_hdr;
-use crate::transport::proto_hdr;
-use crate::transport::session::{self, SessionHandle};
-use crate::transport::udp::{self, MAX_RX_BUF_SIZE};
+
+use crate::transport::{
+    exchange, mrp, plain_hdr,
+    proto_demux::{self, ProtoRx, ProtoTx},
+    proto_hdr,
+    session::{self, SessionHandle},
+    udp::{self, MAX_RX_BUF_SIZE},
+};
 use crate::utils::parsebuf::ParseBuf;
 use colored::*;
 

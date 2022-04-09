@@ -7,14 +7,14 @@ use super::{
     common::{create_sc_status_report, SCStatusCodes},
     spake2p::Spake2P,
 };
-use crate::crypto;
-use crate::tlv::{
-    self, get_root_node_struct, FromTLV, OctetStr, TLVElement, TLVWriter, TagType, ToTLV,
-};
-use crate::{error::Error, transport::session::CloneData};
 use crate::{
-    proto_demux::{ProtoRx, ProtoTx},
-    transport::session::SessionMode,
+    crypto,
+    error::Error,
+    tlv::{self, get_root_node_struct, FromTLV, OctetStr, TLVElement, TLVWriter, TagType, ToTLV},
+    transport::{
+        proto_demux::{ProtoRx, ProtoTx},
+        session::{CloneData, SessionMode},
+    },
 };
 use log::{error, info};
 use rand::prelude::*;

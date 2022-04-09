@@ -9,11 +9,13 @@ use crate::{
     crypto::{self, CryptoKeyPair, KeyPair, Sha256},
     error::Error,
     fabric::{Fabric, FabricMgr, FabricMgrInner},
-    proto_demux::{ProtoRx, ProtoTx},
     secure_channel::common,
     secure_channel::common::SCStatusCodes,
     tlv::{get_root_node_struct, FromTLV, OctetStr, TLVElement, TLVWriter, TagType},
-    transport::session::{CloneData, SessionMode},
+    transport::{
+        proto_demux::{ProtoRx, ProtoTx},
+        session::{CloneData, SessionMode},
+    },
     utils::writebuf::WriteBuf,
 };
 

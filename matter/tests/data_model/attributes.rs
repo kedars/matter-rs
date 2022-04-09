@@ -12,8 +12,8 @@ use matter::{
         },
         messages::{msg, GenericPath},
     },
-    proto_demux::ProtoTx,
     tlv::{self, ElementType, FromTLV, TLVElement, TLVList, TLVWriter, TagType, ToTLV},
+    transport::proto_demux::ProtoTx,
     utils::writebuf::WriteBuf,
 };
 

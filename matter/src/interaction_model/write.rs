@@ -2,8 +2,8 @@ use log::error;
 
 use crate::{
     error::Error,
-    proto_demux::{ProtoTx, ResponseRequired},
     tlv::{get_root_node_struct, FromTLV, TLVWriter, TagType},
+    transport::proto_demux::{ProtoTx, ResponseRequired},
 };
 
 use super::{core::OpCode, messages::msg::WriteReq, InteractionModel, Transaction};

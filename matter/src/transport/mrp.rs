@@ -1,11 +1,11 @@
 use std::time::Duration;
 use std::time::SystemTime;
 
-use crate::error::*;
-use crate::proto_demux::ProtoTx;
-use crate::secure_channel;
-use crate::transport::plain_hdr;
-use crate::transport::proto_hdr;
+use crate::{
+    error::*,
+    secure_channel,
+    transport::{plain_hdr, proto_demux::ProtoTx, proto_hdr},
+};
 use heapless::LinearMap;
 use log::{error, info};
 

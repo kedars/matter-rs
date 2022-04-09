@@ -1,5 +1,5 @@
 use super::common::*;
-use crate::{error::Error, proto_demux::ProtoTx};
+use crate::{error::Error, transport::proto_demux::ProtoTx};
 
 #[allow(dead_code)]
 #[derive(Debug, Copy, Clone)]

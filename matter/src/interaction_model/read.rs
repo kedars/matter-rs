@@ -1,8 +1,8 @@
 use crate::{
     error::Error,
     interaction_model::core::OpCode,
-    proto_demux::{ProtoTx, ResponseRequired},
     tlv::{get_root_node_struct, FromTLV, TLVWriter, TagType},
+    transport::proto_demux::{ProtoTx, ResponseRequired},
 };
 
 use super::{

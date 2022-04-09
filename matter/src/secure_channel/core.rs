@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use crate::error::*;
-use crate::fabric::FabricMgr;
-use crate::proto_demux;
-use crate::proto_demux::ResponseRequired;
-use crate::proto_demux::{ProtoRx, ProtoTx};
-use crate::secure_channel::{common::*, pake::PAKE};
+use crate::{
+    error::*,
+    fabric::FabricMgr,
+    secure_channel::{common::*, pake::PAKE},
+    transport::proto_demux::{self, ProtoRx, ProtoTx, ResponseRequired},
+};
 use log::{error, info};
 use num;
 

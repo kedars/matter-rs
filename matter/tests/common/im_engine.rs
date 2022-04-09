@@ -9,8 +9,8 @@ use matter::{
     error::Error,
     fabric::FabricMgr,
     interaction_model::{core::OpCode, messages::ib::CmdPath, messages::msg, InteractionModel},
-    proto_demux::{HandleProto, ProtoRx, ProtoTx},
     tlv::{TLVWriter, TagType, ToTLV},
+    transport::proto_demux::{HandleProto, ProtoRx, ProtoTx},
     transport::{exchange::Exchange, session::SessionMgr},
     utils::writebuf::WriteBuf,
 };
