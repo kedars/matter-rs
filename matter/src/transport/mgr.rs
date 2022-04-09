@@ -1,3 +1,4 @@
+use async_channel::Receiver;
 use heapless::LinearMap;
 use log::{debug, error, info, trace};
 
@@ -6,14 +7,14 @@ use crate::error::*;
 use crate::transport::{
     exchange, mrp, plain_hdr,
     proto_demux::{self, ProtoRx, ProtoTx},
-    proto_hdr,
+    proto_hdr, queue,
     session::{self, SessionHandle},
     udp::{self, MAX_RX_BUF_SIZE},
 };
 use crate::utils::parsebuf::ParseBuf;
 use colored::*;
 
-use super::session::Session;
+use super::queue::Msg;
 
 pub struct Mgr {
     transport: udp::UdpListener,
@@ -21,6 +22,7 @@ pub struct Mgr {
     exch_mgr: exchange::ExchangeMgr,
     proto_demux: proto_demux::ProtoDemux,
     rel_mgr: mrp::ReliableMessage,
+    rx_q: Receiver<Msg>,
 }
 
 impl Mgr {
@@ -31,6 +33,7 @@ impl Mgr {
             proto_demux: proto_demux::ProtoDemux::new(),
             exch_mgr: exchange::ExchangeMgr::new(),
             rel_mgr: mrp::ReliableMessage::new(),
+            rx_q: queue::WorkQ::init()?,
         })
     }
 
@@ -147,11 +150,7 @@ impl Mgr {
         Ok(())
     }
 
-    fn handle_rxtx(
-        &mut self,
-        in_buf: &mut [u8],
-        proto_tx: &mut ProtoTx,
-    ) -> Result<Option<Session>, Error> {
+    fn handle_rxtx(&mut self, in_buf: &mut [u8], proto_tx: &mut ProtoTx) -> Result<(), Error> {
         let mut proto_rx = Mgr::recv(
             &mut self.transport,
             &mut self.rel_mgr,
@@ -169,7 +168,7 @@ impl Mgr {
             Ok(r) => {
                 if let proto_demux::ResponseRequired::No = r {
                     // We need to send the Ack if reliability is enabled, in this case
-                    return Ok(None);
+                    return Ok(());
                 }
             }
             Err(e) => {
@@ -177,8 +176,6 @@ impl Mgr {
                 return Err(e);
             }
         }
-        // Check if a new session was created as part of the protocol handling
-        let new_session = proto_tx.new_session.take();
 
         proto_tx.peer = proto_rx.peer;
         // tx_ctx now contains the response payload, send the packet
@@ -194,7 +191,25 @@ impl Mgr {
             e
         })?;
 
-        Ok(new_session)
+        Ok(())
+    }
+
+    fn handle_queue_msgs(&mut self) -> Result<(), Error> {
+        if let Ok(msg) = self.rx_q.try_recv() {
+            match msg {
+                Msg::NewSession(new_session) => {
+                    // If a new session was created, add it
+                    let _ = self
+                        .sess_mgr
+                        .add_session(new_session)
+                        .map_err(|e| error!("Error adding new session {:?}", e));
+                }
+                _ => {
+                    error!("Queue Message Type not yet handled {:?}", msg);
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn start(&mut self) -> Result<(), Error> {
@@ -214,13 +229,9 @@ impl Mgr {
             };
 
             // Handle network operations
-            if let Ok(Some(new_session)) = self.handle_rxtx(&mut in_buf, &mut proto_tx) {
-                // If a new session was created, add it
-                let _ = self
-                    .sess_mgr
-                    .add_session(new_session)
-                    .map_err(|e| error!("Error adding new session {:?}", e));
-            }
+            self.handle_rxtx(&mut in_buf, &mut proto_tx)?;
+            self.handle_queue_msgs()?;
+
             proto_tx.reset(RESERVE_HDR_SIZE);
 
             // Handle any pending acknowledgement send

@@ -14,6 +14,7 @@ use crate::{
     tlv::{get_root_node_struct, FromTLV, OctetStr, TLVElement, TLVWriter, TagType},
     transport::{
         proto_demux::{ProtoRx, ProtoTx},
+        queue::{Msg, WorkQ},
         session::{CloneData, SessionMode},
     },
     utils::writebuf::WriteBuf,
@@ -143,7 +144,8 @@ impl Case {
             initiator_noc.get_node_id()?,
             &case_session,
         )?;
-        proto_tx.new_session = Some(proto_rx.session.clone(&clone_data));
+        // Queue a transport mgr request to add a new session
+        WorkQ::get()?.sync_send(Msg::NewSession(proto_rx.session.clone(&clone_data)))?;
 
         common::create_sc_status_report(
             proto_tx,

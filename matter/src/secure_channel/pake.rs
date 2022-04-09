@@ -13,6 +13,7 @@ use crate::{
     tlv::{self, get_root_node_struct, FromTLV, OctetStr, TLVElement, TLVWriter, TagType, ToTLV},
     transport::{
         proto_demux::{ProtoRx, ProtoTx},
+        queue::{Msg, WorkQ},
         session::{CloneData, SessionMode},
     },
 };
@@ -158,7 +159,9 @@ impl PAKE {
             clone_data
                 .att_challenge
                 .copy_from_slice(&session_keys[32..48]);
-            proto_tx.new_session = Some(proto_rx.session.clone(&clone_data));
+
+            // Queue a transport mgr request to add a new session
+            WorkQ::get()?.sync_send(Msg::NewSession(proto_rx.session.clone(&clone_data)))?;
         }
 
         create_sc_status_report(proto_tx, status_code, None)?;

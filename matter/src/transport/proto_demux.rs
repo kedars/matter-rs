@@ -2,7 +2,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use crate::error::*;
 use crate::transport::exchange::Exchange;
-use crate::transport::session::{Session, SessionHandle};
+use crate::transport::session::SessionHandle;
 use crate::utils::writebuf::WriteBuf;
 
 const MAX_PROTOCOLS: usize = 4;
@@ -51,9 +51,6 @@ pub struct ProtoTx<'a> {
     pub write_buf: WriteBuf<'a>,
     pub peer: SocketAddr,
     pub reliable: bool,
-    // This isn't really a Tx parameter. For now, it is shoved here, because the ProtoTx
-    // is more like an 'output' of the operation. It should be moved to some other location.
-    pub new_session: Option<Session>,
 }
 
 impl<'a> ProtoTx<'a> {
@@ -64,7 +61,6 @@ impl<'a> ProtoTx<'a> {
             proto_id: 0,
             proto_opcode: 0,
             reliable: true,
-            new_session: None,
         };
         p.write_buf.reserve(hdr_reserve)?;
         Ok(p)
@@ -75,7 +71,6 @@ impl<'a> ProtoTx<'a> {
         self.proto_opcode = 0;
         // Placeholder
         self.peer = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 8080);
-        self.new_session = None;
         self.write_buf.reset(reserve);
     }
 }

@@ -1,5 +1,6 @@
 use std::{array::TryFromSliceError, fmt, sync::PoisonError, time::SystemTimeError};
 
+use async_channel::{SendError, TryRecvError};
 use log::error;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -80,6 +81,20 @@ impl From<SystemTimeError> for Error {
 
 impl From<TryFromSliceError> for Error {
     fn from(_e: TryFromSliceError) -> Self {
+        Self::Invalid
+    }
+}
+
+impl<T> From<SendError<T>> for Error {
+    fn from(e: SendError<T>) -> Self {
+        error!("Error in channel send {}", e);
+        Self::Invalid
+    }
+}
+
+impl From<TryRecvError> for Error {
+    fn from(e: TryRecvError) -> Self {
+        error!("Error in channel try_recv {}", e);
         Self::Invalid
     }
 }
