@@ -4,8 +4,9 @@ use log::{debug, error, info, trace};
 
 use crate::error::*;
 
+use crate::transport::mrp::ReliableMessage;
 use crate::transport::{
-    exchange, mrp, plain_hdr,
+    exchange, plain_hdr,
     proto_demux::{self, ProtoRx, ProtoTx},
     proto_hdr, queue,
     session::{self, SessionHandle},
@@ -21,7 +22,6 @@ pub struct Mgr {
     sess_mgr: session::SessionMgr,
     exch_mgr: exchange::ExchangeMgr,
     proto_demux: proto_demux::ProtoDemux,
-    rel_mgr: mrp::ReliableMessage,
     rx_q: Receiver<Msg>,
 }
 
@@ -32,7 +32,6 @@ impl Mgr {
             sess_mgr: session::SessionMgr::new(),
             proto_demux: proto_demux::ProtoDemux::new(),
             exch_mgr: exchange::ExchangeMgr::new(),
-            rel_mgr: mrp::ReliableMessage::new(),
             rx_q: queue::WorkQ::init()?,
         })
     }
@@ -48,7 +47,6 @@ impl Mgr {
     // Borrow-checker gymnastics
     fn recv<'a>(
         transport: &mut udp::UdpListener,
-        rel_mgr: &mut mrp::ReliableMessage,
         sess_mgr: &'a mut session::SessionMgr,
         exch_mgr: &'a mut exchange::ExchangeMgr,
         in_buf: &'a mut [u8],
@@ -74,9 +72,6 @@ impl Mgr {
         let exchange = exch_mgr.recv(&plain_hdr, &proto_hdr)?;
         debug!("Exchange is {:?}", exchange);
 
-        // Message Reliability Protocol
-        rel_mgr.recv(plain_hdr.sess_id, exchange, &plain_hdr, &proto_hdr)?;
-
         Ok(ProtoRx::new(
             proto_hdr.proto_id.into(),
             proto_hdr.proto_opcode,
@@ -100,13 +95,7 @@ impl Mgr {
             .ok_or(Error::NoExchange)?;
 
         proto_tx.peer = session.get_peer_addr();
-        Mgr::send_to_exchange(
-            &self.transport,
-            &mut self.rel_mgr,
-            &mut session,
-            exchange,
-            proto_tx,
-        )
+        Mgr::send_to_exchange(&self.transport, &mut session, exchange, proto_tx)
     }
 
     // This function is send_to_exchange(). There will be multiple higher layer send_*() functions
@@ -114,7 +103,6 @@ impl Mgr {
     // objects
     fn send_to_exchange(
         transport: &udp::UdpListener,
-        rel_mgr: &mut mrp::ReliableMessage,
         session: &mut SessionHandle,
         exchange: &mut exchange::Exchange,
         proto_tx: &mut ProtoTx,
@@ -132,17 +120,9 @@ impl Mgr {
             proto_hdr.proto_opcode
         );
 
-        exchange.send(&mut proto_hdr)?;
+        exchange.send(proto_tx.reliable, &plain_hdr, &mut proto_hdr)?;
 
         session.pre_send(&mut plain_hdr)?;
-
-        rel_mgr.pre_send(
-            session.get_local_sess_id(),
-            exchange,
-            proto_tx.reliable,
-            &plain_hdr,
-            &mut proto_hdr,
-        )?;
 
         session.send(&mut plain_hdr, &mut proto_hdr, &mut proto_tx.write_buf)?;
 
@@ -153,7 +133,6 @@ impl Mgr {
     fn handle_rxtx(&mut self, in_buf: &mut [u8], proto_tx: &mut ProtoTx) -> Result<(), Error> {
         let mut proto_rx = Mgr::recv(
             &mut self.transport,
-            &mut self.rel_mgr,
             &mut self.sess_mgr,
             &mut self.exch_mgr,
             in_buf,
@@ -181,7 +160,6 @@ impl Mgr {
         // tx_ctx now contains the response payload, send the packet
         Mgr::send_to_exchange(
             &self.transport,
-            &mut self.rel_mgr,
             &mut proto_rx.session,
             proto_rx.exchange,
             proto_tx,
@@ -235,15 +213,15 @@ impl Mgr {
             proto_tx.reset(RESERVE_HDR_SIZE);
 
             // Handle any pending acknowledgement send
-            let mut acks_to_send: LinearMap<(u16, u16), (), { mrp::MAX_MRP_ENTRIES }> =
+            let mut acks_to_send: LinearMap<(u16, u16), (), { exchange::MAX_MRP_ENTRIES }> =
                 LinearMap::new();
-            self.rel_mgr.get_acks_to_send(&mut acks_to_send);
+            self.exch_mgr.pending_acks(&mut acks_to_send);
             for (sess_id, exch_id) in acks_to_send.keys() {
                 info!(
                     "Sending MRP Standalone ACK for sess {} exch {}",
                     sess_id, exch_id
                 );
-                self.rel_mgr.prepare_ack(*sess_id, *exch_id, &mut proto_tx);
+                ReliableMessage::prepare_ack(*sess_id, *exch_id, &mut proto_tx);
                 if let Err(e) = self.send_to_exchange_id(*sess_id, *exch_id, &mut proto_tx) {
                     error!("Error in sending Ack {:?}", e);
                 }

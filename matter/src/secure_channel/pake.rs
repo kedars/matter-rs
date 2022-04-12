@@ -165,7 +165,6 @@ impl PAKE {
         }
 
         create_sc_status_report(proto_tx, status_code, None)?;
-        proto_rx.exchange.clear_exchange_data();
         proto_rx.exchange.close();
         // Disable PASE for subsequent sessions
         self.state = PakeState::Idle;
@@ -259,6 +258,7 @@ impl PAKE {
 
         spake2p.set_context(proto_rx.buf, proto_tx.write_buf.as_borrow_slice())?;
         self.state.make_in_progress(spake2p, proto_rx);
+
         Ok(())
     }
 }

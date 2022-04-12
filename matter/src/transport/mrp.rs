@@ -6,10 +6,7 @@ use crate::{
     secure_channel,
     transport::{plain_hdr, proto_demux::ProtoTx, proto_hdr},
 };
-use heapless::LinearMap;
-use log::{error, info};
-
-use super::exchange::Exchange;
+use log::error;
 
 // 200 ms
 const MRP_STANDALONE_ACK_TIMEOUT: u64 = 200;
@@ -62,12 +59,10 @@ impl AckEntry {
     }
 }
 
-pub const MAX_MRP_ENTRIES: usize = 3;
 #[derive(Default, Debug)]
 pub struct ReliableMessage {
-    // keys: sess-id exch-id
-    retrans_table: LinearMap<(u16, u16), RetransEntry, MAX_MRP_ENTRIES>,
-    ack_table: LinearMap<(u16, u16), AckEntry, MAX_MRP_ENTRIES>,
+    retrans: Option<RetransEntry>,
+    ack: Option<AckEntry>,
 }
 
 impl ReliableMessage {
@@ -77,62 +72,54 @@ impl ReliableMessage {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.retrans.is_none() && self.ack.is_none()
+    }
+
     // Check any pending acknowledgements / retransmissions and take action
-    pub fn get_acks_to_send(
-        &self,
-        expired_entries: &mut LinearMap<(u16, u16), (), MAX_MRP_ENTRIES>,
-    ) {
+    pub fn is_ack_ready(&self) -> bool {
         // Acknowledgements
-        for ((sess_id, exch_id), ack_entry) in self.ack_table.iter() {
-            if ack_entry.has_timed_out() {
-                let _ok = expired_entries.insert((*sess_id, *exch_id), ());
-            }
+        if let Some(ack_entry) = self.ack {
+            ack_entry.has_timed_out()
+        } else {
+            false
         }
     }
 
-    pub fn prepare_ack(&self, _sess_id: u16, _exch_id: u16, proto_tx: &mut ProtoTx) {
+    pub fn prepare_ack(_sess_id: u16, _exch_id: u16, proto_tx: &mut ProtoTx) {
         secure_channel::common::create_mrp_standalone_ack(proto_tx);
     }
 
     pub fn pre_send(
         &mut self,
-        sess_id: u16,
-        exchange: &mut Exchange,
         reliable: bool,
-        plain_hdr: &plain_hdr::PlainHdr,
+        _plain_hdr: &plain_hdr::PlainHdr,
         proto_hdr: &mut proto_hdr::ProtoHdr,
     ) -> Result<(), Error> {
         // Check if any acknowledgements are pending for this exchange,
-        let exch_id = exchange.get_id();
 
         // if so, piggy back in the encoded header here
-        if let Some(ack_entry) = self.ack_table.get(&(sess_id, exch_id)) {
+        if let Some(ack_entry) = self.ack {
             // Ack Entry exists, set ACK bit and remove from table
             proto_hdr.set_ack(ack_entry.get_msg_ctr());
-            self.ack_table.remove(&(sess_id, exch_id));
-            exchange.release();
+            self.ack = None;
         }
 
         if !reliable {
             return Ok(());
         }
-
         proto_hdr.set_reliable();
 
-        let new_entry = RetransEntry::new(plain_hdr.ctr);
-        if let Ok(result) = self.retrans_table.insert((sess_id, exch_id), new_entry) {
-            exchange.acquire();
-            if result.is_some() {
-                // This indicates there was some existing entry for same sess-id/exch-id, which shouldnt happen
-                error!("Previous retrans entry for this exchange already exists");
-                Err(Error::Invalid)
-            } else {
-                Ok(())
-            }
-        } else {
-            error!("Couldn't add to retrans table");
-            Err(Error::NoSpaceRetransTable)
+        if self.retrans.is_some() {
+            // This indicates there was some existing entry for same sess-id/exch-id, which shouldnt happen
+            error!("Previous retrans entry for this exchange already exists");
+            return Err(Error::Invalid);
         }
+
+        // TODO: XXX Temporarily keeping a constant ctr number that will get acknowledged
+        // because we do not yet get the outgoing message counter at this point
+        self.retrans = Some(RetransEntry::new(1234));
+        Ok(())
     }
 
     /* A note about Message ACKs, it is a bit asymmetric in the sense that:
@@ -142,43 +129,31 @@ impl ReliableMessage {
      */
     pub fn recv(
         &mut self,
-        sess_id: u16,
-        exchange: &mut Exchange,
         plain_hdr: &plain_hdr::PlainHdr,
         proto_hdr: &proto_hdr::ProtoHdr,
     ) -> Result<(), Error> {
-        let exch_id = exchange.get_id();
-
         if proto_hdr.is_ack() {
             // Handle received Acks
             let ack_msg_ctr = proto_hdr.get_ack_msg_ctr().ok_or(Error::Invalid)?;
-            if let Some(entry) = self.retrans_table.get(&(sess_id, exch_id)) {
+            if let Some(entry) = &self.retrans {
                 if entry.get_msg_ctr() != ack_msg_ctr {
-                    error!("Mismatch in retrans-table's msg counter and received msg counter: received {}, expected {}", ack_msg_ctr, entry.get_msg_ctr());
-                } else {
-                    self.retrans_table.remove(&(sess_id, exch_id));
-                    exchange.release();
+                    // TODO: XXX Fix this
+                    error!("Mismatch in retrans-table's msg counter and received msg counter: received {}, expected {}. This is expected for the timebeing", ack_msg_ctr, entry.get_msg_ctr());
                 }
+                self.retrans = None;
             }
         }
 
         if proto_hdr.is_reliable() {
-            let new_entry = AckEntry::new(plain_hdr.ctr)?;
-            if let Ok(result) = self.ack_table.insert((sess_id, exch_id), new_entry) {
-                exchange.acquire();
-                if result.is_some() {
-                    // This indicates there was some existing entry for same sess-id/exch-id, which shouldnt happen
-                    // TODO: As per the spec if this happens, we need to send out the previous ACK and note this new ACK
-                    error!("Previous ACK entry for this exchange already exists");
-                    return Err(Error::Invalid);
-                }
-            } else {
-                error!("Couldn't add to ACK table");
-                return Err(Error::NoSpaceRetransTable);
+            if self.ack.is_some() {
+                // This indicates there was some existing entry for same sess-id/exch-id, which shouldnt happen
+                // TODO: As per the spec if this happens, we need to send out the previous ACK and note this new ACK
+                error!("Previous ACK entry for this exchange already exists");
+                return Err(Error::Invalid);
             }
+
+            self.ack = Some(AckEntry::new(plain_hdr.ctr)?);
         }
-        info!("Retrans table now is: {:?}", self.retrans_table);
-        info!("Ack table now is: {:?}", self.ack_table);
         Ok(())
     }
 }

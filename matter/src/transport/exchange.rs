@@ -6,7 +6,7 @@ use crate::error::Error;
 
 use heapless::LinearMap;
 
-use super::{plain_hdr::PlainHdr, proto_hdr::ProtoHdr};
+use super::{mrp::ReliableMessage, plain_hdr::PlainHdr, proto_hdr::ProtoHdr};
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum ExchangeRole {
@@ -33,6 +33,7 @@ pub struct Exchange {
     // of this, we might move this into a separate data structure, so as not to burden
     // all 'exchanges'.
     data: Option<Box<dyn Any>>,
+    mrp: ReliableMessage,
 }
 
 impl Exchange {
@@ -43,6 +44,7 @@ impl Exchange {
             role,
             user_cnt: 1,
             data: None,
+            mrp: ReliableMessage::new(),
         }
     }
 
@@ -62,7 +64,8 @@ impl Exchange {
     }
 
     pub fn is_purgeable(&self) -> bool {
-        self.user_cnt == 0
+        // No Users, No pending ACKs/Retrans
+        self.user_cnt == 0 && self.mrp.is_empty()
     }
 
     pub fn get_id(&self) -> u16 {
@@ -97,11 +100,19 @@ impl Exchange {
         self.data.take()?.downcast::<T>().ok()
     }
 
-    pub fn send(&self, proto_hdr: &mut ProtoHdr) -> Result<(), Error> {
+    pub fn send(
+        &mut self,
+        reliable: bool,
+        plain_hdr: &PlainHdr,
+        proto_hdr: &mut ProtoHdr,
+    ) -> Result<(), Error> {
         proto_hdr.exch_id = self.id;
         if self.role == ExchangeRole::Initiator {
             proto_hdr.set_initiator();
         }
+
+        self.mrp.pre_send(reliable, plain_hdr, proto_hdr)?;
+
         Ok(())
     }
 }
@@ -110,8 +121,8 @@ impl fmt::Display for Exchange {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "exch_id: {:?}, sess_id: {}, role: {:?}, data: {:?}, use_cnt: {}",
-            self.id, self.sess_id, self.role, self.data, self.user_cnt
+            "exch_id: {:?}, sess_id: {}, role: {:?}, data: {:?}, use_cnt: {} mrp: {:?}",
+            self.id, self.sess_id, self.role, self.data, self.user_cnt, self.mrp,
         )
     }
 }
@@ -139,6 +150,8 @@ pub struct ExchangeMgr {
     // keys: sess-id exch-id
     exchanges: LinearMap<(u16, u16), Exchange, MAX_EXCHANGES>,
 }
+
+pub const MAX_MRP_ENTRIES: usize = 4;
 
 impl ExchangeMgr {
     pub fn new() -> Self {
@@ -192,13 +205,17 @@ impl ExchangeMgr {
         proto_hdr: &ProtoHdr,
     ) -> Result<&mut Exchange, Error> {
         // Get the exchange
-        self.get(
+        let exch = self.get(
             plain_hdr.sess_id,
             proto_hdr.exch_id,
             get_complementary_role(proto_hdr.is_initiator()),
             // We create a new exchange, only if the peer is the initiator
             proto_hdr.is_initiator(),
-        )
+        )?;
+
+        // Message Reliability Protocol
+        exch.mrp.recv(&plain_hdr, &proto_hdr)?;
+        Ok(exch)
     }
 
     pub fn purge(&mut self) {
@@ -211,6 +228,17 @@ impl ExchangeMgr {
         }
         for ((sess_id, exch_id), _) in to_purge.iter() {
             self.exchanges.remove(&(*sess_id, *exch_id));
+        }
+    }
+
+    pub fn pending_acks(
+        &mut self,
+        expired_entries: &mut LinearMap<(u16, u16), (), MAX_MRP_ENTRIES>,
+    ) {
+        for ((sess_id, exch_id), exchange) in self.exchanges.iter() {
+            if exchange.mrp.is_ack_ready() {
+                expired_entries.insert((*sess_id, *exch_id), ()).unwrap();
+            }
         }
     }
 }
