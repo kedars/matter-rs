@@ -334,18 +334,31 @@ impl SessionMgr {
         lru_index
     }
 
-    pub fn add(
+    pub fn add<F>(
         &mut self,
         peer_addr: std::net::SocketAddr,
         peer_nodeid: Option<u64>,
-    ) -> Result<SessionHandle, Error> {
+        f: F,
+    ) -> Result<SessionHandle, Error>
+    where
+        F: FnMut(&mut Session),
+    {
         let session = Session::new(peer_addr, peer_nodeid);
-        self.add_session(session)
+        self.add_session(session, f)
     }
 
-    pub fn add_session(&mut self, session: Session) -> Result<SessionHandle, Error> {
-        let index = self.get_empty_slot().ok_or(Error::NoSpace)?;
-        //        let index = self.get_empty_slot().unwrap_or_else(|| self.evict_lru());
+    pub fn add_session<F>(&mut self, session: Session, mut f: F) -> Result<SessionHandle, Error>
+    where
+        F: FnMut(&mut Session),
+    {
+        //let index = self.get_empty_slot().ok_or(Error::NoSpace)?;
+        let index = self.get_empty_slot().unwrap_or_else(|| {
+            let idx = self.evict_lru();
+            // Must be valid, so safe to unwrap
+            let evict_session = &mut self.sessions[idx].as_mut().unwrap();
+            f(evict_session);
+            idx
+        });
         self.sessions[index] = Some(session);
         Ok(self.get_session_handle(index))
     }
@@ -394,7 +407,7 @@ impl SessionMgr {
         } else if sess_id == 0 && !is_encrypted {
             // We must create a new session for this case
             info!("Creating new session");
-            self.add(peer_addr, peer_nodeid).ok()
+            self.add(peer_addr, peer_nodeid, |_| {}).ok()
         } else {
             None
         }
@@ -477,6 +490,7 @@ mod tests {
             .add(
                 SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
                 None,
+                |_| {},
             )
             .unwrap();
         sess.set_local_sess_id(1);
@@ -486,6 +500,7 @@ mod tests {
             .add(
                 SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
                 None,
+                |_| {},
             )
             .unwrap();
         sess.set_local_sess_id(4);
@@ -499,6 +514,7 @@ mod tests {
             .add(
                 SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
                 None,
+                |_| {},
             )
             .unwrap();
         sess.set_local_sess_id(1);

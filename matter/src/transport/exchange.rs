@@ -76,14 +76,6 @@ impl Exchange {
         self.role
     }
 
-    pub fn is_match(&self, id: u16, sess_id: u16, role: ExchangeRole) -> bool {
-        self.id == id && self.sess_id == sess_id && self.role == role
-    }
-
-    pub fn is_match_ids(&self, id: u16, sess_id: u16) -> bool {
-        self.id == id && self.sess_id == sess_id
-    }
-
     pub fn set_exchange_data(&mut self, data: Box<dyn Any>) {
         self.data = Some(data);
     }

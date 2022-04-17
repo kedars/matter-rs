@@ -123,7 +123,7 @@ impl Mgr {
         exchange.send(proto_tx.reliable, &plain_hdr, &mut proto_hdr)?;
 
         session.pre_send(&mut plain_hdr)?;
-
+        // MRP send call was here, so we knew what the msg_ctr is going to be
         session.send(&mut plain_hdr, &mut proto_hdr, &mut proto_tx.write_buf)?;
 
         transport.send(proto_tx.write_buf.as_borrow_slice(), proto_tx.peer)?;
@@ -179,7 +179,7 @@ impl Mgr {
                     // If a new session was created, add it
                     let _ = self
                         .sess_mgr
-                        .add_session(new_session)
+                        .add_session(new_session, |_| {})
                         .map_err(|e| error!("Error adding new session {:?}", e));
                 }
                 _ => {
