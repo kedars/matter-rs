@@ -8,9 +8,9 @@ use bitmaps::{Bitmap, Bits, BitsImpl};
 
 #[macro_export]
 macro_rules! box_slab {
-    ($name:ident,$t:ident,$v:expr) => {
+    ($name:ident,$t:ty,$v:expr) => {
         use std::sync::Once;
-        use $crate::BoxSlab;
+        use $crate::{BoxSlab,Slab};
 
         pub struct $name;
         impl $name {
@@ -86,6 +86,9 @@ pub struct BoxSlab<const N: usize, T: 'static>
 where
     BitsImpl<N>: Bits,
 {
+    // XXX TODO:
+    // - We should get rid of this by creating a Trait (that is implemented by the pool, that returns the slab pointer)
+    // - We should figure out a way to get rid of the index too
     slab: &'static Slab<N, T>,
     // Because the data is a reference within the MaybeUninit, we don't have a mechanism
     // to go out to the MaybeUninit from this reference. Hence this index

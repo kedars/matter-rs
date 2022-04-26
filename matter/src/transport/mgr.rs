@@ -44,7 +44,6 @@ impl Mgr {
         self.proto_demux.register(proto_id_handle)
     }
 
-    // Borrow-checker gymnastics
     fn recv<'a>(
         transport: &mut udp::UdpListener,
         sess_mgr: &'a mut session::SessionMgr,

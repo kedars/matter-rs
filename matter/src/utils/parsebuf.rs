@@ -16,12 +16,16 @@ impl<'a> ParseBuf<'a> {
         }
     }
 
+    pub fn set_len(&mut self, left: usize) {
+        self.left = left;
+    }
+
     // Return the data that is valid as a slice, consume self
     pub fn as_slice(self) -> &'a mut [u8] {
         &mut self.buf[self.read_off..(self.read_off + self.left)]
     }
 
-    // Return the data that is valid as a slice, consume self
+    // Return the data that is valid as a slice
     pub fn as_borrow_slice(&mut self) -> &mut [u8] {
         &mut self.buf[self.read_off..(self.read_off + self.left)]
     }
