@@ -6,7 +6,7 @@ use crate::error::Error;
 
 use heapless::LinearMap;
 
-use super::{mrp::ReliableMessage, plain_hdr::PlainHdr, proto_hdr::ProtoHdr};
+use super::{mrp::ReliableMessage, packet::Packet, plain_hdr::PlainHdr, proto_hdr::ProtoHdr};
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum ExchangeRole {
@@ -92,20 +92,13 @@ impl Exchange {
         self.data.take()?.downcast::<T>().ok()
     }
 
-    pub fn send(
-        &mut self,
-        reliable: bool,
-        plain_hdr: &PlainHdr,
-        proto_hdr: &mut ProtoHdr,
-    ) -> Result<(), Error> {
-        proto_hdr.exch_id = self.id;
+    pub fn send(&mut self, proto_tx: &mut Packet) -> Result<(), Error> {
+        proto_tx.proto.exch_id = self.id;
         if self.role == ExchangeRole::Initiator {
-            proto_hdr.set_initiator();
+            proto_tx.proto.set_initiator();
         }
 
-        self.mrp.pre_send(reliable, plain_hdr, proto_hdr)?;
-
-        Ok(())
+        self.mrp.pre_send(proto_tx)
     }
 }
 

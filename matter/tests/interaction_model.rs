@@ -8,9 +8,9 @@ use matter::interaction_model::InteractionModel;
 use matter::interaction_model::Transaction;
 use matter::tlv::{TLVElement, TLVWriter};
 use matter::transport::exchange::Exchange;
+use matter::transport::packet::Packet;
 use matter::transport::proto_demux::HandleProto;
 use matter::transport::proto_demux::ProtoRx;
-use matter::transport::proto_demux::ProtoTx;
 use matter::transport::session::SessionMgr;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
@@ -96,10 +96,13 @@ fn handle_data(action: OpCode, data_in: &[u8], data_out: &mut [u8]) -> DataModel
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
         data_in,
     );
-    let mut proto_tx = ProtoTx::new(data_out, 0).unwrap();
+    let mut proto_tx = Packet::new_tx().unwrap();
     interaction_model
         .handle_proto_id(&mut proto_rx, &mut proto_tx)
         .unwrap();
+
+    let out_len = proto_tx.as_borrow_slice().len();
+    data_out[..out_len].copy_from_slice(proto_tx.as_borrow_slice());
     data_model
 }
 

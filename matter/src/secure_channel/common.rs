@@ -1,6 +1,6 @@
 use num_derive::FromPrimitive;
 
-use crate::{error::Error, transport::proto_demux::ProtoTx};
+use crate::{error::Error, transport::packet::Packet};
 
 use super::status_report::{create_status_report, GeneralCode};
 
@@ -35,7 +35,7 @@ pub enum SCStatusCodes {
 }
 
 pub fn create_sc_status_report(
-    proto_tx: &mut ProtoTx,
+    proto_tx: &mut Packet,
     status_code: SCStatusCodes,
     proto_data: Option<&[u8]>,
 ) -> Result<(), Error> {
@@ -57,8 +57,8 @@ pub fn create_sc_status_report(
     )
 }
 
-pub fn create_mrp_standalone_ack(proto_tx: &mut ProtoTx) {
-    proto_tx.proto_id = PROTO_ID_SECURE_CHANNEL;
-    proto_tx.proto_opcode = OpCode::MRPStandAloneAck as u8;
-    proto_tx.reliable = false;
+pub fn create_mrp_standalone_ack(proto_tx: &mut Packet) {
+    proto_tx.set_proto_id(PROTO_ID_SECURE_CHANNEL as u16);
+    proto_tx.set_proto_opcode(OpCode::MRPStandAloneAck as u8);
+    proto_tx.unset_reliable();
 }

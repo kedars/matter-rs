@@ -10,7 +10,8 @@ use matter::{
     fabric::FabricMgr,
     interaction_model::{core::OpCode, messages::ib::CmdPath, messages::msg, InteractionModel},
     tlv::{TLVWriter, TagType, ToTLV},
-    transport::proto_demux::{HandleProto, ProtoRx, ProtoTx},
+    transport::packet::Packet,
+    transport::proto_demux::{HandleProto, ProtoRx},
     transport::{exchange::Exchange, session::SessionMgr},
     utils::writebuf::WriteBuf,
 };
@@ -27,7 +28,7 @@ impl DevAttDataFetcher for DummyDevAtt {
 }
 
 // Create an Interaction Model, Data Model and run a rx/tx transaction through it
-pub fn im_engine(action: OpCode, data_in: &[u8], proto_tx: &mut ProtoTx) -> DataModel {
+pub fn im_engine(action: OpCode, data_in: &[u8], proto_tx: &mut Packet) -> DataModel {
     let dev_det = BasicInfoConfig {
         vid: 10,
         pid: 11,

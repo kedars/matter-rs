@@ -14,7 +14,7 @@ use crate::{
 use log::{info, trace};
 use rand::Rng;
 
-use super::{plain_hdr::PlainHdr, proto_hdr::ProtoHdr};
+use super::{packet::Packet, plain_hdr::PlainHdr, proto_hdr::ProtoHdr};
 
 const MATTER_AES128_KEY_SIZE: usize = 16;
 
@@ -210,53 +210,50 @@ impl Session {
         )
     }
 
-    pub fn pre_send(&mut self, plain_hdr: &mut PlainHdr) -> Result<(), Error> {
-        plain_hdr.sess_id = self.get_peer_sess_id();
-        plain_hdr.ctr = self.get_msg_ctr();
+    pub fn pre_send(&mut self, proto_tx: &mut Packet) -> Result<(), Error> {
+        proto_tx.plain.sess_id = self.get_peer_sess_id();
+        proto_tx.plain.ctr = self.get_msg_ctr();
         if self.is_encrypted() {
-            plain_hdr.sess_type = plain_hdr::SessionType::Encrypted;
+            proto_tx.plain.sess_type = plain_hdr::SessionType::Encrypted;
         }
         Ok(())
     }
 
-    pub fn send(
-        &mut self,
-        plain_hdr: &mut PlainHdr,
-        proto_hdr: &mut ProtoHdr,
-        packet_buf: &mut WriteBuf,
-    ) -> Result<(), Error> {
+    // TODO: Most of this can now be moved into the 'Packet' module
+    pub fn send(&mut self, proto_tx: &mut Packet) -> Result<(), Error> {
         self.last_use = SystemTime::now();
         // Generate encrypted header
         let mut tmp_buf: [u8; proto_hdr::max_proto_hdr_len()] = [0; proto_hdr::max_proto_hdr_len()];
         let mut write_buf = WriteBuf::new(&mut tmp_buf[..], proto_hdr::max_proto_hdr_len());
-        proto_hdr.encode(&mut write_buf)?;
-        packet_buf.prepend(write_buf.as_slice())?;
+        proto_tx.proto.encode(&mut write_buf)?;
+        proto_tx.get_writebuf()?.prepend(write_buf.as_slice())?;
 
         // Generate plain-text header
         if self.mode == SessionMode::PlainText {
             if let Some(d) = self.peer_nodeid {
-                plain_hdr.set_dest_u64(d);
+                proto_tx.plain.set_dest_u64(d);
             }
         }
         let mut tmp_buf: [u8; plain_hdr::max_plain_hdr_len()] = [0; plain_hdr::max_plain_hdr_len()];
         let mut write_buf = WriteBuf::new(&mut tmp_buf[..], plain_hdr::max_plain_hdr_len());
-        plain_hdr.encode(&mut write_buf)?;
+        proto_tx.plain.encode(&mut write_buf)?;
         let plain_hdr_bytes = write_buf.as_slice();
 
-        trace!("unencrypted packet: {:x?}", packet_buf.as_borrow_slice());
+        trace!("unencrypted packet: {:x?}", proto_tx.as_borrow_slice());
+        let ctr = proto_tx.plain.ctr;
         let enc_key = self.get_enc_key();
         if let Some(e) = enc_key {
             proto_hdr::encrypt_in_place(
-                plain_hdr.ctr,
+                ctr,
                 self.local_nodeid,
                 plain_hdr_bytes,
-                packet_buf,
+                proto_tx.get_writebuf()?,
                 e,
             )?;
         }
 
-        packet_buf.prepend(plain_hdr_bytes)?;
-        trace!("Full encrypted packet: {:x?}", packet_buf.as_borrow_slice());
+        proto_tx.get_writebuf()?.prepend(plain_hdr_bytes)?;
+        trace!("Full encrypted packet: {:x?}", proto_tx.as_borrow_slice());
         Ok(())
     }
 }

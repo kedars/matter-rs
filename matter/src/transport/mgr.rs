@@ -6,8 +6,10 @@ use crate::error::*;
 
 use crate::transport::mrp::ReliableMessage;
 use crate::transport::{
-    exchange, plain_hdr,
-    proto_demux::{self, ProtoRx, ProtoTx},
+    exchange,
+    packet::Packet,
+    plain_hdr,
+    proto_demux::{self, ProtoRx},
     proto_hdr, queue,
     session::{self, SessionHandle},
     udp::{self, MAX_RX_BUF_SIZE},
@@ -85,7 +87,7 @@ impl Mgr {
         &mut self,
         sess_id: u16,
         exch_id: u16,
-        proto_tx: &mut ProtoTx,
+        proto_tx: &mut Packet,
     ) -> Result<(), Error> {
         let mut session = self.sess_mgr.get_with_id(sess_id).ok_or(Error::NoSession)?;
         let exchange = self
@@ -104,32 +106,28 @@ impl Mgr {
         transport: &udp::UdpListener,
         session: &mut SessionHandle,
         exchange: &mut exchange::Exchange,
-        proto_tx: &mut ProtoTx,
+        proto_tx: &mut Packet,
     ) -> Result<(), Error> {
-        let mut plain_hdr = plain_hdr::PlainHdr::default();
-        let mut proto_hdr = proto_hdr::ProtoHdr::default();
-
-        trace!("payload: {:x?}", proto_tx.write_buf.as_borrow_slice());
-        proto_hdr.proto_id = proto_tx.proto_id as u16;
-        proto_hdr.proto_opcode = proto_tx.proto_opcode;
+        trace!("payload: {:x?}", proto_tx.as_borrow_slice());
         info!(
             "{} with proto id: {} opcode: {}",
             "Sending".blue(),
-            proto_hdr.proto_id,
-            proto_hdr.proto_opcode
+            proto_tx.get_proto_id(),
+            proto_tx.get_proto_opcode(),
         );
 
-        exchange.send(proto_tx.reliable, &plain_hdr, &mut proto_hdr)?;
+        exchange.send(proto_tx)?;
 
-        session.pre_send(&mut plain_hdr)?;
-        // MRP send call was here, so we knew what the msg_ctr is going to be
-        session.send(&mut plain_hdr, &mut proto_hdr, &mut proto_tx.write_buf)?;
+        session.pre_send(proto_tx)?;
+        // TODO: MRP send call was here, so we knew what the msg_ctr is going to be
+        session.send(proto_tx)?;
 
-        transport.send(proto_tx.write_buf.as_borrow_slice(), proto_tx.peer)?;
+        let peer = proto_tx.peer;
+        transport.send(proto_tx.as_borrow_slice(), peer)?;
         Ok(())
     }
 
-    fn handle_rxtx(&mut self, in_buf: &mut [u8], proto_tx: &mut ProtoTx) -> Result<(), Error> {
+    fn handle_rxtx(&mut self, in_buf: &mut [u8], proto_tx: &mut Packet) -> Result<(), Error> {
         let mut proto_rx = Mgr::recv(
             &mut self.transport,
             &mut self.sess_mgr,
@@ -193,11 +191,8 @@ impl Mgr {
         loop {
             // I would have liked this in .bss instead of the stack, will likely move this
             // later when we convert this into a pool
-            const RESERVE_HDR_SIZE: usize =
-                plain_hdr::max_plain_hdr_len() + proto_hdr::max_proto_hdr_len();
             let mut in_buf: [u8; MAX_RX_BUF_SIZE] = [0; MAX_RX_BUF_SIZE];
-            let mut out_buf: [u8; MAX_RX_BUF_SIZE] = [0; MAX_RX_BUF_SIZE];
-            let mut proto_tx = match ProtoTx::new(&mut out_buf, RESERVE_HDR_SIZE) {
+            let mut proto_tx = match Packet::new_tx() {
                 Ok(p) => p,
                 Err(e) => {
                     error!("Error creating proto_tx {:?}", e);
@@ -209,7 +204,7 @@ impl Mgr {
             self.handle_rxtx(&mut in_buf, &mut proto_tx)?;
             self.handle_queue_msgs()?;
 
-            proto_tx.reset(RESERVE_HDR_SIZE);
+            proto_tx.reset();
 
             // Handle any pending acknowledgement send
             let mut acks_to_send: LinearMap<(u16, u16), (), { exchange::MAX_MRP_ENTRIES }> =

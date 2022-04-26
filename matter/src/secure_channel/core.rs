@@ -4,7 +4,10 @@ use crate::{
     error::*,
     fabric::FabricMgr,
     secure_channel::{common::*, pake::PAKE},
-    transport::proto_demux::{self, ProtoRx, ProtoTx, ResponseRequired},
+    transport::{
+        packet::Packet,
+        proto_demux::{self, ProtoRx, ResponseRequired},
+    },
 };
 use log::{error, info};
 use num;
@@ -38,7 +41,7 @@ impl SecureChannel {
     fn mrpstandaloneack_handler(
         &mut self,
         _proto_rx: &mut ProtoRx,
-        _proto_tx: &mut ProtoTx,
+        _proto_tx: &mut Packet,
     ) -> Result<ResponseRequired, Error> {
         info!("In MRP StandAlone ACK Handler");
         Ok(ResponseRequired::No)
@@ -47,10 +50,10 @@ impl SecureChannel {
     fn pbkdfparamreq_handler(
         &mut self,
         proto_rx: &mut ProtoRx,
-        proto_tx: &mut ProtoTx,
+        proto_tx: &mut Packet,
     ) -> Result<ResponseRequired, Error> {
         info!("In PBKDF Param Request Handler");
-        proto_tx.proto_opcode = OpCode::PBKDFParamResponse as u8;
+        proto_tx.set_proto_opcode(OpCode::PBKDFParamResponse as u8);
         self.pake.handle_pbkdfparamrequest(proto_rx, proto_tx)?;
         Ok(ResponseRequired::Yes)
     }
@@ -58,10 +61,10 @@ impl SecureChannel {
     fn pasepake1_handler(
         &mut self,
         proto_rx: &mut ProtoRx,
-        proto_tx: &mut ProtoTx,
+        proto_tx: &mut Packet,
     ) -> Result<ResponseRequired, Error> {
         info!("In PASE Pake1 Handler");
-        proto_tx.proto_opcode = OpCode::PASEPake2 as u8;
+        proto_tx.set_proto_opcode(OpCode::PASEPake2 as u8);
         self.pake.handle_pasepake1(proto_rx, proto_tx)?;
         Ok(ResponseRequired::Yes)
     }
@@ -69,7 +72,7 @@ impl SecureChannel {
     fn pasepake3_handler(
         &mut self,
         proto_rx: &mut ProtoRx,
-        proto_tx: &mut ProtoTx,
+        proto_tx: &mut Packet,
     ) -> Result<ResponseRequired, Error> {
         info!("In PASE Pake3 Handler");
         self.pake.handle_pasepake3(proto_rx, proto_tx)?;
@@ -79,10 +82,10 @@ impl SecureChannel {
     fn casesigma1_handler(
         &mut self,
         proto_rx: &mut ProtoRx,
-        proto_tx: &mut ProtoTx,
+        proto_tx: &mut Packet,
     ) -> Result<ResponseRequired, Error> {
         info!("In CASE Sigma1 Handler");
-        proto_tx.proto_opcode = OpCode::CASESigma2 as u8;
+        proto_tx.set_proto_opcode(OpCode::CASESigma2 as u8);
         self.case.handle_casesigma1(proto_rx, proto_tx)?;
         Ok(ResponseRequired::Yes)
     }
@@ -90,7 +93,7 @@ impl SecureChannel {
     fn casesigma3_handler(
         &mut self,
         proto_rx: &mut ProtoRx,
-        proto_tx: &mut ProtoTx,
+        proto_tx: &mut Packet,
     ) -> Result<ResponseRequired, Error> {
         info!("In CASE Sigma3 Handler");
         self.case.handle_casesigma3(proto_rx, proto_tx)?;
@@ -102,11 +105,11 @@ impl proto_demux::HandleProto for SecureChannel {
     fn handle_proto_id(
         &mut self,
         proto_rx: &mut ProtoRx,
-        proto_tx: &mut ProtoTx,
+        proto_tx: &mut Packet,
     ) -> Result<ResponseRequired, Error> {
         let proto_opcode: OpCode =
             num::FromPrimitive::from_u8(proto_rx.proto_opcode).ok_or(Error::Invalid)?;
-        proto_tx.proto_id = PROTO_ID_SECURE_CHANNEL;
+        proto_tx.set_proto_id(PROTO_ID_SECURE_CHANNEL as u16);
         match proto_opcode {
             OpCode::MRPStandAloneAck => self.mrpstandaloneack_handler(proto_rx, proto_tx),
             OpCode::PBKDFParamRequest => self.pbkdfparamreq_handler(proto_rx, proto_tx),

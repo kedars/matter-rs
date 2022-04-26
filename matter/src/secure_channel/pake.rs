@@ -12,7 +12,8 @@ use crate::{
     error::Error,
     tlv::{self, get_root_node_struct, FromTLV, OctetStr, TLVElement, TLVWriter, TagType, ToTLV},
     transport::{
-        proto_demux::{ProtoRx, ProtoTx},
+        packet::Packet,
+        proto_demux::ProtoRx,
         queue::{Msg, WorkQ},
         session::{CloneData, SessionMode},
     },
@@ -135,7 +136,7 @@ impl PAKE {
     pub fn handle_pasepake3(
         &mut self,
         proto_rx: &mut ProtoRx,
-        proto_tx: &mut ProtoTx,
+        proto_tx: &mut Packet,
     ) -> Result<(), Error> {
         let mut sd = self.state.take_sess_data(proto_rx)?;
 
@@ -177,7 +178,7 @@ impl PAKE {
     pub fn handle_pasepake1(
         &mut self,
         proto_rx: &mut ProtoRx,
-        proto_tx: &mut ProtoTx,
+        proto_tx: &mut Packet,
     ) -> Result<(), Error> {
         let mut sd = self.state.take_sess_data(proto_rx)?;
 
@@ -188,7 +189,7 @@ impl PAKE {
             .start_verifier(self.passwd, ITERATION_COUNT, &self.salt)?;
         sd.spake2p.handle_pA(pA, &mut pB, &mut cB)?;
 
-        let mut tw = TLVWriter::new(&mut proto_tx.write_buf);
+        let mut tw = TLVWriter::new(proto_tx.get_writebuf()?);
         let resp = Pake1Resp {
             pb: OctetStr(&pB),
             cb: OctetStr(&cB),
@@ -203,7 +204,7 @@ impl PAKE {
     pub fn handle_pbkdfparamrequest(
         &mut self,
         proto_rx: &mut ProtoRx,
-        proto_tx: &mut ProtoTx,
+        proto_tx: &mut Packet,
     ) -> Result<(), Error> {
         if !self.enabled {
             error!("PASE Not enabled");
@@ -240,7 +241,7 @@ impl PAKE {
         spake2p.set_app_data(spake2p_data as u32);
 
         // Generate response
-        let mut tw = TLVWriter::new(&mut proto_tx.write_buf);
+        let mut tw = TLVWriter::new(proto_tx.get_writebuf()?);
         let mut resp = PBKDFParamResp {
             init_random: a.initiator_random,
             our_random: OctetStr(&our_random),
@@ -256,7 +257,7 @@ impl PAKE {
         }
         resp.to_tlv(&mut tw, TagType::Anonymous)?;
 
-        spake2p.set_context(proto_rx.buf, proto_tx.write_buf.as_borrow_slice())?;
+        spake2p.set_context(proto_rx.buf, proto_tx.as_borrow_slice())?;
         self.state.make_in_progress(spake2p, proto_rx);
 
         Ok(())

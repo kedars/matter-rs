@@ -13,7 +13,8 @@ use crate::{
     secure_channel::common::SCStatusCodes,
     tlv::{get_root_node_struct, FromTLV, OctetStr, TLVElement, TLVWriter, TagType},
     transport::{
-        proto_demux::{ProtoRx, ProtoTx},
+        packet::Packet,
+        proto_demux::ProtoRx,
         queue::{Msg, WorkQ},
         session::{CloneData, SessionMode},
     },
@@ -63,7 +64,7 @@ impl Case {
     pub fn handle_casesigma3(
         &mut self,
         proto_rx: &mut ProtoRx,
-        proto_tx: &mut ProtoTx,
+        proto_tx: &mut Packet,
     ) -> Result<(), Error> {
         let mut case_session = proto_rx
             .exchange
@@ -161,7 +162,7 @@ impl Case {
     pub fn handle_casesigma1(
         &mut self,
         proto_rx: &mut ProtoRx,
-        proto_tx: &mut ProtoTx,
+        proto_tx: &mut Packet,
     ) -> Result<(), Error> {
         let root = get_root_node_struct(proto_rx.buf)?;
         let r = Sigma1Req::from_tlv(&root)?;
@@ -245,16 +246,14 @@ impl Case {
         let encrypted = &encrypted[0..encrypted_len];
 
         // Generate our Response Body
-        let mut tw = TLVWriter::new(&mut proto_tx.write_buf);
+        let mut tw = TLVWriter::new(proto_tx.get_writebuf()?);
         tw.start_struct(TagType::Anonymous)?;
         tw.str8(TagType::Context(1), &our_random)?;
         tw.u16(TagType::Context(2), local_sessid)?;
         tw.str8(TagType::Context(3), &case_session.our_pub_key)?;
         tw.str16(TagType::Context(4), encrypted)?;
         tw.end_container()?;
-        case_session
-            .tt_hash
-            .update(proto_tx.write_buf.as_borrow_slice())?;
+        case_session.tt_hash.update(proto_tx.as_borrow_slice())?;
         proto_rx.exchange.set_exchange_data(case_session);
         Ok(())
     }

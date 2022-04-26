@@ -4,7 +4,7 @@ use std::time::SystemTime;
 use crate::{
     error::*,
     secure_channel,
-    transport::{plain_hdr, proto_demux::ProtoTx, proto_hdr},
+    transport::{packet::Packet, plain_hdr, proto_hdr},
 };
 use log::error;
 
@@ -86,29 +86,23 @@ impl ReliableMessage {
         }
     }
 
-    pub fn prepare_ack(_sess_id: u16, _exch_id: u16, proto_tx: &mut ProtoTx) {
+    pub fn prepare_ack(_sess_id: u16, _exch_id: u16, proto_tx: &mut Packet) {
         secure_channel::common::create_mrp_standalone_ack(proto_tx);
     }
 
-    pub fn pre_send(
-        &mut self,
-        reliable: bool,
-        _plain_hdr: &plain_hdr::PlainHdr,
-        proto_hdr: &mut proto_hdr::ProtoHdr,
-    ) -> Result<(), Error> {
+    pub fn pre_send(&mut self, proto_tx: &mut Packet) -> Result<(), Error> {
         // Check if any acknowledgements are pending for this exchange,
 
         // if so, piggy back in the encoded header here
         if let Some(ack_entry) = self.ack {
             // Ack Entry exists, set ACK bit and remove from table
-            proto_hdr.set_ack(ack_entry.get_msg_ctr());
+            proto_tx.proto.set_ack(ack_entry.get_msg_ctr());
             self.ack = None;
         }
 
-        if !reliable {
+        if !proto_tx.is_reliable() {
             return Ok(());
         }
-        proto_hdr.set_reliable();
 
         if self.retrans.is_some() {
             // This indicates there was some existing entry for same sess-id/exch-id, which shouldnt happen

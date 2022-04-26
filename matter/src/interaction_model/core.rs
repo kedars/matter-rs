@@ -2,7 +2,8 @@ use crate::{
     error::*,
     tlv::{self, FromTLV, TLVElement, TLVWriter, TagType, ToTLV},
     transport::{
-        proto_demux::{self, ProtoRx, ProtoTx, ResponseRequired},
+        packet::Packet,
+        proto_demux::{self, ProtoRx, ResponseRequired},
         session::SessionHandle,
     },
 };
@@ -65,12 +66,12 @@ impl proto_demux::HandleProto for InteractionModel {
     fn handle_proto_id(
         &mut self,
         proto_rx: &mut ProtoRx,
-        proto_tx: &mut ProtoTx,
+        proto_tx: &mut Packet,
     ) -> Result<ResponseRequired, Error> {
         let mut trans = Transaction::new(&mut proto_rx.session);
         let proto_opcode: OpCode =
             num::FromPrimitive::from_u8(proto_rx.proto_opcode).ok_or(Error::Invalid)?;
-        proto_tx.proto_id = PROTO_ID_INTERACTION_MODEL;
+        proto_tx.set_proto_id(PROTO_ID_INTERACTION_MODEL as u16);
 
         info!("{} {:?}", "Received command".cyan(), proto_opcode);
         tlv::print_tlv_list(proto_rx.buf);
@@ -86,7 +87,7 @@ impl proto_demux::HandleProto for InteractionModel {
 
         if result == ResponseRequired::Yes {
             info!("Sending response");
-            tlv::print_tlv_list(proto_tx.write_buf.as_borrow_slice());
+            tlv::print_tlv_list(proto_tx.as_borrow_slice());
         }
         if trans.is_complete() {
             proto_rx.exchange.close();

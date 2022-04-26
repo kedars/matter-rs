@@ -6,7 +6,7 @@ use matter::{
         messages::msg,
     },
     tlv,
-    transport::proto_demux::ProtoTx,
+    transport::packet::Packet,
     utils::writebuf::WriteBuf,
 };
 
@@ -27,14 +27,13 @@ fn handle_commands(input: &[(CmdPath, Option<u8>)], expected: &[ExpectedInvResp]
     let buf_len = buf.len();
     let mut wb = WriteBuf::new(&mut buf, buf_len);
     let mut td = TestData::new(&mut wb);
-    let mut out_buf = [0u8; 400];
-    let mut proto_tx = ProtoTx::new(&mut out_buf, 0).unwrap();
+    let mut proto_tx = Packet::new_tx().unwrap();
 
     td.commands(input).unwrap();
 
     let _ = im_engine(OpCode::InvokeRequest, wb.as_borrow_slice(), &mut proto_tx);
-    tlv::print_tlv_list(proto_tx.write_buf.as_borrow_slice());
-    let root = tlv::get_root_node_struct(proto_tx.write_buf.as_borrow_slice()).unwrap();
+    tlv::print_tlv_list(proto_tx.as_borrow_slice());
+    let root = tlv::get_root_node_struct(proto_tx.as_borrow_slice()).unwrap();
 
     let mut index = 0;
     let cmd_list_iter = root

@@ -42,8 +42,13 @@ impl ProtoHdr {
     pub fn is_security_ext(&self) -> bool {
         self.exch_flags.contains(ExchFlags::SECEX)
     }
+
     pub fn is_reliable(&self) -> bool {
         self.exch_flags.contains(ExchFlags::RELIABLE)
+    }
+
+    pub fn unset_reliable(&mut self) {
+        self.exch_flags.remove(ExchFlags::RELIABLE)
     }
 
     pub fn set_reliable(&mut self) {

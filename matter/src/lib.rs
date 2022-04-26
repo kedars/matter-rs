@@ -40,6 +40,7 @@
 //! // matter.start_daemon().unwrap();
 //! ```
 //! Start off exploring by going to the [Matter] object.
+
 pub mod cert;
 pub mod core;
 pub mod crypto;
