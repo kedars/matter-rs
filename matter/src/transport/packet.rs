@@ -1,8 +1,10 @@
 use log::error;
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::{Mutex, Once},
+    sync::Mutex,
 };
+
+use boxslab::box_slab;
 
 use crate::{
     error::Error,
@@ -136,8 +138,8 @@ impl<'a> Packet<'a> {
         }
     }
 
-    pub fn get_parsebuf(&self) -> Result<&ParseBuf, Error> {
-        if let Direction::Rx(pbuf) = &self.data {
+    pub fn get_parsebuf(&mut self) -> Result<&mut ParseBuf<'a>, Error> {
+        if let Direction::Rx(pbuf) = &mut self.data {
             Ok(pbuf)
         } else {
             Err(Error::Invalid)
@@ -179,6 +181,23 @@ impl<'a> Packet<'a> {
     pub fn is_reliable(&mut self) -> bool {
         self.proto.is_reliable()
     }
+
+    pub fn proto_decode(&mut self, peer_nodeid: u64, dec_key: Option<&[u8]>) -> Result<(), Error> {
+        match &mut self.data {
+            Direction::Rx(pb) => {
+                self.proto
+                    .decrypt_and_decode(&self.plain, pb, peer_nodeid, dec_key)
+            }
+            _ => Err(Error::InvalidState),
+        }
+    }
+
+    pub fn plain_decode(&mut self) -> Result<(), Error> {
+        match &mut self.data {
+            Direction::Rx(pb) => self.plain.decode(pb),
+            _ => Err(Error::InvalidState),
+        }
+    }
 }
 
 impl<'a> Drop for Packet<'a> {
@@ -188,9 +207,4 @@ impl<'a> Drop for Packet<'a> {
     }
 }
 
-// A pool of Packet data structures
-pub mod packet_pool {
-    use boxslab::box_slab;
-
-    box_slab!(PacketPool, super::Packet<'static>, { super::MAX_POOL_SIZE });
-}
+box_slab!(PacketPool, Packet<'static>, { MAX_POOL_SIZE });

@@ -1,11 +1,7 @@
 use std::time::Duration;
 use std::time::SystemTime;
 
-use crate::{
-    error::*,
-    secure_channel,
-    transport::{packet::Packet, plain_hdr, proto_hdr},
-};
+use crate::{error::*, secure_channel, transport::packet::Packet};
 use log::error;
 
 // 200 ms
@@ -121,14 +117,10 @@ impl ReliableMessage {
      * -  there can be only one pending retransmission per exchange (so this is per-exchange)
      * -  duplicate detection should happen per session (obviously), so that part is per-session
      */
-    pub fn recv(
-        &mut self,
-        plain_hdr: &plain_hdr::PlainHdr,
-        proto_hdr: &proto_hdr::ProtoHdr,
-    ) -> Result<(), Error> {
-        if proto_hdr.is_ack() {
+    pub fn recv(&mut self, proto_rx: &Packet) -> Result<(), Error> {
+        if proto_rx.proto.is_ack() {
             // Handle received Acks
-            let ack_msg_ctr = proto_hdr.get_ack_msg_ctr().ok_or(Error::Invalid)?;
+            let ack_msg_ctr = proto_rx.proto.get_ack_msg_ctr().ok_or(Error::Invalid)?;
             if let Some(entry) = &self.retrans {
                 if entry.get_msg_ctr() != ack_msg_ctr {
                     // TODO: XXX Fix this
@@ -138,7 +130,7 @@ impl ReliableMessage {
             }
         }
 
-        if proto_hdr.is_reliable() {
+        if proto_rx.proto.is_reliable() {
             if self.ack.is_some() {
                 // This indicates there was some existing entry for same sess-id/exch-id, which shouldnt happen
                 // TODO: As per the spec if this happens, we need to send out the previous ACK and note this new ACK
@@ -146,7 +138,7 @@ impl ReliableMessage {
                 return Err(Error::Invalid);
             }
 
-            self.ack = Some(AckEntry::new(plain_hdr.ctr)?);
+            self.ack = Some(AckEntry::new(proto_rx.plain.ctr)?);
         }
         Ok(())
     }

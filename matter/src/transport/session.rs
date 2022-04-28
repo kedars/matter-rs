@@ -9,12 +9,12 @@ use std::{
 use crate::{
     error::*,
     transport::{plain_hdr, proto_hdr},
-    utils::{parsebuf::ParseBuf, writebuf::WriteBuf},
+    utils::writebuf::WriteBuf,
 };
 use log::{info, trace};
 use rand::Rng;
 
-use super::{packet::Packet, plain_hdr::PlainHdr, proto_hdr::ProtoHdr};
+use super::packet::Packet;
 
 const MATTER_AES128_KEY_SIZE: usize = 16;
 
@@ -195,19 +195,9 @@ impl Session {
         &self.att_challenge
     }
 
-    pub fn recv(
-        &mut self,
-        plain_hdr: &PlainHdr,
-        proto_hdr: &mut ProtoHdr,
-        parse_buf: &mut ParseBuf,
-    ) -> Result<(), Error> {
+    pub fn recv(&mut self, proto_rx: &mut Packet) -> Result<(), Error> {
         self.last_use = SystemTime::now();
-        proto_hdr.decrypt_and_decode(
-            plain_hdr,
-            parse_buf,
-            self.peer_nodeid.unwrap_or_default(),
-            self.get_dec_key(),
-        )
+        proto_rx.proto_decode(self.peer_nodeid.unwrap_or_default(), self.get_dec_key())
     }
 
     pub fn pre_send(&mut self, proto_tx: &mut Packet) -> Result<(), Error> {
@@ -410,21 +400,16 @@ impl SessionMgr {
         }
     }
 
-    pub fn recv(
-        &mut self,
-        plain_hdr: &mut PlainHdr,
-        parse_buf: &mut ParseBuf,
-        src: SocketAddr,
-    ) -> Result<SessionHandle, Error> {
+    pub fn recv(&mut self, proto_rx: &mut Packet) -> Result<SessionHandle, Error> {
         // Read unencrypted packet header
-        plain_hdr.decode(parse_buf)?;
-        let peer_nodeid = plain_hdr.get_src_u64();
+        proto_rx.plain_decode()?;
+        let peer_nodeid = proto_rx.plain.get_src_u64();
         // Get session
         self.get_or_add(
-            plain_hdr.sess_id,
-            src,
+            proto_rx.plain.sess_id,
+            proto_rx.peer,
             peer_nodeid,
-            plain_hdr.is_encrypted(),
+            proto_rx.plain.is_encrypted(),
         )
         .ok_or(Error::NoSession)
     }

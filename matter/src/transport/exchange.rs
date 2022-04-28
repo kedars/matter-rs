@@ -6,7 +6,7 @@ use crate::error::Error;
 
 use heapless::LinearMap;
 
-use super::{mrp::ReliableMessage, packet::Packet, plain_hdr::PlainHdr, proto_hdr::ProtoHdr};
+use super::{mrp::ReliableMessage, packet::Packet};
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum ExchangeRole {
@@ -184,22 +184,18 @@ impl ExchangeMgr {
         }
     }
 
-    pub fn recv(
-        &mut self,
-        plain_hdr: &PlainHdr,
-        proto_hdr: &ProtoHdr,
-    ) -> Result<&mut Exchange, Error> {
+    pub fn recv(&mut self, proto_rx: &Packet) -> Result<&mut Exchange, Error> {
         // Get the exchange
         let exch = self.get(
-            plain_hdr.sess_id,
-            proto_hdr.exch_id,
-            get_complementary_role(proto_hdr.is_initiator()),
+            proto_rx.plain.sess_id,
+            proto_rx.proto.exch_id,
+            get_complementary_role(proto_rx.proto.is_initiator()),
             // We create a new exchange, only if the peer is the initiator
-            proto_hdr.is_initiator(),
+            proto_rx.proto.is_initiator(),
         )?;
 
         // Message Reliability Protocol
-        exch.mrp.recv(&plain_hdr, &proto_hdr)?;
+        exch.mrp.recv(&proto_rx)?;
         Ok(exch)
     }
 

@@ -8,13 +8,11 @@ use crate::transport::mrp::ReliableMessage;
 use crate::transport::{
     exchange,
     packet::Packet,
-    plain_hdr,
     proto_demux::{self, ProtoRx},
-    proto_hdr, queue,
+    queue,
     session::{self, SessionHandle},
     udp::{self, MAX_RX_BUF_SIZE},
 };
-use crate::utils::parsebuf::ParseBuf;
 use colored::*;
 
 use super::queue::Msg;
@@ -52,34 +50,38 @@ impl Mgr {
         exch_mgr: &'a mut exchange::ExchangeMgr,
         in_buf: &'a mut [u8],
     ) -> Result<ProtoRx<'a>, Error> {
-        let mut plain_hdr = plain_hdr::PlainHdr::default();
-        let mut proto_hdr = proto_hdr::ProtoHdr::default();
+        let mut rx = Packet::new_rx()?;
 
         // Read from the transport
-        let (len, src) = transport.recv(in_buf)?;
-        let mut parse_buf = ParseBuf::new(in_buf, len);
+        let (len, src) = transport.recv(rx.as_borrow_slice())?;
+        rx.get_parsebuf()?.set_len(len);
+        rx.peer = src;
 
         info!("{} from src: {}", "Received".blue(), src);
-        trace!("payload: {:x?}", parse_buf.as_borrow_slice());
+        trace!("payload: {:x?}", rx.as_borrow_slice());
 
         // Get session
         //      Ok to use unwrap here since we know 'src' is certainly not None
-        let mut session = sess_mgr.recv(&mut plain_hdr, &mut parse_buf, src)?;
+        let mut session = sess_mgr.recv(&mut rx)?;
 
         // Read encrypted header
-        session.recv(&plain_hdr, &mut proto_hdr, &mut parse_buf)?;
+        session.recv(&mut rx)?;
 
         // Get the exchange
-        let exchange = exch_mgr.recv(&plain_hdr, &proto_hdr)?;
+        let exchange = exch_mgr.recv(&rx)?;
         debug!("Exchange is {:?}", exchange);
 
+        // temporary hack
+        let len = rx.as_borrow_slice().len();
+        in_buf[..len].copy_from_slice(rx.as_borrow_slice());
+        println!("Proto opcode {}", rx.get_proto_opcode());
         Ok(ProtoRx::new(
-            proto_hdr.proto_id.into(),
-            proto_hdr.proto_opcode,
+            rx.get_proto_id().into(),
+            rx.get_proto_opcode(),
             session,
             exchange,
             src,
-            parse_buf.as_slice(),
+            &in_buf[..len],
         ))
     }
 
