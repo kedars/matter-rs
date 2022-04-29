@@ -212,6 +212,9 @@ impl Session {
     // TODO: Most of this can now be moved into the 'Packet' module
     pub fn send(&mut self, proto_tx: &mut Packet) -> Result<(), Error> {
         self.last_use = SystemTime::now();
+
+        proto_tx.peer = self.peer_addr;
+
         // Generate encrypted header
         let mut tmp_buf: [u8; proto_hdr::max_proto_hdr_len()] = [0; proto_hdr::max_proto_hdr_len()];
         let mut write_buf = WriteBuf::new(&mut tmp_buf[..], proto_hdr::max_proto_hdr_len());

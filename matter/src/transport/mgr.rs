@@ -19,7 +19,6 @@ use super::queue::Msg;
 
 pub struct Mgr {
     transport: udp::UdpListener,
-    sess_mgr: session::SessionMgr,
     exch_mgr: exchange::ExchangeMgr,
     proto_demux: proto_demux::ProtoDemux,
     rx_q: Receiver<Msg>,
@@ -29,9 +28,8 @@ impl Mgr {
     pub fn new() -> Result<Mgr, Error> {
         Ok(Mgr {
             transport: udp::UdpListener::new()?,
-            sess_mgr: session::SessionMgr::new(),
             proto_demux: proto_demux::ProtoDemux::new(),
-            exch_mgr: exchange::ExchangeMgr::new(),
+            exch_mgr: exchange::ExchangeMgr::new(session::SessionMgr::new()),
             rx_q: queue::WorkQ::init()?,
         })
     }
@@ -46,7 +44,6 @@ impl Mgr {
 
     fn recv<'a>(
         transport: &mut udp::UdpListener,
-        sess_mgr: &'a mut session::SessionMgr,
         exch_mgr: &'a mut exchange::ExchangeMgr,
         in_buf: &'a mut [u8],
     ) -> Result<ProtoRx<'a>, Error> {
@@ -60,21 +57,13 @@ impl Mgr {
         info!("{} from src: {}", "Received".blue(), src);
         trace!("payload: {:x?}", rx.as_borrow_slice());
 
-        // Get session
-        //      Ok to use unwrap here since we know 'src' is certainly not None
-        let mut session = sess_mgr.recv(&mut rx)?;
-
-        // Read encrypted header
-        session.recv(&mut rx)?;
-
         // Get the exchange
-        let exchange = exch_mgr.recv(&rx)?;
+        let (exchange, session) = exch_mgr.recv(&mut rx)?;
         debug!("Exchange is {:?}", exchange);
 
         // temporary hack
         let len = rx.as_borrow_slice().len();
         in_buf[..len].copy_from_slice(rx.as_borrow_slice());
-        println!("Proto opcode {}", rx.get_proto_opcode());
         Ok(ProtoRx::new(
             rx.get_proto_id().into(),
             rx.get_proto_opcode(),
@@ -91,14 +80,10 @@ impl Mgr {
         exch_id: u16,
         proto_tx: &mut Packet,
     ) -> Result<(), Error> {
-        let mut session = self.sess_mgr.get_with_id(sess_id).ok_or(Error::NoSession)?;
-        let exchange = self
-            .exch_mgr
-            .get_with_id(sess_id, exch_id)
-            .ok_or(Error::NoExchange)?;
-
-        proto_tx.peer = session.get_peer_addr();
-        Mgr::send_to_exchange(&self.transport, &mut session, exchange, proto_tx)
+        self.exch_mgr.send(exch_id, sess_id, proto_tx)?;
+        let peer = proto_tx.peer;
+        self.transport.send(proto_tx.as_borrow_slice(), peer)?;
+        Ok(())
     }
 
     // This function is send_to_exchange(). There will be multiple higher layer send_*() functions
@@ -110,19 +95,7 @@ impl Mgr {
         exchange: &mut exchange::Exchange,
         proto_tx: &mut Packet,
     ) -> Result<(), Error> {
-        trace!("payload: {:x?}", proto_tx.as_borrow_slice());
-        info!(
-            "{} with proto id: {} opcode: {}",
-            "Sending".blue(),
-            proto_tx.get_proto_id(),
-            proto_tx.get_proto_opcode(),
-        );
-
-        exchange.send(proto_tx)?;
-
-        session.pre_send(proto_tx)?;
-        // TODO: MRP send call was here, so we knew what the msg_ctr is going to be
-        session.send(proto_tx)?;
+        exchange.send(proto_tx, session)?;
 
         let peer = proto_tx.peer;
         transport.send(proto_tx.as_borrow_slice(), peer)?;
@@ -130,19 +103,14 @@ impl Mgr {
     }
 
     fn handle_rxtx(&mut self, in_buf: &mut [u8], proto_tx: &mut Packet) -> Result<(), Error> {
-        let mut proto_rx = Mgr::recv(
-            &mut self.transport,
-            &mut self.sess_mgr,
-            &mut self.exch_mgr,
-            in_buf,
-        )
-        .map_err(|e| {
-            error!("Error in recv: {:?}", e);
-            e
-        })?;
+        let mut rx_ctx =
+            Mgr::recv(&mut self.transport, &mut self.exch_mgr, in_buf).map_err(|e| {
+                error!("Error in recv: {:?}", e);
+                e
+            })?;
 
         // Proto Dispatch
-        match self.proto_demux.handle(&mut proto_rx, proto_tx) {
+        match self.proto_demux.handle(&mut rx_ctx, proto_tx) {
             Ok(r) => {
                 if let proto_demux::ResponseRequired::No = r {
                     // We need to send the Ack if reliability is enabled, in this case
@@ -155,12 +123,11 @@ impl Mgr {
             }
         }
 
-        proto_tx.peer = proto_rx.peer;
         // tx_ctx now contains the response payload, send the packet
         Mgr::send_to_exchange(
             &self.transport,
-            &mut proto_rx.session,
-            proto_rx.exchange,
+            &mut rx_ctx.session,
+            rx_ctx.exchange,
             proto_tx,
         )
         .map_err(|e| {
@@ -177,7 +144,8 @@ impl Mgr {
                 Msg::NewSession(new_session) => {
                     // If a new session was created, add it
                     let _ = self
-                        .sess_mgr
+                        .exch_mgr
+                        .get_sess_mgr()
                         .add_session(new_session, |_| {})
                         .map_err(|e| error!("Error adding new session {:?}", e));
                 }
@@ -227,7 +195,6 @@ impl Mgr {
             //    This need not be done in each turn of the loop, maybe once in 5 times or so?
             self.exch_mgr.purge();
 
-            info!("Session Mgr: {}", self.sess_mgr);
             info!("Exchange Mgr: {}", self.exch_mgr);
         }
     }

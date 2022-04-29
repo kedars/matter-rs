@@ -1,4 +1,5 @@
-use log::{error, info};
+use colored::*;
+use log::{error, info, trace};
 use std::any::Any;
 use std::fmt;
 
@@ -6,7 +7,11 @@ use crate::error::Error;
 
 use heapless::LinearMap;
 
-use super::{mrp::ReliableMessage, packet::Packet};
+use super::{
+    mrp::ReliableMessage,
+    packet::Packet,
+    session::{SessionHandle, SessionMgr},
+};
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum ExchangeRole {
@@ -92,13 +97,31 @@ impl Exchange {
         self.data.take()?.downcast::<T>().ok()
     }
 
-    pub fn send(&mut self, proto_tx: &mut Packet) -> Result<(), Error> {
+    pub fn send(
+        &mut self,
+        proto_tx: &mut Packet,
+        session: &mut SessionHandle,
+    ) -> Result<(), Error> {
+        trace!("payload: {:x?}", proto_tx.as_borrow_slice());
+        info!(
+            "{} with proto id: {} opcode: {}",
+            "Sending".blue(),
+            proto_tx.get_proto_id(),
+            proto_tx.get_proto_opcode(),
+        );
+
+        if self.sess_id != session.get_local_sess_id() {
+            error!("This should have never happened");
+            return Err(Error::InvalidState);
+        }
         proto_tx.proto.exch_id = self.id;
         if self.role == ExchangeRole::Initiator {
             proto_tx.proto.set_initiator();
         }
 
-        self.mrp.pre_send(proto_tx)
+        session.pre_send(proto_tx)?;
+        self.mrp.pre_send(proto_tx)?;
+        session.send(proto_tx)
     }
 }
 
@@ -134,35 +157,49 @@ const MAX_EXCHANGES: usize = 8;
 pub struct ExchangeMgr {
     // keys: sess-id exch-id
     exchanges: LinearMap<(u16, u16), Exchange, MAX_EXCHANGES>,
+    sess_mgr: SessionMgr,
 }
 
 pub const MAX_MRP_ENTRIES: usize = 4;
 
 impl ExchangeMgr {
-    pub fn new() -> Self {
+    pub fn new(sess_mgr: SessionMgr) -> Self {
         Self {
-            ..Default::default()
+            sess_mgr,
+            exchanges: Default::default(),
         }
     }
 
-    pub fn get_with_id(&mut self, sess_id: u16, exch_id: u16) -> Option<&mut Exchange> {
-        self.exchanges.get_mut(&(sess_id, exch_id))
+    pub fn get_sess_mgr(&mut self) -> &mut SessionMgr {
+        &mut self.sess_mgr
     }
 
-    pub fn get(
-        &mut self,
+    pub fn _get_with_id(
+        exchanges: &mut LinearMap<(u16, u16), Exchange, MAX_EXCHANGES>,
+        sess_id: u16,
+        exch_id: u16,
+    ) -> Option<&mut Exchange> {
+        exchanges.get_mut(&(sess_id, exch_id))
+    }
+
+    pub fn get_with_id(&mut self, sess_id: u16, exch_id: u16) -> Option<&mut Exchange> {
+        ExchangeMgr::_get_with_id(&mut self.exchanges, sess_id, exch_id)
+    }
+
+    pub fn _get(
+        exchanges: &mut LinearMap<(u16, u16), Exchange, MAX_EXCHANGES>,
         sess_id: u16,
         id: u16,
         role: ExchangeRole,
         create_new: bool,
     ) -> Result<&mut Exchange, Error> {
         // I don't prefer that we scan the list twice here (once for contains_key and other)
-        if !self.exchanges.contains_key(&(sess_id, id)) {
+        if !exchanges.contains_key(&(sess_id, id)) {
             if create_new {
                 // If an exchange doesn't exist, create a new one
                 info!("Creating new exchange");
                 let e = Exchange::new(id, sess_id, role);
-                if self.exchanges.insert((sess_id, id), e).is_err() {
+                if exchanges.insert((sess_id, id), e).is_err() {
                     return Err(Error::NoSpace);
                 }
             } else {
@@ -172,7 +209,7 @@ impl ExchangeMgr {
 
         // At this point, we would either have inserted the record if 'create_new' was set
         // or it existed already
-        if let Some(result) = self.exchanges.get_mut(&(sess_id, id)) {
+        if let Some(result) = exchanges.get_mut(&(sess_id, id)) {
             if result.get_role() == role {
                 Ok(result)
             } else {
@@ -183,10 +220,26 @@ impl ExchangeMgr {
             Err(Error::NoSpace)
         }
     }
+    pub fn get(
+        &mut self,
+        sess_id: u16,
+        id: u16,
+        role: ExchangeRole,
+        create_new: bool,
+    ) -> Result<&mut Exchange, Error> {
+        ExchangeMgr::_get(&mut self.exchanges, sess_id, id, role, create_new)
+    }
 
-    pub fn recv(&mut self, proto_rx: &Packet) -> Result<&mut Exchange, Error> {
+    pub fn recv(&mut self, proto_rx: &mut Packet) -> Result<(&mut Exchange, SessionHandle), Error> {
+        // Get the session
+        let mut session = self.sess_mgr.recv(proto_rx)?;
+
+        // Decrypt the message
+        session.recv(proto_rx)?;
+
         // Get the exchange
-        let exch = self.get(
+        let exch = ExchangeMgr::_get(
+            &mut self.exchanges,
             proto_rx.plain.sess_id,
             proto_rx.proto.exch_id,
             get_complementary_role(proto_rx.proto.is_initiator()),
@@ -196,7 +249,16 @@ impl ExchangeMgr {
 
         // Message Reliability Protocol
         exch.mrp.recv(&proto_rx)?;
-        Ok(exch)
+
+        Ok((exch, session))
+    }
+
+    pub fn send(&mut self, exch_id: u16, sess_id: u16, proto_tx: &mut Packet) -> Result<(), Error> {
+        // XXX sess_id shouldn't be required
+        let mut session = self.sess_mgr.get_with_id(sess_id).ok_or(Error::NoSession)?;
+        let exchange = ExchangeMgr::_get_with_id(&mut self.exchanges, sess_id, exch_id)
+            .ok_or(Error::NoExchange)?;
+        exchange.send(proto_tx, &mut session)
     }
 
     pub fn purge(&mut self) {
@@ -226,21 +288,26 @@ impl ExchangeMgr {
 
 impl fmt::Display for ExchangeMgr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "{{[")?;
+        writeln!(f, "{{  Session Mgr: {},", self.sess_mgr)?;
+        writeln!(f, "  Exchanges: [")?;
         for s in &self.exchanges {
             writeln!(f, "{{ {}, }},", s.1)?;
         }
+        writeln!(f, "  ]")?;
         write!(f, "}}")
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::transport::session::SessionMgr;
+
     use super::{ExchangeMgr, ExchangeRole};
 
     #[test]
     fn test_purge() {
-        let mut mgr = ExchangeMgr::new();
+        let sess_mgr = SessionMgr::new();
+        let mut mgr = ExchangeMgr::new(sess_mgr);
         let _ = mgr.get(1, 2, ExchangeRole::Responder, true).unwrap();
         let _ = mgr.get(1, 3, ExchangeRole::Responder, true).unwrap();
 

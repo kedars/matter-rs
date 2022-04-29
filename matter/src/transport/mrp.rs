@@ -106,9 +106,7 @@ impl ReliableMessage {
             return Err(Error::Invalid);
         }
 
-        // TODO: XXX Temporarily keeping a constant ctr number that will get acknowledged
-        // because we do not yet get the outgoing message counter at this point
-        self.retrans = Some(RetransEntry::new(1234));
+        self.retrans = Some(RetransEntry::new(proto_tx.plain.ctr));
         Ok(())
     }
 
