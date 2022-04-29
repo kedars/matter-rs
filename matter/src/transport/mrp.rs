@@ -82,7 +82,7 @@ impl ReliableMessage {
         }
     }
 
-    pub fn prepare_ack(_sess_id: u16, _exch_id: u16, proto_tx: &mut Packet) {
+    pub fn prepare_ack(_exch_id: u16, proto_tx: &mut Packet) {
         secure_channel::common::create_mrp_standalone_ack(proto_tx);
     }
 

@@ -155,8 +155,8 @@ const MAX_EXCHANGES: usize = 8;
 
 #[derive(Default)]
 pub struct ExchangeMgr {
-    // keys: sess-id exch-id
-    exchanges: LinearMap<(u16, u16), Exchange, MAX_EXCHANGES>,
+    // keys: exch-id
+    exchanges: LinearMap<u16, Exchange, MAX_EXCHANGES>,
     sess_mgr: SessionMgr,
 }
 
@@ -175,31 +175,30 @@ impl ExchangeMgr {
     }
 
     pub fn _get_with_id(
-        exchanges: &mut LinearMap<(u16, u16), Exchange, MAX_EXCHANGES>,
-        sess_id: u16,
+        exchanges: &mut LinearMap<u16, Exchange, MAX_EXCHANGES>,
         exch_id: u16,
     ) -> Option<&mut Exchange> {
-        exchanges.get_mut(&(sess_id, exch_id))
+        exchanges.get_mut(&exch_id)
     }
 
-    pub fn get_with_id(&mut self, sess_id: u16, exch_id: u16) -> Option<&mut Exchange> {
-        ExchangeMgr::_get_with_id(&mut self.exchanges, sess_id, exch_id)
+    pub fn get_with_id(&mut self, exch_id: u16) -> Option<&mut Exchange> {
+        ExchangeMgr::_get_with_id(&mut self.exchanges, exch_id)
     }
 
     pub fn _get(
-        exchanges: &mut LinearMap<(u16, u16), Exchange, MAX_EXCHANGES>,
+        exchanges: &mut LinearMap<u16, Exchange, MAX_EXCHANGES>,
         sess_id: u16,
         id: u16,
         role: ExchangeRole,
         create_new: bool,
     ) -> Result<&mut Exchange, Error> {
         // I don't prefer that we scan the list twice here (once for contains_key and other)
-        if !exchanges.contains_key(&(sess_id, id)) {
+        if !exchanges.contains_key(&(id)) {
             if create_new {
                 // If an exchange doesn't exist, create a new one
                 info!("Creating new exchange");
                 let e = Exchange::new(id, sess_id, role);
-                if exchanges.insert((sess_id, id), e).is_err() {
+                if exchanges.insert(id, e).is_err() {
                     return Err(Error::NoSpace);
                 }
             } else {
@@ -209,8 +208,8 @@ impl ExchangeMgr {
 
         // At this point, we would either have inserted the record if 'create_new' was set
         // or it existed already
-        if let Some(result) = exchanges.get_mut(&(sess_id, id)) {
-            if result.get_role() == role {
+        if let Some(result) = exchanges.get_mut(&id) {
+            if result.get_role() == role && sess_id == result.sess_id {
                 Ok(result)
             } else {
                 Err(Error::NoExchange)
@@ -253,34 +252,33 @@ impl ExchangeMgr {
         Ok((exch, session))
     }
 
-    pub fn send(&mut self, exch_id: u16, sess_id: u16, proto_tx: &mut Packet) -> Result<(), Error> {
-        // XXX sess_id shouldn't be required
-        let mut session = self.sess_mgr.get_with_id(sess_id).ok_or(Error::NoSession)?;
-        let exchange = ExchangeMgr::_get_with_id(&mut self.exchanges, sess_id, exch_id)
-            .ok_or(Error::NoExchange)?;
+    pub fn send(&mut self, exch_id: u16, proto_tx: &mut Packet) -> Result<(), Error> {
+        let exchange =
+            ExchangeMgr::_get_with_id(&mut self.exchanges, exch_id).ok_or(Error::NoExchange)?;
+        let mut session = self
+            .sess_mgr
+            .get_with_id(exchange.sess_id)
+            .ok_or(Error::NoSession)?;
         exchange.send(proto_tx, &mut session)
     }
 
     pub fn purge(&mut self) {
-        let mut to_purge: LinearMap<(u16, u16), (), MAX_EXCHANGES> = LinearMap::new();
+        let mut to_purge: LinearMap<u16, (), MAX_EXCHANGES> = LinearMap::new();
 
-        for ((sess_id, exch_id), exchange) in self.exchanges.iter() {
+        for (exch_id, exchange) in self.exchanges.iter() {
             if exchange.is_purgeable() {
-                let _ = to_purge.insert((*sess_id, *exch_id), ());
+                let _ = to_purge.insert(*exch_id, ());
             }
         }
-        for ((sess_id, exch_id), _) in to_purge.iter() {
-            self.exchanges.remove(&(*sess_id, *exch_id));
+        for (exch_id, _) in to_purge.iter() {
+            self.exchanges.remove(&*exch_id);
         }
     }
 
-    pub fn pending_acks(
-        &mut self,
-        expired_entries: &mut LinearMap<(u16, u16), (), MAX_MRP_ENTRIES>,
-    ) {
-        for ((sess_id, exch_id), exchange) in self.exchanges.iter() {
+    pub fn pending_acks(&mut self, expired_entries: &mut LinearMap<u16, (), MAX_MRP_ENTRIES>) {
+        for (exch_id, exchange) in self.exchanges.iter() {
             if exchange.mrp.is_ack_ready() {
-                expired_entries.insert((*sess_id, *exch_id), ()).unwrap();
+                expired_entries.insert(*exch_id, ()).unwrap();
             }
         }
     }
@@ -312,32 +310,32 @@ mod tests {
         let _ = mgr.get(1, 3, ExchangeRole::Responder, true).unwrap();
 
         mgr.purge();
-        assert_eq!(mgr.get_with_id(1, 2).is_some(), true);
-        assert_eq!(mgr.get_with_id(1, 3).is_some(), true);
+        assert_eq!(mgr.get_with_id(2).is_some(), true);
+        assert_eq!(mgr.get_with_id(3).is_some(), true);
 
         // Release e1
-        let e1 = mgr.get_with_id(1, 2).unwrap();
+        let e1 = mgr.get_with_id(2).unwrap();
         e1.release();
         mgr.purge();
-        assert_eq!(mgr.get_with_id(1, 2).is_some(), false);
-        assert_eq!(mgr.get_with_id(1, 3).is_some(), true);
+        assert_eq!(mgr.get_with_id(2).is_some(), false);
+        assert_eq!(mgr.get_with_id(3).is_some(), true);
 
         // Acquire e2
-        let e2 = mgr.get_with_id(1, 3).unwrap();
+        let e2 = mgr.get_with_id(3).unwrap();
         e2.acquire();
         mgr.purge();
-        assert_eq!(mgr.get_with_id(1, 3).is_some(), true);
+        assert_eq!(mgr.get_with_id(3).is_some(), true);
 
         // Release e2 once
-        let e2 = mgr.get_with_id(1, 3).unwrap();
+        let e2 = mgr.get_with_id(3).unwrap();
         e2.release();
         mgr.purge();
-        assert_eq!(mgr.get_with_id(1, 3).is_some(), true);
+        assert_eq!(mgr.get_with_id(3).is_some(), true);
 
         // Release e2 again
-        let e2 = mgr.get_with_id(1, 3).unwrap();
+        let e2 = mgr.get_with_id(3).unwrap();
         e2.release();
         mgr.purge();
-        assert_eq!(mgr.get_with_id(1, 3).is_some(), false);
+        assert_eq!(mgr.get_with_id(3).is_some(), false);
     }
 }

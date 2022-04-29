@@ -74,13 +74,8 @@ impl Mgr {
         ))
     }
 
-    fn send_to_exchange_id(
-        &mut self,
-        sess_id: u16,
-        exch_id: u16,
-        proto_tx: &mut Packet,
-    ) -> Result<(), Error> {
-        self.exch_mgr.send(exch_id, sess_id, proto_tx)?;
+    fn send_to_exchange_id(&mut self, exch_id: u16, proto_tx: &mut Packet) -> Result<(), Error> {
+        self.exch_mgr.send(exch_id, proto_tx)?;
         let peer = proto_tx.peer;
         self.transport.send(proto_tx.as_borrow_slice(), peer)?;
         Ok(())
@@ -177,16 +172,13 @@ impl Mgr {
             proto_tx.reset();
 
             // Handle any pending acknowledgement send
-            let mut acks_to_send: LinearMap<(u16, u16), (), { exchange::MAX_MRP_ENTRIES }> =
+            let mut acks_to_send: LinearMap<u16, (), { exchange::MAX_MRP_ENTRIES }> =
                 LinearMap::new();
             self.exch_mgr.pending_acks(&mut acks_to_send);
-            for (sess_id, exch_id) in acks_to_send.keys() {
-                info!(
-                    "Sending MRP Standalone ACK for sess {} exch {}",
-                    sess_id, exch_id
-                );
-                ReliableMessage::prepare_ack(*sess_id, *exch_id, &mut proto_tx);
-                if let Err(e) = self.send_to_exchange_id(*sess_id, *exch_id, &mut proto_tx) {
+            for exch_id in acks_to_send.keys() {
+                info!("Sending MRP Standalone ACK for  exch {}", exch_id);
+                ReliableMessage::prepare_ack(*exch_id, &mut proto_tx);
+                if let Err(e) = self.send_to_exchange_id(*exch_id, &mut proto_tx) {
                     error!("Error in sending Ack {:?}", e);
                 }
             }
