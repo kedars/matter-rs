@@ -6,4 +6,4 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bitmaps = {path = "/Users/kedars/work/rust/bitmaps"}
+bitmaps = {git = "https://github.com/kedars/bitmaps", branch="bugfix/first_false_index"}
