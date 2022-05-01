@@ -4,65 +4,118 @@ use std::{
     sync::Mutex,
 };
 
-use bitmaps::{Bitmap, Bits, BitsImpl};
+pub struct Bitmap {
+    map: u64,
+    size: usize,
+}
+
+impl Bitmap {
+    pub fn new(size: usize) -> Self {
+        Bitmap { map: 0, size }
+    }
+
+    pub fn set(&mut self, index: usize) -> bool {
+        if index < self.size {
+            let mask = 1 << index;
+            let old = (self.map & mask) == 1;
+            self.map |= mask;
+            old
+        } else {
+            panic!("Invalid index");
+        }
+    }
+
+    pub fn reset(&mut self, index: usize) -> bool {
+        if index < self.size {
+            let mask = 1 << index;
+            let old = (self.map & mask) == 1;
+            self.map &= !mask;
+            old
+        } else {
+            panic!("Invalid index");
+        }
+    }
+
+    pub fn first_false_index(&self) -> Option<usize> {
+        if self.map < u64::MAX {
+            let index = self.map.trailing_ones() as usize;
+            if index < self.size {
+                return Some(index);
+            }
+        }
+        None
+    }
+
+    pub fn first_true_index(&self) -> Option<usize> {
+        if self.map != 0 {
+            let index = self.map.trailing_zeros() as usize;
+            if index < self.size {
+                return Some(index);
+            }
+        }
+        None
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.first_true_index().is_none()
+    }
+
+    pub fn is_full(&self) -> bool {
+        self.first_false_index().is_none()
+    }
+}
 
 #[macro_export]
 macro_rules! box_slab {
     ($name:ident,$t:ty,$v:expr) => {
+        use std::mem::MaybeUninit;
         use std::sync::Once;
-        use $crate::{BoxSlab,Slab};
+        use $crate::BoxSlab;
 
         pub struct $name;
         impl $name {
-            pub fn get_slab() -> &'static Slab<$v, $t> {
-                static mut SLAB_SPACE: Option<Slab<$v, $t>> = None;
+            pub fn get_slab() -> &'static Slab<$t> {
+                const MAYBE_INIT: MaybeUninit<$t> = MaybeUninit::uninit();
+                static mut SLAB_POOL: [MaybeUninit<$t>; $v] = [MAYBE_INIT; $v];
+                static mut SLAB_SPACE: Option<Slab<$t>> = None;
                 static mut INIT: Once = Once::new();
                 unsafe {
                     INIT.call_once(|| {
-                        SLAB_SPACE = Some(Slab::<$v, $t>::new());
+                        SLAB_SPACE = Some(Slab::<$t>::new(&mut SLAB_POOL, $v));
                     });
                     SLAB_SPACE.as_ref().unwrap()
                 }
             }
 
-            pub fn alloc(val: $t) -> Option<BoxSlab<$v, $t>> {
+            pub fn alloc(val: $t) -> Option<BoxSlab<$t>> {
                 Self::get_slab().alloc(val)
             }
         }
     };
 }
 
-pub struct Inner<const N: usize, T>
-where
-    BitsImpl<N>: Bits,
-{
-    slab: [MaybeUninit<T>; N],
-    map: Bitmap<N>,
+pub struct Inner<T: 'static> {
+    pool: &'static mut [MaybeUninit<T>],
+    map: Bitmap,
 }
 
 // Instead of a mutex, we should replace this with a CAS loop
-pub struct Slab<const N: usize, T>(Mutex<Inner<N, T>>)
-where
-    BitsImpl<N>: Bits;
+pub struct Slab<T: 'static>(Mutex<Inner<T>>);
 
-impl<const N: usize, T: 'static> Slab<N, T>
-where
-    BitsImpl<N>: Bits,
-{
-    const INIT: MaybeUninit<T> = MaybeUninit::uninit();
-    pub fn new() -> Self {
+impl<T: 'static> Slab<T> {
+    pub fn new(pool: &'static mut [MaybeUninit<T>], size: usize) -> Self {
         Self(Mutex::new(Inner {
-            slab: [Slab::INIT; N],
-            map: Bitmap::<N>::new(),
+            pool,
+            map: Bitmap::new(size),
         }))
     }
 
-    pub fn alloc(&'static self, new_object: T) -> Option<BoxSlab<N, T>> {
+    pub fn alloc(&'static self, new_object: T) -> Option<BoxSlab<T>> {
         let mut inner = self.0.lock().unwrap();
         if let Some(index) = inner.map.first_false_index() {
-            inner.map.set(index, true);
-            inner.slab[index].write(new_object);
-            let cell_ptr = unsafe { &mut *inner.slab[index].as_mut_ptr() };
+            inner.map.set(index);
+            inner.pool[index].write(new_object);
+            let cell_ptr = unsafe { &mut *inner.pool[index].as_mut_ptr() };
             Some(BoxSlab {
                 slab: self,
                 data: cell_ptr,
@@ -75,50 +128,38 @@ where
 
     pub fn free(&'static self, index: usize) {
         let mut inner = self.0.lock().unwrap();
-        inner.map.set(index, false);
-        let old_value = std::mem::replace(&mut inner.slab[index], MaybeUninit::uninit());
+        inner.map.reset(index);
+        let old_value = std::mem::replace(&mut inner.pool[index], MaybeUninit::uninit());
         let _old_value = unsafe { old_value.assume_init() };
         // This will drop the old_value
     }
 }
 
-pub struct BoxSlab<const N: usize, T: 'static>
-where
-    BitsImpl<N>: Bits,
-{
+pub struct BoxSlab<T: 'static> {
     // XXX TODO:
     // - We should get rid of this by creating a Trait (that is implemented by the pool, that returns the slab pointer)
     // - We should figure out a way to get rid of the index too
-    slab: &'static Slab<N, T>,
+    slab: &'static Slab<T>,
     // Because the data is a reference within the MaybeUninit, we don't have a mechanism
     // to go out to the MaybeUninit from this reference. Hence this index
     index: usize,
     data: &'static mut T,
 }
 
-impl<const N: usize, T: 'static> Drop for BoxSlab<N, T>
-where
-    BitsImpl<N>: Bits,
-{
+impl<T: 'static> Drop for BoxSlab<T> {
     fn drop(&mut self) {
         self.slab.free(self.index);
     }
 }
 
-impl<const N: usize, T: 'static> Deref for BoxSlab<N, T>
-where
-    BitsImpl<N>: Bits,
-{
+impl<T: 'static> Deref for BoxSlab<T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         self.data
     }
 }
 
-impl<const N: usize, T: 'static> DerefMut for BoxSlab<N, T>
-where
-    BitsImpl<N>: Bits,
-{
+impl<T: 'static> DerefMut for BoxSlab<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.data
     }
@@ -149,7 +190,7 @@ mod tests {
         let inner = TestSlab::get_slab().0.lock().unwrap();
         assert_eq!(inner.map.is_empty(), true);
         println!("Box Size {}", std::mem::size_of::<Box<Test>>());
-        println!("BoxSlab Size {}", std::mem::size_of::<BoxSlab<3, Test>>());
+        println!("BoxSlab Size {}", std::mem::size_of::<BoxSlab<Test>>());
     }
 
     #[test]
