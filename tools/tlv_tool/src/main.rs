@@ -64,7 +64,7 @@ fn main() {
 
 //    println!("Decoding: {:x?}", &tlv_list[..index]);
     if m.is_present("cert") {
-	let cert = cert::Cert::new(&tlv_list[..index]);
+	let cert = cert::Cert::new(&tlv_list[..index]).unwrap();
 	println!("{}", cert);
     } else {
         tlv::print_tlv_list(&tlv_list[..index]);
