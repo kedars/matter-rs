@@ -169,9 +169,7 @@ impl<T: SlabPool> DerefMut for BoxSlab<T> {
 
 #[cfg(test)]
 mod tests {
-    use bitmaps::Bitmap;
     use std::{ops::Deref, sync::Arc};
-
 
     pub struct Test {
         val: Arc<u32>,
@@ -239,14 +237,5 @@ mod tests {
         }
         // Test that Drop was correctly called on all the members of the pool
         assert_eq!(Arc::strong_count(&root), 1);
-    }
-
-    #[test]
-    fn test_bitmap() {
-        let mut a = Bitmap::<2>::new();
-        a.set(0, true);
-        a.set(1, true);
-        assert_eq!(a.first_false_index(), None);
-        assert_eq!(a.is_full(), true);
     }
 }
