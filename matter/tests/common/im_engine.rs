@@ -12,7 +12,10 @@ use matter::{
     tlv::{TLVWriter, TagType, ToTLV},
     transport::packet::Packet,
     transport::proto_demux::{HandleProto, ProtoRx},
-    transport::{exchange::Exchange, session::SessionMgr},
+    transport::{
+        exchange::{Exchange, ExchangeCtx},
+        session::SessionMgr,
+    },
     utils::writebuf::WriteBuf,
 };
 use std::{
@@ -60,11 +63,14 @@ pub fn im_engine(action: OpCode, data_in: &[u8], proto_tx: &mut Packet) -> DataM
             false,
         )
         .unwrap();
+    let exch_ctx = ExchangeCtx {
+        exch: &mut exch,
+        sess,
+    };
     let mut proto_rx = ProtoRx::new(
         0x01,
         action as u8,
-        sess,
-        &mut exch,
+        exch_ctx,
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
         data_in,
     );

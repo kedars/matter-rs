@@ -4,7 +4,7 @@ use crate::{
     transport::{
         packet::Packet,
         proto_demux::{self, ProtoRx, ResponseRequired},
-        session::SessionHandle,
+        session::Session,
     },
 };
 use colored::Colorize;
@@ -38,8 +38,8 @@ pub enum OpCode {
     TimedRequest = 10,
 }
 
-impl<'a, 'b> Transaction<'a, 'b> {
-    pub fn new(session: &'b mut SessionHandle<'a>) -> Self {
+impl<'a> Transaction<'a> {
+    pub fn new(session: &'a mut Session) -> Self {
         Self {
             state: TransactionState::Ongoing,
             data: None,
@@ -68,7 +68,7 @@ impl proto_demux::HandleProto for InteractionModel {
         proto_rx: &mut ProtoRx,
         proto_tx: &mut Packet,
     ) -> Result<ResponseRequired, Error> {
-        let mut trans = Transaction::new(&mut proto_rx.session);
+        let mut trans = Transaction::new(&mut proto_rx.exch_ctx.sess);
         let proto_opcode: OpCode =
             num::FromPrimitive::from_u8(proto_rx.proto_opcode).ok_or(Error::Invalid)?;
         proto_tx.set_proto_id(PROTO_ID_INTERACTION_MODEL as u16);
@@ -90,7 +90,7 @@ impl proto_demux::HandleProto for InteractionModel {
             tlv::print_tlv_list(proto_tx.as_borrow_slice());
         }
         if trans.is_complete() {
-            proto_rx.exchange.close();
+            proto_rx.exch_ctx.exch.close();
         }
         Ok(result)
     }

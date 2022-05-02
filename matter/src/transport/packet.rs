@@ -207,4 +207,4 @@ impl<'a> Drop for Packet<'a> {
     }
 }
 
-box_slab!(PacketPool, Packet<'static>, { MAX_POOL_SIZE });
+box_slab!(PacketPool, Packet<'static>, MAX_POOL_SIZE);

@@ -1,16 +1,18 @@
 use async_channel::Receiver;
+use boxslab::{BoxSlab, Slab};
 use heapless::LinearMap;
 use log::{debug, error, info, trace};
 
 use crate::error::*;
 
 use crate::transport::mrp::ReliableMessage;
+use crate::transport::packet::PacketPool;
 use crate::transport::{
     exchange,
     packet::Packet,
     proto_demux::{self, ProtoRx},
     queue,
-    session::{self, SessionHandle},
+    session::{self},
     udp::{self, MAX_RX_BUF_SIZE},
 };
 use colored::*;
@@ -47,7 +49,8 @@ impl Mgr {
         exch_mgr: &'a mut exchange::ExchangeMgr,
         in_buf: &'a mut [u8],
     ) -> Result<ProtoRx<'a>, Error> {
-        let mut rx = Packet::new_rx()?;
+        let mut rx =
+            Slab::<PacketPool>::alloc(Packet::new_rx()?).ok_or(Error::PacketPoolExhaust)?;
 
         // Read from the transport
         let (len, src) = transport.recv(rx.as_borrow_slice())?;
@@ -58,8 +61,8 @@ impl Mgr {
         trace!("payload: {:x?}", rx.as_borrow_slice());
 
         // Get the exchange
-        let (exchange, session) = exch_mgr.recv(&mut rx)?;
-        debug!("Exchange is {:?}", exchange);
+        let exch_ctx = exch_mgr.recv(&mut rx)?;
+        debug!("Exchange is {:?}", exch_ctx.exch);
 
         // temporary hack
         let len = rx.as_borrow_slice().len();
@@ -67,8 +70,7 @@ impl Mgr {
         Ok(ProtoRx::new(
             rx.get_proto_id().into(),
             rx.get_proto_opcode(),
-            session,
-            exchange,
+            exch_ctx,
             src,
             &in_buf[..len],
         ))
@@ -86,11 +88,10 @@ impl Mgr {
     // objects
     fn send_to_exchange(
         transport: &udp::UdpListener,
-        session: &mut SessionHandle,
-        exchange: &mut exchange::Exchange,
+        exch_ctx: &mut exchange::ExchangeCtx,
         proto_tx: &mut Packet,
     ) -> Result<(), Error> {
-        exchange.send(proto_tx, session)?;
+        exch_ctx.send(proto_tx)?;
 
         let peer = proto_tx.peer;
         transport.send(proto_tx.as_borrow_slice(), peer)?;
@@ -119,13 +120,7 @@ impl Mgr {
         }
 
         // tx_ctx now contains the response payload, send the packet
-        Mgr::send_to_exchange(
-            &self.transport,
-            &mut rx_ctx.session,
-            rx_ctx.exchange,
-            proto_tx,
-        )
-        .map_err(|e| {
+        Mgr::send_to_exchange(&self.transport, &mut rx_ctx.exch_ctx, proto_tx).map_err(|e| {
             error!("Error in sending msg {:?}", e);
             e
         })?;
@@ -157,7 +152,7 @@ impl Mgr {
             // I would have liked this in .bss instead of the stack, will likely move this
             // later when we convert this into a pool
             let mut in_buf: [u8; MAX_RX_BUF_SIZE] = [0; MAX_RX_BUF_SIZE];
-            let mut proto_tx = match Packet::new_tx() {
+            let mut proto_tx = match Self::new_tx() {
                 Ok(p) => p,
                 Err(e) => {
                     error!("Error creating proto_tx {:?}", e);
@@ -166,8 +161,15 @@ impl Mgr {
             };
 
             // Handle network operations
-            self.handle_rxtx(&mut in_buf, &mut proto_tx)?;
-            self.handle_queue_msgs()?;
+            if self.handle_rxtx(&mut in_buf, &mut proto_tx).is_err() {
+                error!("Error in handle_rxtx");
+                continue;
+            }
+
+            if self.handle_queue_msgs().is_err() {
+                error!("Error in handle_queue_msg");
+                continue;
+            }
 
             proto_tx.reset();
 
@@ -189,5 +191,9 @@ impl Mgr {
 
             info!("Exchange Mgr: {}", self.exch_mgr);
         }
+    }
+
+    fn new_tx() -> Result<BoxSlab<PacketPool>, Error> {
+        Slab::<PacketPool>::alloc(Packet::new_tx()?).ok_or(Error::PacketPoolExhaust)
     }
 }

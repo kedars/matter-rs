@@ -67,7 +67,8 @@ impl Case {
         proto_tx: &mut Packet,
     ) -> Result<(), Error> {
         let mut case_session = proto_rx
-            .exchange
+            .exch_ctx
+            .exch
             .take_exchange_data::<CaseSession>()
             .ok_or(Error::InvalidState)?;
         if case_session.state != State::Sigma1Rx {
@@ -82,7 +83,7 @@ impl Case {
                 common::SCStatusCodes::NoSharedTrustRoots,
                 None,
             )?;
-            proto_rx.exchange.close();
+            proto_rx.exch_ctx.exch.close();
             return Ok(());
         }
         // Safe to unwrap here
@@ -114,7 +115,7 @@ impl Case {
                 common::SCStatusCodes::InvalidParameter,
                 None,
             )?;
-            proto_rx.exchange.close();
+            proto_rx.exch_ctx.exch.close();
             return Ok(());
         }
 
@@ -133,7 +134,7 @@ impl Case {
                 common::SCStatusCodes::InvalidParameter,
                 None,
             )?;
-            proto_rx.exchange.close();
+            proto_rx.exch_ctx.exch.close();
             return Ok(());
         }
 
@@ -146,15 +147,15 @@ impl Case {
             &case_session,
         )?;
         // Queue a transport mgr request to add a new session
-        WorkQ::get()?.sync_send(Msg::NewSession(proto_rx.session.clone(&clone_data)))?;
+        WorkQ::get()?.sync_send(Msg::NewSession(proto_rx.exch_ctx.sess.clone(&clone_data)))?;
 
         common::create_sc_status_report(
             proto_tx,
             SCStatusCodes::SessionEstablishmentSuccess,
             None,
         )?;
-        proto_rx.exchange.clear_exchange_data();
-        proto_rx.exchange.close();
+        proto_rx.exch_ctx.exch.clear_exchange_data();
+        proto_rx.exch_ctx.exch.close();
 
         Ok(())
     }
@@ -177,11 +178,11 @@ impl Case {
                 common::SCStatusCodes::NoSharedTrustRoots,
                 None,
             )?;
-            proto_rx.exchange.close();
+            proto_rx.exch_ctx.exch.close();
             return Ok(());
         }
 
-        let local_sessid = proto_rx.session.reserve_new_sess_id();
+        let local_sessid = proto_rx.exch_ctx.sess.reserve_new_sess_id();
         let mut case_session = Box::new(CaseSession::new(r.initiator_sessid, local_sessid)?);
         case_session.tt_hash.update(proto_rx.buf)?;
         case_session.local_fabric_idx = local_fabric_idx?;
@@ -223,7 +224,7 @@ impl Case {
                     common::SCStatusCodes::NoSharedTrustRoots,
                     None,
                 )?;
-                proto_rx.exchange.close();
+                proto_rx.exch_ctx.exch.close();
                 return Ok(());
             }
 
@@ -254,7 +255,7 @@ impl Case {
         tw.str16(TagType::Context(4), encrypted)?;
         tw.end_container()?;
         case_session.tt_hash.update(proto_tx.as_borrow_slice())?;
-        proto_rx.exchange.set_exchange_data(case_session);
+        proto_rx.exch_ctx.exch.set_exchange_data(case_session);
         Ok(())
     }
 

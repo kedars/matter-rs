@@ -3,7 +3,7 @@ use std::any::Any;
 use crate::{
     error::Error,
     tlv::{TLVElement, TLVWriter},
-    transport::session::SessionHandle,
+    transport::session::Session,
 };
 
 use self::messages::{
@@ -16,10 +16,10 @@ pub enum TransactionState {
     Ongoing,
     Complete,
 }
-pub struct Transaction<'a, 'b> {
+pub struct Transaction<'a> {
     pub state: TransactionState,
     pub data: Option<Box<dyn Any>>,
-    pub session: &'b mut SessionHandle<'a>,
+    pub session: &'a mut Session,
 }
 
 pub trait InteractionConsumer {

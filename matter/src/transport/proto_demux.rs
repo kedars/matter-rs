@@ -1,9 +1,8 @@
 use std::net::SocketAddr;
 
 use crate::error::*;
-use crate::transport::exchange::Exchange;
-use crate::transport::session::SessionHandle;
 
+use super::exchange::ExchangeCtx;
 use super::packet::Packet;
 
 const MAX_PROTOCOLS: usize = 4;
@@ -21,8 +20,7 @@ pub struct ProtoRx<'a> {
     pub proto_id: usize,
     pub proto_opcode: u8,
     pub buf: &'a [u8],
-    pub session: SessionHandle<'a>,
-    pub exchange: &'a mut Exchange,
+    pub exch_ctx: ExchangeCtx<'a>,
     pub peer: SocketAddr,
 }
 
@@ -30,16 +28,14 @@ impl<'a> ProtoRx<'a> {
     pub fn new(
         proto_id: usize,
         proto_opcode: u8,
-        session: SessionHandle<'a>,
-        exchange: &'a mut Exchange,
+        exch_ctx: ExchangeCtx<'a>,
         peer: SocketAddr,
         buf: &'a [u8],
     ) -> Self {
         ProtoRx {
             proto_id,
             proto_opcode,
-            exchange,
-            session,
+            exch_ctx,
             buf,
             peer,
         }

@@ -8,6 +8,7 @@ use matter::interaction_model::InteractionModel;
 use matter::interaction_model::Transaction;
 use matter::tlv::{TLVElement, TLVWriter};
 use matter::transport::exchange::Exchange;
+use matter::transport::exchange::ExchangeCtx;
 use matter::transport::packet::Packet;
 use matter::transport::proto_demux::HandleProto;
 use matter::transport::proto_demux::ProtoRx;
@@ -88,11 +89,14 @@ fn handle_data(action: OpCode, data_in: &[u8], data_out: &mut [u8]) -> DataModel
             false,
         )
         .unwrap();
+    let exch_ctx = ExchangeCtx {
+        exch: &mut exch,
+        sess,
+    };
     let mut proto_rx = ProtoRx::new(
         0x01,
         action as u8,
-        sess,
-        &mut exch,
+        exch_ctx,
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
         data_in,
     );

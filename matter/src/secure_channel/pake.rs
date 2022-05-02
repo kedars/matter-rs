@@ -12,6 +12,7 @@ use crate::{
     error::Error,
     tlv::{self, get_root_node_struct, FromTLV, OctetStr, TLVElement, TLVWriter, TagType, ToTLV},
     transport::{
+        exchange::ExchangeCtx,
         packet::Packet,
         proto_demux::ProtoRx,
         queue::{Msg, WorkQ},
@@ -72,23 +73,21 @@ impl PakeState {
         std::mem::discriminant(self) == std::mem::discriminant(&PakeState::Idle)
     }
 
-    fn take_sess_data(&mut self, proto_rx: &ProtoRx) -> Result<SessionData, Error> {
+    fn take_sess_data(&mut self, exch_ctx: &ExchangeCtx) -> Result<SessionData, Error> {
         let sd = self.take()?;
-        if sd.exch_id != proto_rx.exchange.get_id()
-            || sd.peer_addr != proto_rx.session.get_peer_addr()
-        {
+        if sd.exch_id != exch_ctx.exch.get_id() || sd.peer_addr != exch_ctx.sess.get_peer_addr() {
             Err(Error::InvalidState)
         } else {
             Ok(sd)
         }
     }
 
-    fn make_in_progress(&mut self, spake2p: Box<Spake2P>, proto_rx: &ProtoRx) {
+    fn make_in_progress(&mut self, spake2p: Box<Spake2P>, exch_ctx: &ExchangeCtx) {
         *self = PakeState::InProgress(SessionData {
             start_time: SystemTime::now(),
             spake2p,
-            exch_id: proto_rx.exchange.get_id(),
-            peer_addr: proto_rx.session.get_peer_addr(),
+            exch_id: exch_ctx.exch.get_id(),
+            peer_addr: exch_ctx.sess.get_peer_addr(),
         });
     }
 
@@ -138,7 +137,7 @@ impl PAKE {
         proto_rx: &mut ProtoRx,
         proto_tx: &mut Packet,
     ) -> Result<(), Error> {
-        let mut sd = self.state.take_sess_data(proto_rx)?;
+        let mut sd = self.state.take_sess_data(&proto_rx.exch_ctx)?;
 
         let cA = extract_pasepake_1_or_3_params(proto_rx.buf)?;
         let (status_code, Ke) = sd.spake2p.handle_cA(cA);
@@ -162,11 +161,11 @@ impl PAKE {
                 .copy_from_slice(&session_keys[32..48]);
 
             // Queue a transport mgr request to add a new session
-            WorkQ::get()?.sync_send(Msg::NewSession(proto_rx.session.clone(&clone_data)))?;
+            WorkQ::get()?.sync_send(Msg::NewSession(proto_rx.exch_ctx.sess.clone(&clone_data)))?;
         }
 
         create_sc_status_report(proto_tx, status_code, None)?;
-        proto_rx.exchange.close();
+        proto_rx.exch_ctx.exch.close();
         // Disable PASE for subsequent sessions
         self.state = PakeState::Idle;
         self.disable();
@@ -180,7 +179,7 @@ impl PAKE {
         proto_rx: &mut ProtoRx,
         proto_tx: &mut Packet,
     ) -> Result<(), Error> {
-        let mut sd = self.state.take_sess_data(proto_rx)?;
+        let mut sd = self.state.take_sess_data(&proto_rx.exch_ctx)?;
 
         let pA = extract_pasepake_1_or_3_params(proto_rx.buf)?;
         let mut pB: [u8; 65] = [0; 65];
@@ -235,7 +234,7 @@ impl PAKE {
         let mut our_random: [u8; 32] = [0; 32];
         rand::thread_rng().fill_bytes(&mut our_random);
 
-        let local_sessid = proto_rx.session.reserve_new_sess_id();
+        let local_sessid = proto_rx.exch_ctx.sess.reserve_new_sess_id();
         let spake2p_data: u32 = ((local_sessid as u32) << 16) | a.initiator_ssid as u32;
         let mut spake2p = Box::new(Spake2P::new());
         spake2p.set_app_data(spake2p_data as u32);
@@ -258,7 +257,7 @@ impl PAKE {
         resp.to_tlv(&mut tw, TagType::Anonymous)?;
 
         spake2p.set_context(proto_rx.buf, proto_tx.as_borrow_slice())?;
-        self.state.make_in_progress(spake2p, proto_rx);
+        self.state.make_in_progress(spake2p, &proto_rx.exch_ctx);
 
         Ok(())
     }

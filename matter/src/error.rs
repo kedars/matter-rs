@@ -26,6 +26,7 @@ pub enum Error {
     NoSpaceRetransTable,
     NoTagFound,
     NotFound,
+    PacketPoolExhaust,
     StdIoError,
     SysTimeFail,
     Invalid,

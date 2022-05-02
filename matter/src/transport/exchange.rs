@@ -1,7 +1,7 @@
 use colored::*;
 use log::{error, info, trace};
-use std::any::Any;
 use std::fmt;
+use std::{any::Any, ops::DerefMut};
 
 use crate::error::Error;
 
@@ -10,8 +10,20 @@ use heapless::LinearMap;
 use super::{
     mrp::ReliableMessage,
     packet::Packet,
-    session::{SessionHandle, SessionMgr},
+    session::SessionHandle,
+    session::{Session, SessionMgr},
 };
+
+pub struct ExchangeCtx<'a> {
+    pub exch: &'a mut Exchange,
+    pub sess: SessionHandle<'a>,
+}
+
+impl<'a> ExchangeCtx<'a> {
+    pub fn send(&mut self, proto_tx: &mut Packet) -> Result<(), Error> {
+        self.exch.send(proto_tx, self.sess.deref_mut())
+    }
+}
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum ExchangeRole {
@@ -97,11 +109,7 @@ impl Exchange {
         self.data.take()?.downcast::<T>().ok()
     }
 
-    pub fn send(
-        &mut self,
-        proto_tx: &mut Packet,
-        session: &mut SessionHandle,
-    ) -> Result<(), Error> {
+    pub fn send(&mut self, proto_tx: &mut Packet, session: &mut Session) -> Result<(), Error> {
         trace!("payload: {:x?}", proto_tx.as_borrow_slice());
         info!(
             "{} with proto id: {} opcode: {}",
@@ -229,7 +237,7 @@ impl ExchangeMgr {
         ExchangeMgr::_get(&mut self.exchanges, sess_id, id, role, create_new)
     }
 
-    pub fn recv(&mut self, proto_rx: &mut Packet) -> Result<(&mut Exchange, SessionHandle), Error> {
+    pub fn recv(&mut self, proto_rx: &mut Packet) -> Result<ExchangeCtx, Error> {
         // Get the session
         let mut session = self.sess_mgr.recv(proto_rx)?;
 
@@ -249,7 +257,10 @@ impl ExchangeMgr {
         // Message Reliability Protocol
         exch.mrp.recv(&proto_rx)?;
 
-        Ok((exch, session))
+        Ok(ExchangeCtx {
+            exch,
+            sess: session,
+        })
     }
 
     pub fn send(&mut self, exch_id: u16, proto_tx: &mut Packet) -> Result<(), Error> {
