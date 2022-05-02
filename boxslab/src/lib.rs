@@ -70,54 +70,59 @@ macro_rules! box_slab {
     ($name:ident,$t:ty,$v:expr) => {
         use std::mem::MaybeUninit;
         use std::sync::Once;
-        use $crate::BoxSlab;
+        use $crate::{BoxSlab, Slab, SlabPool};
 
         pub struct $name;
-        impl $name {
-            pub fn get_slab() -> &'static Slab<$t> {
+
+        impl SlabPool for $name {
+            type SlabType = $t;
+            fn get_slab() -> &'static Slab<Self> {
                 const MAYBE_INIT: MaybeUninit<$t> = MaybeUninit::uninit();
                 static mut SLAB_POOL: [MaybeUninit<$t>; $v] = [MAYBE_INIT; $v];
-                static mut SLAB_SPACE: Option<Slab<$t>> = None;
+                static mut SLAB_SPACE: Option<Slab<$name>> = None;
                 static mut INIT: Once = Once::new();
                 unsafe {
                     INIT.call_once(|| {
-                        SLAB_SPACE = Some(Slab::<$t>::new(&mut SLAB_POOL, $v));
+                        SLAB_SPACE = Some(Slab::<$name>::init(&mut SLAB_POOL, $v));
                     });
                     SLAB_SPACE.as_ref().unwrap()
                 }
-            }
-
-            pub fn alloc(val: $t) -> Option<BoxSlab<$t>> {
-                Self::get_slab().alloc(val)
             }
         }
     };
 }
 
-pub struct Inner<T: 'static> {
-    pool: &'static mut [MaybeUninit<T>],
+pub trait SlabPool {
+    type SlabType: 'static;
+    fn get_slab() -> &'static Slab<Self>
+    where
+        Self: Sized;
+}
+
+pub struct Inner<T: 'static + SlabPool> {
+    pool: &'static mut [MaybeUninit<T::SlabType>],
     map: Bitmap,
 }
 
-// Instead of a mutex, we should replace this with a CAS loop
-pub struct Slab<T: 'static>(Mutex<Inner<T>>);
+// TODO: Instead of a mutex, we should replace this with a CAS loop
+pub struct Slab<T: 'static + SlabPool>(Mutex<Inner<T>>);
 
-impl<T: 'static> Slab<T> {
-    pub fn new(pool: &'static mut [MaybeUninit<T>], size: usize) -> Self {
+impl<T: SlabPool> Slab<T> {
+    pub fn init(pool: &'static mut [MaybeUninit<T::SlabType>], size: usize) -> Self {
         Self(Mutex::new(Inner {
             pool,
             map: Bitmap::new(size),
         }))
     }
 
-    pub fn alloc(&'static self, new_object: T) -> Option<BoxSlab<T>> {
-        let mut inner = self.0.lock().unwrap();
+    pub fn new(new_object: T::SlabType) -> Option<BoxSlab<T>> {
+        let slab = T::get_slab();
+        let mut inner = slab.0.lock().unwrap();
         if let Some(index) = inner.map.first_false_index() {
             inner.map.set(index);
             inner.pool[index].write(new_object);
             let cell_ptr = unsafe { &mut *inner.pool[index].as_mut_ptr() };
             Some(BoxSlab {
-                slab: self,
                 data: cell_ptr,
                 index,
             })
@@ -126,7 +131,7 @@ impl<T: 'static> Slab<T> {
         }
     }
 
-    pub fn free(&'static self, index: usize) {
+    pub fn free(&self, index: usize) {
         let mut inner = self.0.lock().unwrap();
         inner.map.reset(index);
         let old_value = std::mem::replace(&mut inner.pool[index], MaybeUninit::uninit());
@@ -135,31 +140,28 @@ impl<T: 'static> Slab<T> {
     }
 }
 
-pub struct BoxSlab<T: 'static> {
-    // XXX TODO:
-    // - We should get rid of this by creating a Trait (that is implemented by the pool, that returns the slab pointer)
-    // - We should figure out a way to get rid of the index too
-    slab: &'static Slab<T>,
+pub struct BoxSlab<T: 'static + SlabPool> {
     // Because the data is a reference within the MaybeUninit, we don't have a mechanism
     // to go out to the MaybeUninit from this reference. Hence this index
     index: usize,
-    data: &'static mut T,
+    // TODO: We should figure out a way to get rid of the index too
+    data: &'static mut T::SlabType,
 }
 
-impl<T: 'static> Drop for BoxSlab<T> {
+impl<T: 'static + SlabPool> Drop for BoxSlab<T> {
     fn drop(&mut self) {
-        self.slab.free(self.index);
+        T::get_slab().free(self.index);
     }
 }
 
-impl<T: 'static> Deref for BoxSlab<T> {
-    type Target = T;
+impl<T: SlabPool> Deref for BoxSlab<T> {
+    type Target = T::SlabType;
     fn deref(&self) -> &Self::Target {
         self.data
     }
 }
 
-impl<T: 'static> DerefMut for BoxSlab<T> {
+impl<T: SlabPool> DerefMut for BoxSlab<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.data
     }
@@ -170,7 +172,6 @@ mod tests {
     use bitmaps::Bitmap;
     use std::{ops::Deref, sync::Arc};
 
-    use crate::Slab;
 
     pub struct Test {
         val: Arc<u32>,
@@ -181,7 +182,7 @@ mod tests {
     #[test]
     fn simple_alloc_free() {
         {
-            let a = TestSlab::alloc(Test { val: Arc::new(10) }).unwrap();
+            let a = Slab::<TestSlab>::new(Test { val: Arc::new(10) }).unwrap();
             assert_eq!(*a.val.deref(), 10);
             let inner = TestSlab::get_slab().0.lock().unwrap();
             assert_eq!(inner.map.is_empty(), false);
@@ -190,17 +191,20 @@ mod tests {
         let inner = TestSlab::get_slab().0.lock().unwrap();
         assert_eq!(inner.map.is_empty(), true);
         println!("Box Size {}", std::mem::size_of::<Box<Test>>());
-        println!("BoxSlab Size {}", std::mem::size_of::<BoxSlab<Test>>());
+        println!("BoxSlab Size {}", std::mem::size_of::<BoxSlab<TestSlab>>());
     }
 
     #[test]
     fn alloc_full_block() {
         {
-            let a = TestSlab::alloc(Test { val: Arc::new(10) }).unwrap();
-            let b = TestSlab::alloc(Test { val: Arc::new(11) }).unwrap();
-            let c = TestSlab::alloc(Test { val: Arc::new(12) }).unwrap();
+            let a = Slab::<TestSlab>::new(Test { val: Arc::new(10) }).unwrap();
+            let b = Slab::<TestSlab>::new(Test { val: Arc::new(11) }).unwrap();
+            let c = Slab::<TestSlab>::new(Test { val: Arc::new(12) }).unwrap();
             // Test that at overflow, we return None
-            assert_eq!(TestSlab::alloc(Test { val: Arc::new(13) }).is_none(), true);
+            assert_eq!(
+                Slab::<TestSlab>::new(Test { val: Arc::new(13) }).is_none(),
+                true
+            );
             assert_eq!(*b.val.deref(), 11);
 
             {
@@ -211,7 +215,7 @@ mod tests {
 
             // Purposefully drop, to test that new allocation is possible
             std::mem::drop(b);
-            let d = TestSlab::alloc(Test { val: Arc::new(21) }).unwrap();
+            let d = Slab::<TestSlab>::new(Test { val: Arc::new(21) }).unwrap();
             assert_eq!(*d.val.deref(), 21);
 
             // Ensure older allocations are still valid
@@ -228,9 +232,9 @@ mod tests {
     fn test_drop_logic() {
         let root = Arc::new(10);
         {
-            let _a = TestSlab::alloc(Test { val: root.clone() }).unwrap();
-            let _b = TestSlab::alloc(Test { val: root.clone() }).unwrap();
-            let _c = TestSlab::alloc(Test { val: root.clone() }).unwrap();
+            let _a = Slab::<TestSlab>::new(Test { val: root.clone() }).unwrap();
+            let _b = Slab::<TestSlab>::new(Test { val: root.clone() }).unwrap();
+            let _c = Slab::<TestSlab>::new(Test { val: root.clone() }).unwrap();
             assert_eq!(Arc::strong_count(&root), 4);
         }
         // Test that Drop was correctly called on all the members of the pool
