@@ -8,15 +8,16 @@ use crate::error::*;
 use crate::transport::mrp::ReliableMessage;
 use crate::transport::packet::PacketPool;
 use crate::transport::{
-    exchange,
+    exchange::{self, ExchangeCtx},
     packet::Packet,
-    proto_demux::{self, ProtoRx},
+    proto_demux::{self},
     queue,
     session::{self},
-    udp::{self, MAX_RX_BUF_SIZE},
+    udp::{self},
 };
 use colored::*;
 
+use super::proto_demux::ProtoCtx;
 use super::queue::Msg;
 
 pub struct Mgr {
@@ -47,10 +48,8 @@ impl Mgr {
     fn recv<'a>(
         transport: &mut udp::UdpListener,
         exch_mgr: &'a mut exchange::ExchangeMgr,
-        in_buf: &'a mut [u8],
-    ) -> Result<ProtoRx<'a>, Error> {
-        let mut rx =
-            Slab::<PacketPool>::alloc(Packet::new_rx()?).ok_or(Error::PacketPoolExhaust)?;
+    ) -> Result<(ExchangeCtx<'a>, BoxSlab<PacketPool>), Error> {
+        let mut rx = Slab::<PacketPool>::new(Packet::new_rx()?).ok_or(Error::PacketPoolExhaust)?;
 
         // Read from the transport
         let (len, src) = transport.recv(rx.as_borrow_slice())?;
@@ -64,16 +63,7 @@ impl Mgr {
         let exch_ctx = exch_mgr.recv(&mut rx)?;
         debug!("Exchange is {:?}", exch_ctx.exch);
 
-        // temporary hack
-        let len = rx.as_borrow_slice().len();
-        in_buf[..len].copy_from_slice(rx.as_borrow_slice());
-        Ok(ProtoRx::new(
-            rx.get_proto_id().into(),
-            rx.get_proto_opcode(),
-            exch_ctx,
-            src,
-            &in_buf[..len],
-        ))
+        Ok((exch_ctx, rx))
     }
 
     fn send_to_exchange_id(&mut self, exch_id: u16, proto_tx: &mut Packet) -> Result<(), Error> {
@@ -89,24 +79,24 @@ impl Mgr {
     fn send_to_exchange(
         transport: &udp::UdpListener,
         exch_ctx: &mut exchange::ExchangeCtx,
-        proto_tx: &mut Packet,
+        mut proto_tx: BoxSlab<PacketPool>,
     ) -> Result<(), Error> {
-        exch_ctx.send(proto_tx)?;
+        exch_ctx.send(&mut proto_tx)?;
 
         let peer = proto_tx.peer;
         transport.send(proto_tx.as_borrow_slice(), peer)?;
         Ok(())
     }
 
-    fn handle_rxtx(&mut self, in_buf: &mut [u8], proto_tx: &mut Packet) -> Result<(), Error> {
-        let mut rx_ctx =
-            Mgr::recv(&mut self.transport, &mut self.exch_mgr, in_buf).map_err(|e| {
-                error!("Error in recv: {:?}", e);
-                e
-            })?;
+    fn handle_rxtx(&mut self, tx: BoxSlab<PacketPool>) -> Result<(), Error> {
+        let (exch_ctx, rx) = Mgr::recv(&mut self.transport, &mut self.exch_mgr).map_err(|e| {
+            error!("Error in recv: {:?}", e);
+            e
+        })?;
 
+        let mut proto_ctx = ProtoCtx::new(exch_ctx, rx, tx);
         // Proto Dispatch
-        match self.proto_demux.handle(&mut rx_ctx, proto_tx) {
+        match self.proto_demux.handle(&mut proto_ctx) {
             Ok(r) => {
                 if let proto_demux::ResponseRequired::No = r {
                     // We need to send the Ack if reliability is enabled, in this case
@@ -119,8 +109,13 @@ impl Mgr {
             }
         }
 
+        let ProtoCtx {
+            mut exch_ctx,
+            rx: _,
+            tx,
+        } = proto_ctx;
         // tx_ctx now contains the response payload, send the packet
-        Mgr::send_to_exchange(&self.transport, &mut rx_ctx.exch_ctx, proto_tx).map_err(|e| {
+        Mgr::send_to_exchange(&self.transport, &mut exch_ctx, tx).map_err(|e| {
             error!("Error in sending msg {:?}", e);
             e
         })?;
@@ -149,10 +144,7 @@ impl Mgr {
 
     pub fn start(&mut self) -> Result<(), Error> {
         loop {
-            // I would have liked this in .bss instead of the stack, will likely move this
-            // later when we convert this into a pool
-            let mut in_buf: [u8; MAX_RX_BUF_SIZE] = [0; MAX_RX_BUF_SIZE];
-            let mut proto_tx = match Self::new_tx() {
+            let proto_tx = match Self::new_tx() {
                 Ok(p) => p,
                 Err(e) => {
                     error!("Error creating proto_tx {:?}", e);
@@ -161,7 +153,7 @@ impl Mgr {
             };
 
             // Handle network operations
-            if self.handle_rxtx(&mut in_buf, &mut proto_tx).is_err() {
+            if self.handle_rxtx(proto_tx).is_err() {
                 error!("Error in handle_rxtx");
                 continue;
             }
@@ -171,7 +163,13 @@ impl Mgr {
                 continue;
             }
 
-            proto_tx.reset();
+            let mut proto_tx = match Self::new_tx() {
+                Ok(p) => p,
+                Err(e) => {
+                    error!("Error creating proto_tx {:?}", e);
+                    continue;
+                }
+            };
 
             // Handle any pending acknowledgement send
             let mut acks_to_send: LinearMap<u16, (), { exchange::MAX_MRP_ENTRIES }> =
@@ -194,6 +192,6 @@ impl Mgr {
     }
 
     fn new_tx() -> Result<BoxSlab<PacketPool>, Error> {
-        Slab::<PacketPool>::alloc(Packet::new_tx()?).ok_or(Error::PacketPoolExhaust)
+        Slab::<PacketPool>::new(Packet::new_tx()?).ok_or(Error::PacketPoolExhaust)
     }
 }

@@ -13,7 +13,6 @@ use matter::{
         messages::{msg, GenericPath},
     },
     tlv::{self, ElementType, FromTLV, TLVElement, TLVList, TLVWriter, TagType, ToTLV},
-    transport::packet::Packet,
     utils::writebuf::WriteBuf,
 };
 
@@ -31,14 +30,15 @@ fn handle_read_reqs(input: &[AttrPath], expected: &[ExpectedReportData]) {
     let buf_len = buf.len();
     let mut wb = WriteBuf::new(&mut buf, buf_len);
     let mut tw = TLVWriter::new(&mut wb);
-    let mut proto_tx = Packet::new_tx().unwrap();
+    let mut out_buf = [0u8; 400];
 
     let read_req = ReadReq::new(true).set_attr_requests(input);
     read_req.to_tlv(&mut tw, TagType::Anonymous).unwrap();
 
-    let _ = im_engine(OpCode::ReadRequest, wb.as_borrow_slice(), &mut proto_tx);
-    tlv::print_tlv_list(proto_tx.as_borrow_slice());
-    let root = tlv::get_root_node_struct(proto_tx.as_borrow_slice()).unwrap();
+    let (_, out_buf_len) = im_engine(OpCode::ReadRequest, wb.as_borrow_slice(), &mut out_buf);
+    let out_buf = &out_buf[..out_buf_len];
+    tlv::print_tlv_list(out_buf);
+    let root = tlv::get_root_node_struct(out_buf).unwrap();
 
     let mut index = 0;
     let response_iter = root
@@ -79,18 +79,19 @@ fn handle_read_reqs(input: &[AttrPath], expected: &[ExpectedReportData]) {
 // Helper for handling Invoke Command sequences
 fn handle_write_reqs(input: &[AttrData], expected: &[AttrStatus]) -> DataModel {
     let mut buf = [0u8; 400];
+    let mut out_buf = [0u8; 400];
 
     let buf_len = buf.len();
     let mut wb = WriteBuf::new(&mut buf, buf_len);
     let mut tw = TLVWriter::new(&mut wb);
-    let mut proto_tx = Packet::new_tx().unwrap();
 
     let write_req = WriteReq::new(false, input);
     write_req.to_tlv(&mut tw, TagType::Anonymous).unwrap();
 
-    let dm = im_engine(OpCode::WriteRequest, wb.as_borrow_slice(), &mut proto_tx);
-    tlv::print_tlv_list(proto_tx.as_borrow_slice());
-    let root = tlv::get_root_node_struct(proto_tx.as_borrow_slice()).unwrap();
+    let (dm, out_buf_len) = im_engine(OpCode::WriteRequest, wb.as_borrow_slice(), &mut out_buf);
+    let out_buf = &out_buf[..out_buf_len];
+    tlv::print_tlv_list(out_buf);
+    let root = tlv::get_root_node_struct(out_buf).unwrap();
 
     let mut index = 0;
     let response_iter = root

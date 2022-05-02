@@ -1,4 +1,5 @@
 use crate::common::echo_cluster;
+use boxslab::Slab;
 use matter::{
     data_model::{
         cluster_basic_information::BasicInfoConfig,
@@ -11,9 +12,11 @@ use matter::{
     interaction_model::{core::OpCode, messages::ib::CmdPath, messages::msg, InteractionModel},
     tlv::{TLVWriter, TagType, ToTLV},
     transport::packet::Packet,
-    transport::proto_demux::{HandleProto, ProtoRx},
+    transport::proto_demux::HandleProto,
     transport::{
         exchange::{Exchange, ExchangeCtx},
+        packet::PacketPool,
+        proto_demux::ProtoCtx,
         session::SessionMgr,
     },
     utils::writebuf::WriteBuf,
@@ -31,7 +34,7 @@ impl DevAttDataFetcher for DummyDevAtt {
 }
 
 // Create an Interaction Model, Data Model and run a rx/tx transaction through it
-pub fn im_engine(action: OpCode, data_in: &[u8], proto_tx: &mut Packet) -> DataModel {
+pub fn im_engine(action: OpCode, data_in: &[u8], data_out: &mut [u8]) -> (DataModel, usize) {
     let dev_det = BasicInfoConfig {
         vid: 10,
         pid: 11,
@@ -67,17 +70,21 @@ pub fn im_engine(action: OpCode, data_in: &[u8], proto_tx: &mut Packet) -> DataM
         exch: &mut exch,
         sess,
     };
-    let mut proto_rx = ProtoRx::new(
-        0x01,
-        action as u8,
-        exch_ctx,
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
-        data_in,
-    );
-    interaction_model
-        .handle_proto_id(&mut proto_rx, proto_tx)
-        .unwrap();
-    data_model
+    let mut rx = Slab::<PacketPool>::new(Packet::new_rx().unwrap()).unwrap();
+    let tx = Slab::<PacketPool>::new(Packet::new_tx().unwrap()).unwrap();
+    // Create fake rx packet
+    rx.set_proto_id(0x01);
+    rx.set_proto_opcode(action as u8);
+    rx.peer = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+    let in_data_len = data_in.len();
+    let rx_buf = rx.as_borrow_slice();
+    rx_buf[..in_data_len].copy_from_slice(data_in);
+
+    let mut ctx = ProtoCtx::new(exch_ctx, rx, tx);
+    interaction_model.handle_proto_id(&mut ctx).unwrap();
+    let out_data_len = ctx.tx.as_borrow_slice().len();
+    data_out[..out_data_len].copy_from_slice(ctx.tx.as_borrow_slice());
+    (data_model, out_data_len)
 }
 
 pub struct TestData<'a, 'b> {

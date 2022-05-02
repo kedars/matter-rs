@@ -6,7 +6,6 @@ use matter::{
         messages::msg,
     },
     tlv,
-    transport::packet::Packet,
     utils::writebuf::WriteBuf,
 };
 
@@ -23,17 +22,18 @@ enum ExpectedInvResp {
 // Helper for handling Invoke Command sequences
 fn handle_commands(input: &[(CmdPath, Option<u8>)], expected: &[ExpectedInvResp]) {
     let mut buf = [0u8; 400];
+    let mut out_buf = [0u8; 400];
 
     let buf_len = buf.len();
     let mut wb = WriteBuf::new(&mut buf, buf_len);
     let mut td = TestData::new(&mut wb);
-    let mut proto_tx = Packet::new_tx().unwrap();
 
     td.commands(input).unwrap();
 
-    let _ = im_engine(OpCode::InvokeRequest, wb.as_borrow_slice(), &mut proto_tx);
-    tlv::print_tlv_list(proto_tx.as_borrow_slice());
-    let root = tlv::get_root_node_struct(proto_tx.as_borrow_slice()).unwrap();
+    let (_, out_buf_len) = im_engine(OpCode::InvokeRequest, wb.as_borrow_slice(), &mut out_buf);
+    let out_buf = &out_buf[..out_buf_len];
+    tlv::print_tlv_list(out_buf);
+    let root = tlv::get_root_node_struct(out_buf).unwrap();
 
     let mut index = 0;
     let cmd_list_iter = root

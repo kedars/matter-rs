@@ -13,8 +13,7 @@ use crate::{
     tlv::{self, get_root_node_struct, FromTLV, OctetStr, TLVElement, TLVWriter, TagType, ToTLV},
     transport::{
         exchange::ExchangeCtx,
-        packet::Packet,
-        proto_demux::ProtoRx,
+        proto_demux::ProtoCtx,
         queue::{Msg, WorkQ},
         session::{CloneData, SessionMode},
     },
@@ -132,14 +131,10 @@ impl PAKE {
     }
 
     #[allow(non_snake_case)]
-    pub fn handle_pasepake3(
-        &mut self,
-        proto_rx: &mut ProtoRx,
-        proto_tx: &mut Packet,
-    ) -> Result<(), Error> {
-        let mut sd = self.state.take_sess_data(&proto_rx.exch_ctx)?;
+    pub fn handle_pasepake3(&mut self, ctx: &mut ProtoCtx) -> Result<(), Error> {
+        let mut sd = self.state.take_sess_data(&ctx.exch_ctx)?;
 
-        let cA = extract_pasepake_1_or_3_params(proto_rx.buf)?;
+        let cA = extract_pasepake_1_or_3_params(ctx.rx.as_borrow_slice())?;
         let (status_code, Ke) = sd.spake2p.handle_cA(cA);
 
         if status_code == SCStatusCodes::SessionEstablishmentSuccess {
@@ -161,11 +156,11 @@ impl PAKE {
                 .copy_from_slice(&session_keys[32..48]);
 
             // Queue a transport mgr request to add a new session
-            WorkQ::get()?.sync_send(Msg::NewSession(proto_rx.exch_ctx.sess.clone(&clone_data)))?;
+            WorkQ::get()?.sync_send(Msg::NewSession(ctx.exch_ctx.sess.clone(&clone_data)))?;
         }
 
-        create_sc_status_report(proto_tx, status_code, None)?;
-        proto_rx.exch_ctx.exch.close();
+        create_sc_status_report(&mut ctx.tx, status_code, None)?;
+        ctx.exch_ctx.exch.close();
         // Disable PASE for subsequent sessions
         self.state = PakeState::Idle;
         self.disable();
@@ -174,21 +169,17 @@ impl PAKE {
     }
 
     #[allow(non_snake_case)]
-    pub fn handle_pasepake1(
-        &mut self,
-        proto_rx: &mut ProtoRx,
-        proto_tx: &mut Packet,
-    ) -> Result<(), Error> {
-        let mut sd = self.state.take_sess_data(&proto_rx.exch_ctx)?;
+    pub fn handle_pasepake1(&mut self, ctx: &mut ProtoCtx) -> Result<(), Error> {
+        let mut sd = self.state.take_sess_data(&ctx.exch_ctx)?;
 
-        let pA = extract_pasepake_1_or_3_params(proto_rx.buf)?;
+        let pA = extract_pasepake_1_or_3_params(ctx.rx.as_borrow_slice())?;
         let mut pB: [u8; 65] = [0; 65];
         let mut cB: [u8; 32] = [0; 32];
         sd.spake2p
             .start_verifier(self.passwd, ITERATION_COUNT, &self.salt)?;
         sd.spake2p.handle_pA(pA, &mut pB, &mut cB)?;
 
-        let mut tw = TLVWriter::new(proto_tx.get_writebuf()?);
+        let mut tw = TLVWriter::new(ctx.tx.get_writebuf()?);
         let resp = Pake1Resp {
             pb: OctetStr(&pB),
             cb: OctetStr(&cB),
@@ -200,14 +191,10 @@ impl PAKE {
         Ok(())
     }
 
-    pub fn handle_pbkdfparamrequest(
-        &mut self,
-        proto_rx: &mut ProtoRx,
-        proto_tx: &mut Packet,
-    ) -> Result<(), Error> {
+    pub fn handle_pbkdfparamrequest(&mut self, ctx: &mut ProtoCtx) -> Result<(), Error> {
         if !self.enabled {
             error!("PASE Not enabled");
-            create_sc_status_report(proto_tx, SCStatusCodes::InvalidParameter, None)?;
+            create_sc_status_report(&mut ctx.tx, SCStatusCodes::InvalidParameter, None)?;
             return Ok(());
         }
 
@@ -219,12 +206,12 @@ impl PAKE {
             } else {
                 info!("Previous session in-progress, denying new request");
                 // little-endian timeout (here we've hardcoded 500ms)
-                create_sc_status_report(proto_tx, SCStatusCodes::Busy, Some(&[0xf4, 0x01]))?;
+                create_sc_status_report(&mut ctx.tx, SCStatusCodes::Busy, Some(&[0xf4, 0x01]))?;
                 return Ok(());
             }
         }
 
-        let root = tlv::get_root_node(proto_rx.buf)?;
+        let root = tlv::get_root_node(ctx.rx.as_borrow_slice())?;
         let a = PBKDFParamReq::from_tlv(&root)?;
         if a.passcode_id != 0 {
             error!("Can't yet handle passcode_id != 0");
@@ -234,13 +221,13 @@ impl PAKE {
         let mut our_random: [u8; 32] = [0; 32];
         rand::thread_rng().fill_bytes(&mut our_random);
 
-        let local_sessid = proto_rx.exch_ctx.sess.reserve_new_sess_id();
+        let local_sessid = ctx.exch_ctx.sess.reserve_new_sess_id();
         let spake2p_data: u32 = ((local_sessid as u32) << 16) | a.initiator_ssid as u32;
         let mut spake2p = Box::new(Spake2P::new());
         spake2p.set_app_data(spake2p_data as u32);
 
         // Generate response
-        let mut tw = TLVWriter::new(proto_tx.get_writebuf()?);
+        let mut tw = TLVWriter::new(ctx.tx.get_writebuf()?);
         let mut resp = PBKDFParamResp {
             init_random: a.initiator_random,
             our_random: OctetStr(&our_random),
@@ -256,8 +243,8 @@ impl PAKE {
         }
         resp.to_tlv(&mut tw, TagType::Anonymous)?;
 
-        spake2p.set_context(proto_rx.buf, proto_tx.as_borrow_slice())?;
-        self.state.make_in_progress(spake2p, &proto_rx.exch_ctx);
+        spake2p.set_context(ctx.rx.as_borrow_slice(), ctx.tx.as_borrow_slice())?;
+        self.state.make_in_progress(spake2p, &ctx.exch_ctx);
 
         Ok(())
     }

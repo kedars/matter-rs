@@ -13,8 +13,7 @@ use crate::{
     secure_channel::common::SCStatusCodes,
     tlv::{get_root_node_struct, FromTLV, OctetStr, TLVElement, TLVWriter, TagType},
     transport::{
-        packet::Packet,
-        proto_demux::ProtoRx,
+        proto_demux::ProtoCtx,
         queue::{Msg, WorkQ},
         session::{CloneData, SessionMode},
     },
@@ -61,12 +60,8 @@ impl Case {
         Self { fabric_mgr }
     }
 
-    pub fn handle_casesigma3(
-        &mut self,
-        proto_rx: &mut ProtoRx,
-        proto_tx: &mut Packet,
-    ) -> Result<(), Error> {
-        let mut case_session = proto_rx
+    pub fn handle_casesigma3(&mut self, ctx: &mut ProtoCtx) -> Result<(), Error> {
+        let mut case_session = ctx
             .exch_ctx
             .exch
             .take_exchange_data::<CaseSession>()
@@ -79,17 +74,17 @@ impl Case {
         let fabric = self.fabric_mgr.get_fabric(case_session.local_fabric_idx)?;
         if fabric.is_none() {
             common::create_sc_status_report(
-                proto_tx,
+                &mut ctx.tx,
                 common::SCStatusCodes::NoSharedTrustRoots,
                 None,
             )?;
-            proto_rx.exch_ctx.exch.close();
+            ctx.exch_ctx.exch.close();
             return Ok(());
         }
         // Safe to unwrap here
         let fabric = fabric.as_ref().as_ref().unwrap();
 
-        let root = get_root_node_struct(proto_rx.buf)?;
+        let root = get_root_node_struct(ctx.rx.as_borrow_slice())?;
         let encrypted = root.find_tag(1)?.slice()?;
 
         let mut decrypted: [u8; 800] = [0; 800];
@@ -111,11 +106,11 @@ impl Case {
         if let Err(e) = Case::validate_certs(fabric, &initiator_noc, &initiator_icac) {
             error!("Certificate Chain doesn't match: {}", e);
             common::create_sc_status_report(
-                proto_tx,
+                &mut ctx.tx,
                 common::SCStatusCodes::InvalidParameter,
                 None,
             )?;
-            proto_rx.exch_ctx.exch.close();
+            ctx.exch_ctx.exch.close();
             return Ok(());
         }
 
@@ -130,16 +125,16 @@ impl Case {
         {
             error!("Sigma3 Signature doesn't match");
             common::create_sc_status_report(
-                proto_tx,
+                &mut ctx.tx,
                 common::SCStatusCodes::InvalidParameter,
                 None,
             )?;
-            proto_rx.exch_ctx.exch.close();
+            ctx.exch_ctx.exch.close();
             return Ok(());
         }
 
         // Only now do we add this message to the TT Hash
-        case_session.tt_hash.update(proto_rx.buf)?;
+        case_session.tt_hash.update(ctx.rx.as_borrow_slice())?;
         let clone_data = Case::get_session_clone_data(
             fabric.ipk.op_key(),
             fabric.get_node_id(),
@@ -147,25 +142,22 @@ impl Case {
             &case_session,
         )?;
         // Queue a transport mgr request to add a new session
-        WorkQ::get()?.sync_send(Msg::NewSession(proto_rx.exch_ctx.sess.clone(&clone_data)))?;
+        WorkQ::get()?.sync_send(Msg::NewSession(ctx.exch_ctx.sess.clone(&clone_data)))?;
 
         common::create_sc_status_report(
-            proto_tx,
+            &mut ctx.tx,
             SCStatusCodes::SessionEstablishmentSuccess,
             None,
         )?;
-        proto_rx.exch_ctx.exch.clear_exchange_data();
-        proto_rx.exch_ctx.exch.close();
+        ctx.exch_ctx.exch.clear_exchange_data();
+        ctx.exch_ctx.exch.close();
 
         Ok(())
     }
 
-    pub fn handle_casesigma1(
-        &mut self,
-        proto_rx: &mut ProtoRx,
-        proto_tx: &mut Packet,
-    ) -> Result<(), Error> {
-        let root = get_root_node_struct(proto_rx.buf)?;
+    pub fn handle_casesigma1(&mut self, ctx: &mut ProtoCtx) -> Result<(), Error> {
+        let rx_buf = ctx.rx.as_borrow_slice();
+        let root = get_root_node_struct(rx_buf)?;
         let r = Sigma1Req::from_tlv(&root)?;
 
         let local_fabric_idx = self
@@ -174,17 +166,17 @@ impl Case {
         if local_fabric_idx.is_err() {
             error!("Fabric Index mismatch");
             common::create_sc_status_report(
-                proto_tx,
+                &mut ctx.tx,
                 common::SCStatusCodes::NoSharedTrustRoots,
                 None,
             )?;
-            proto_rx.exch_ctx.exch.close();
+            ctx.exch_ctx.exch.close();
             return Ok(());
         }
 
-        let local_sessid = proto_rx.exch_ctx.sess.reserve_new_sess_id();
+        let local_sessid = ctx.exch_ctx.sess.reserve_new_sess_id();
         let mut case_session = Box::new(CaseSession::new(r.initiator_sessid, local_sessid)?);
-        case_session.tt_hash.update(proto_rx.buf)?;
+        case_session.tt_hash.update(rx_buf)?;
         case_session.local_fabric_idx = local_fabric_idx?;
         if r.peer_pub_key.0.len() != crypto::EC_POINT_LEN_BYTES {
             error!("Invalid public key length");
@@ -220,11 +212,11 @@ impl Case {
             let fabric = self.fabric_mgr.get_fabric(case_session.local_fabric_idx)?;
             if fabric.is_none() {
                 common::create_sc_status_report(
-                    proto_tx,
+                    &mut ctx.tx,
                     common::SCStatusCodes::NoSharedTrustRoots,
                     None,
                 )?;
-                proto_rx.exch_ctx.exch.close();
+                ctx.exch_ctx.exch.close();
                 return Ok(());
             }
 
@@ -247,15 +239,15 @@ impl Case {
         let encrypted = &encrypted[0..encrypted_len];
 
         // Generate our Response Body
-        let mut tw = TLVWriter::new(proto_tx.get_writebuf()?);
+        let mut tw = TLVWriter::new(ctx.tx.get_writebuf()?);
         tw.start_struct(TagType::Anonymous)?;
         tw.str8(TagType::Context(1), &our_random)?;
         tw.u16(TagType::Context(2), local_sessid)?;
         tw.str8(TagType::Context(3), &case_session.our_pub_key)?;
         tw.str16(TagType::Context(4), encrypted)?;
         tw.end_container()?;
-        case_session.tt_hash.update(proto_tx.as_borrow_slice())?;
-        proto_rx.exch_ctx.exch.set_exchange_data(case_session);
+        case_session.tt_hash.update(ctx.tx.as_borrow_slice())?;
+        ctx.exch_ctx.exch.set_exchange_data(case_session);
         Ok(())
     }
 

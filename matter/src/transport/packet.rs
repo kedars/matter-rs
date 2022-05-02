@@ -1,4 +1,3 @@
-use log::error;
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Mutex,
@@ -117,18 +116,6 @@ impl<'a> Packet<'a> {
         // Reliability on by default
         p.proto.set_reliable();
         Ok(p)
-    }
-
-    pub fn reset(&mut self) {
-        self.plain = PlainHdr::default();
-        self.proto = ProtoHdr::default();
-        self.peer = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 8080);
-        match &mut self.data {
-            Direction::Rx(_pb) => {
-                error!("Not yet implemented for Rx");
-            }
-            Direction::Tx(wb) => (wb.reset(Packet::HDR_RESERVE)),
-        }
     }
 
     pub fn as_borrow_slice(&mut self) -> &mut [u8] {

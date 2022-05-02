@@ -1,3 +1,4 @@
+use boxslab::Slab;
 use matter::error::Error;
 use matter::interaction_model::core::OpCode;
 use matter::interaction_model::messages::ib;
@@ -10,8 +11,9 @@ use matter::tlv::{TLVElement, TLVWriter};
 use matter::transport::exchange::Exchange;
 use matter::transport::exchange::ExchangeCtx;
 use matter::transport::packet::Packet;
+use matter::transport::packet::PacketPool;
 use matter::transport::proto_demux::HandleProto;
-use matter::transport::proto_demux::ProtoRx;
+use matter::transport::proto_demux::ProtoCtx;
 use matter::transport::session::SessionMgr;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
@@ -71,7 +73,7 @@ impl InteractionConsumer for DataModel {
     }
 }
 
-fn handle_data(action: OpCode, data_in: &[u8], data_out: &mut [u8]) -> DataModel {
+fn handle_data(action: OpCode, data_in: &[u8], data_out: &mut [u8]) -> (DataModel, usize) {
     let data_model = DataModel::new(Node {
         endpoint: 0,
         cluster: 0,
@@ -93,21 +95,23 @@ fn handle_data(action: OpCode, data_in: &[u8], data_out: &mut [u8]) -> DataModel
         exch: &mut exch,
         sess,
     };
-    let mut proto_rx = ProtoRx::new(
-        0x01,
-        action as u8,
-        exch_ctx,
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
-        data_in,
-    );
-    let mut proto_tx = Packet::new_tx().unwrap();
-    interaction_model
-        .handle_proto_id(&mut proto_rx, &mut proto_tx)
-        .unwrap();
+    let mut rx = Slab::<PacketPool>::new(Packet::new_rx().unwrap()).unwrap();
+    let tx = Slab::<PacketPool>::new(Packet::new_tx().unwrap()).unwrap();
+    // Create fake rx packet
+    rx.set_proto_id(0x01);
+    rx.set_proto_opcode(action as u8);
+    rx.peer = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+    let in_data_len = data_in.len();
+    let rx_buf = rx.as_borrow_slice();
+    rx_buf[..in_data_len].copy_from_slice(data_in);
 
-    let out_len = proto_tx.as_borrow_slice().len();
-    data_out[..out_len].copy_from_slice(proto_tx.as_borrow_slice());
-    data_model
+    let mut ctx = ProtoCtx::new(exch_ctx, rx, tx);
+
+    interaction_model.handle_proto_id(&mut ctx).unwrap();
+
+    let out_len = ctx.tx.as_borrow_slice().len();
+    data_out[..out_len].copy_from_slice(ctx.tx.as_borrow_slice());
+    (data_model, out_len)
 }
 
 #[test]
@@ -121,7 +125,7 @@ fn test_valid_invoke_cmd() -> Result<(), Error> {
 
     let mut out_buf: [u8; 20] = [0; 20];
 
-    let data_model = handle_data(OpCode::InvokeRequest, &b, &mut out_buf);
+    let (data_model, _) = handle_data(OpCode::InvokeRequest, &b, &mut out_buf);
     let data = data_model.node.lock().unwrap();
     assert_eq!(data.endpoint, 0);
     assert_eq!(data.cluster, 49);

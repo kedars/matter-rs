@@ -2,8 +2,7 @@ use crate::{
     error::*,
     tlv::{self, FromTLV, TLVElement, TLVWriter, TagType, ToTLV},
     transport::{
-        packet::Packet,
-        proto_demux::{self, ProtoRx, ResponseRequired},
+        proto_demux::{self, ProtoCtx, ResponseRequired},
         session::Session,
     },
 };
@@ -63,22 +62,19 @@ impl InteractionModel {
 }
 
 impl proto_demux::HandleProto for InteractionModel {
-    fn handle_proto_id(
-        &mut self,
-        proto_rx: &mut ProtoRx,
-        proto_tx: &mut Packet,
-    ) -> Result<ResponseRequired, Error> {
-        let mut trans = Transaction::new(&mut proto_rx.exch_ctx.sess);
+    fn handle_proto_id(&mut self, ctx: &mut ProtoCtx) -> Result<ResponseRequired, Error> {
+        let mut trans = Transaction::new(&mut ctx.exch_ctx.sess);
         let proto_opcode: OpCode =
-            num::FromPrimitive::from_u8(proto_rx.proto_opcode).ok_or(Error::Invalid)?;
-        proto_tx.set_proto_id(PROTO_ID_INTERACTION_MODEL as u16);
+            num::FromPrimitive::from_u8(ctx.rx.get_proto_opcode()).ok_or(Error::Invalid)?;
+        ctx.tx.set_proto_id(PROTO_ID_INTERACTION_MODEL as u16);
 
+        let buf = ctx.rx.as_borrow_slice();
         info!("{} {:?}", "Received command".cyan(), proto_opcode);
-        tlv::print_tlv_list(proto_rx.buf);
+        tlv::print_tlv_list(buf);
         let result = match proto_opcode {
-            OpCode::InvokeRequest => self.handle_invoke_req(&mut trans, proto_rx.buf, proto_tx)?,
-            OpCode::ReadRequest => self.handle_read_req(&mut trans, proto_rx.buf, proto_tx)?,
-            OpCode::WriteRequest => self.handle_write_req(&mut trans, proto_rx.buf, proto_tx)?,
+            OpCode::InvokeRequest => self.handle_invoke_req(&mut trans, buf, &mut ctx.tx)?,
+            OpCode::ReadRequest => self.handle_read_req(&mut trans, buf, &mut ctx.tx)?,
+            OpCode::WriteRequest => self.handle_write_req(&mut trans, buf, &mut ctx.tx)?,
             _ => {
                 error!("Opcode Not Handled: {:?}", proto_opcode);
                 return Err(Error::InvalidOpcode);
@@ -87,10 +83,10 @@ impl proto_demux::HandleProto for InteractionModel {
 
         if result == ResponseRequired::Yes {
             info!("Sending response");
-            tlv::print_tlv_list(proto_tx.as_borrow_slice());
+            tlv::print_tlv_list(ctx.tx.as_borrow_slice());
         }
         if trans.is_complete() {
-            proto_rx.exch_ctx.exch.close();
+            ctx.exch_ctx.exch.close();
         }
         Ok(result)
     }

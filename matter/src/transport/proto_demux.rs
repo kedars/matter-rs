@@ -1,9 +1,9 @@
-use std::net::SocketAddr;
+use boxslab::BoxSlab;
 
 use crate::error::*;
 
 use super::exchange::ExchangeCtx;
-use super::packet::Packet;
+use super::packet::PacketPool;
 
 const MAX_PROTOCOLS: usize = 4;
 
@@ -16,38 +16,28 @@ pub struct ProtoDemux {
     proto_id_handlers: [Option<Box<dyn HandleProto>>; MAX_PROTOCOLS],
 }
 
-pub struct ProtoRx<'a> {
-    pub proto_id: usize,
-    pub proto_opcode: u8,
-    pub buf: &'a [u8],
+/// This is the context in which a receive packet is being processed
+pub struct ProtoCtx<'a> {
+    /// This is the exchange context, that includes the exchange and the session
     pub exch_ctx: ExchangeCtx<'a>,
-    pub peer: SocketAddr,
+    /// This is the received buffer for this transaction
+    pub rx: BoxSlab<PacketPool>,
+    /// This is the transmit buffer for this transaction
+    pub tx: BoxSlab<PacketPool>,
 }
 
-impl<'a> ProtoRx<'a> {
+impl<'a> ProtoCtx<'a> {
     pub fn new(
-        proto_id: usize,
-        proto_opcode: u8,
         exch_ctx: ExchangeCtx<'a>,
-        peer: SocketAddr,
-        buf: &'a [u8],
+        rx: BoxSlab<PacketPool>,
+        tx: BoxSlab<PacketPool>,
     ) -> Self {
-        ProtoRx {
-            proto_id,
-            proto_opcode,
-            exch_ctx,
-            buf,
-            peer,
-        }
+        Self { exch_ctx, rx, tx }
     }
 }
 
 pub trait HandleProto {
-    fn handle_proto_id(
-        &mut self,
-        proto_rx: &mut ProtoRx,
-        proto_tx: &mut Packet,
-    ) -> Result<ResponseRequired, Error>;
+    fn handle_proto_id(&mut self, proto_ctx: &mut ProtoCtx) -> Result<ResponseRequired, Error>;
 
     fn get_proto_id(&self) -> usize;
 
@@ -75,17 +65,14 @@ impl ProtoDemux {
         Ok(())
     }
 
-    pub fn handle(
-        &mut self,
-        proto_ctx: &mut ProtoRx,
-        tx_ctx: &mut Packet,
-    ) -> Result<ResponseRequired, Error> {
-        if proto_ctx.proto_id >= MAX_PROTOCOLS {
+    pub fn handle(&mut self, proto_ctx: &mut ProtoCtx) -> Result<ResponseRequired, Error> {
+        let proto_id = proto_ctx.rx.get_proto_id() as usize;
+        if proto_id >= MAX_PROTOCOLS {
             return Err(Error::Invalid);
         }
-        return self.proto_id_handlers[proto_ctx.proto_id]
+        return self.proto_id_handlers[proto_id]
             .as_mut()
             .ok_or(Error::NoHandler)?
-            .handle_proto_id(proto_ctx, tx_ctx);
+            .handle_proto_id(proto_ctx);
     }
 }
