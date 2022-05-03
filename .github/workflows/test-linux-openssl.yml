@@ -19,4 +19,4 @@ jobs:
     - name: Build
       run: cd matter; cargo build --verbose --no-default-features --features crypto_openssl
     - name: Run tests
-      run: cd matter; cargo test --verbose --no-default-features --features crypto_openssl
+      run: cd matter; cargo test --verbose --no-default-features --features crypto_openssl -- --test-threads=1
