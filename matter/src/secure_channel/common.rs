@@ -40,7 +40,11 @@ pub fn create_sc_status_report(
     proto_data: Option<&[u8]>,
 ) -> Result<(), Error> {
     let general_code = match status_code {
-        SCStatusCodes::SessionEstablishmentSuccess | SCStatusCodes::CloseSession => {
+        SCStatusCodes::SessionEstablishmentSuccess => GeneralCode::Success,
+        SCStatusCodes::CloseSession => {
+            proto_tx.unset_reliable();
+            // No time to manage reliable delivery for close session
+            // the session will be closed soon
             GeneralCode::Success
         }
         SCStatusCodes::Busy

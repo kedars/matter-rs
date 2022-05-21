@@ -88,11 +88,12 @@ impl Mgr {
         Ok(())
     }
 
-    fn handle_rxtx(&mut self, tx: BoxSlab<PacketPool>) -> Result<(), Error> {
+    fn handle_rxtx(&mut self) -> Result<(), Error> {
         let (exch_ctx, rx) = Mgr::recv(&mut self.transport, &mut self.exch_mgr).map_err(|e| {
             error!("Error in recv: {:?}", e);
             e
         })?;
+        let tx = Self::new_tx()?;
 
         let mut proto_ctx = ProtoCtx::new(exch_ctx, rx, tx);
         // Proto Dispatch
@@ -126,12 +127,11 @@ impl Mgr {
     fn handle_queue_msgs(&mut self) -> Result<(), Error> {
         if let Ok(msg) = self.rx_q.try_recv() {
             match msg {
-                Msg::NewSession(new_session) => {
+                Msg::NewSession(clone_data) => {
                     // If a new session was created, add it
                     let _ = self
                         .exch_mgr
-                        .get_sess_mgr()
-                        .add_session(new_session, |_| {})
+                        .add_session(clone_data)
                         .map_err(|e| error!("Error adding new session {:?}", e));
                 }
                 _ => {
@@ -144,16 +144,8 @@ impl Mgr {
 
     pub fn start(&mut self) -> Result<(), Error> {
         loop {
-            let proto_tx = match Self::new_tx() {
-                Ok(p) => p,
-                Err(e) => {
-                    error!("Error creating proto_tx {:?}", e);
-                    continue;
-                }
-            };
-
             // Handle network operations
-            if self.handle_rxtx(proto_tx).is_err() {
+            if self.handle_rxtx().is_err() {
                 error!("Error in handle_rxtx");
                 continue;
             }

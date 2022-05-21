@@ -4,13 +4,13 @@ use async_channel::{bounded, Receiver, Sender};
 
 use crate::error::Error;
 
-use super::session::Session;
+use super::session::CloneData;
 
 #[derive(Debug)]
 pub enum Msg {
     Tx(),
     Rx(),
-    NewSession(Session),
+    NewSession(CloneData),
 }
 
 #[derive(Clone)]

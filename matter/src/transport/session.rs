@@ -59,6 +59,7 @@ pub struct CloneData {
     peer_sess_id: u16,
     local_nodeid: u64,
     peer_nodeid: u64,
+    peer_addr: SocketAddr,
     mode: SessionMode,
 }
 impl CloneData {
@@ -67,6 +68,7 @@ impl CloneData {
         peer_nodeid: u64,
         peer_sess_id: u16,
         local_sess_id: u16,
+        peer_addr: SocketAddr,
         mode: SessionMode,
     ) -> CloneData {
         CloneData {
@@ -75,6 +77,7 @@ impl CloneData {
             att_challenge: [0; MATTER_AES128_KEY_SIZE],
             local_nodeid,
             peer_nodeid,
+            peer_addr,
             peer_sess_id,
             local_sess_id,
             mode,
@@ -103,9 +106,9 @@ impl Session {
     }
 
     // A new encrypted session always clones from a previous 'new' session
-    pub fn clone(&mut self, clone_from: &CloneData) -> Session {
+    pub fn clone(clone_from: &CloneData) -> Session {
         Session {
-            peer_addr: self.peer_addr,
+            peer_addr: clone_from.peer_addr,
             local_nodeid: clone_from.local_nodeid,
             peer_nodeid: Some(clone_from.peer_nodeid),
             dec_key: clone_from.dec_key,
@@ -261,18 +264,19 @@ impl fmt::Display for Session {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "peer: {:?}, peer_nodeid: {:?}, local: {}, remote: {}, msg_ctr: {}, mode: {:?}",
+            "peer: {:?}, peer_nodeid: {:?}, local: {}, remote: {}, msg_ctr: {}, mode: {:?} ts: {:?}",
             self.peer_addr,
             self.peer_nodeid,
             self.local_sess_id,
             self.peer_sess_id,
             self.msg_ctr,
             self.mode,
+            self.last_use,
         )
     }
 }
 
-const MAX_SESSIONS: usize = 16;
+pub const MAX_SESSIONS: usize = 16;
 #[derive(Debug)]
 pub struct SessionMgr {
     next_sess_id: u16,
@@ -285,6 +289,10 @@ impl SessionMgr {
             sessions: Default::default(),
             next_sess_id: 1,
         }
+    }
+
+    pub fn mut_by_index(&mut self, index: usize) -> Option<&mut Session> {
+        self.sessions[index].as_mut()
     }
 
     fn get_next_sess_id(&mut self) -> u16 {
@@ -310,7 +318,7 @@ impl SessionMgr {
         self.sessions.iter().position(|x| x.is_none())
     }
 
-    fn evict_lru(&mut self) -> usize {
+    pub fn get_lru(&mut self) -> usize {
         let mut lru_index = 0;
         let mut lru_ts = SystemTime::now();
         for i in 0..MAX_SESSIONS {
@@ -324,33 +332,36 @@ impl SessionMgr {
         lru_index
     }
 
-    pub fn add<F>(
+    pub fn add(
         &mut self,
         peer_addr: std::net::SocketAddr,
         peer_nodeid: Option<u64>,
-        f: F,
-    ) -> Result<SessionHandle, Error>
-    where
-        F: FnMut(&mut Session),
-    {
+    ) -> Result<usize, Error> {
         let session = Session::new(peer_addr, peer_nodeid);
-        self.add_session(session, f)
+        self.add_session(session)
     }
 
-    pub fn add_session<F>(&mut self, session: Session, mut f: F) -> Result<SessionHandle, Error>
-    where
-        F: FnMut(&mut Session),
-    {
-        //let index = self.get_empty_slot().ok_or(Error::NoSpace)?;
-        let index = self.get_empty_slot().unwrap_or_else(|| {
-            let idx = self.evict_lru();
-            // Must be valid, so safe to unwrap
-            let evict_session = &mut self.sessions[idx].as_mut().unwrap();
-            f(evict_session);
-            idx
-        });
-        self.sessions[index] = Some(session);
-        Ok(self.get_session_handle(index))
+    /// This assumes that the higher layer has taken care of doing anything required
+    /// as per the spec before the session is erased
+    pub fn remove(&mut self, idx: usize) {
+        self.sessions[idx] = None;
+    }
+
+    /// We could have returned a SessionHandle here. But the borrow checker doesn't support
+    /// non-lexical lifetimes. This makes it harder for the caller of this function to take
+    /// action in the error return path
+    pub fn add_session(&mut self, session: Session) -> Result<usize, Error> {
+        if let Some(index) = self.get_empty_slot() {
+            self.sessions[index] = Some(session);
+            Ok(index)
+        } else {
+            Err(Error::NoSpace)
+        }
+    }
+
+    pub fn clone_session(&mut self, clone_data: &CloneData) -> Result<usize, Error> {
+        let session = Session::clone(&clone_data);
+        self.add_session(session)
     }
 
     fn _get(
@@ -391,33 +402,33 @@ impl SessionMgr {
         peer_addr: std::net::SocketAddr,
         peer_nodeid: Option<u64>,
         is_encrypted: bool,
-    ) -> Option<SessionHandle> {
+    ) -> Result<usize, Error> {
         if let Some(index) = self._get(sess_id, peer_addr, peer_nodeid, is_encrypted) {
-            Some(self.get_session_handle(index))
+            Ok(index)
         } else if sess_id == 0 && !is_encrypted {
             // We must create a new session for this case
             info!("Creating new session");
-            self.add(peer_addr, peer_nodeid, |_| {}).ok()
+            self.add(peer_addr, peer_nodeid)
         } else {
-            None
+            Err(Error::NotFound)
         }
     }
 
-    pub fn recv(&mut self, proto_rx: &mut Packet) -> Result<SessionHandle, Error> {
-        // Read unencrypted packet header
-        proto_rx.plain_decode()?;
-        let peer_nodeid = proto_rx.plain.get_src_u64();
+    pub fn recv(&mut self, proto_rx: &mut Packet) -> Result<usize, Error> {
+        if !proto_rx.is_plain_hdr_decoded()? {
+            // Read unencrypted packet header
+            proto_rx.plain_hdr_decode()?;
+        }
         // Get session
         self.get_or_add(
             proto_rx.plain.sess_id,
             proto_rx.peer,
-            peer_nodeid,
+            proto_rx.plain.get_src_u64(),
             proto_rx.plain.is_encrypted(),
         )
-        .ok_or(Error::NoSession)
     }
 
-    fn get_session_handle(&mut self, sess_idx: usize) -> SessionHandle {
+    pub fn get_session_handle(&mut self, sess_idx: usize) -> SessionHandle {
         SessionHandle {
             sess_mgr: self,
             sess_idx,
@@ -465,29 +476,30 @@ impl<'a> DerefMut for SessionHandle<'a> {
 
 #[cfg(test)]
 mod tests {
+
     use super::SessionMgr;
     use std::net::{Ipv4Addr, SocketAddr};
 
     #[test]
     fn test_next_sess_id_doesnt_reuse() {
         let mut sm = SessionMgr::new();
-        let mut sess = sm
+        let sess_idx = sm
             .add(
                 SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
                 None,
-                |_| {},
             )
             .unwrap();
+        let mut sess = sm.get_session_handle(sess_idx);
         sess.set_local_sess_id(1);
         assert_eq!(sm.get_next_sess_id(), 2);
         assert_eq!(sm.get_next_sess_id(), 3);
-        let mut sess = sm
+        let sess_idx = sm
             .add(
                 SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
                 None,
-                |_| {},
             )
             .unwrap();
+        let mut sess = sm.get_session_handle(sess_idx);
         sess.set_local_sess_id(4);
         assert_eq!(sm.get_next_sess_id(), 5);
     }
@@ -495,13 +507,13 @@ mod tests {
     #[test]
     fn test_next_sess_id_overflows() {
         let mut sm = SessionMgr::new();
-        let mut sess = sm
+        let sess_idx = sm
             .add(
                 SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
                 None,
-                |_| {},
             )
             .unwrap();
+        let mut sess = sm.get_session_handle(sess_idx);
         sess.set_local_sess_id(1);
         assert_eq!(sm.get_next_sess_id(), 2);
         sm.next_sess_id = 65534;

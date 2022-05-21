@@ -58,7 +58,7 @@ pub fn im_engine(action: OpCode, data_in: &[u8], data_out: &mut [u8]) -> (DataMo
     let mut exch: Exchange = Default::default();
     exch.acquire();
     let mut sess_mgr: SessionMgr = Default::default();
-    let sess = sess_mgr
+    let sess_idx = sess_mgr
         .get_or_add(
             0,
             SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 5542),
@@ -66,6 +66,7 @@ pub fn im_engine(action: OpCode, data_in: &[u8], data_out: &mut [u8]) -> (DataMo
             false,
         )
         .unwrap();
+    let sess = sess_mgr.get_session_handle(sess_idx);
     let exch_ctx = ExchangeCtx {
         exch: &mut exch,
         sess,

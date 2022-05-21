@@ -1,3 +1,4 @@
+use log::error;
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Mutex,
@@ -71,9 +72,16 @@ impl BufferPool {
     }
 }
 
-pub enum Direction<'a> {
+#[derive(PartialEq)]
+enum RxState {
+    Uninit,
+    PlainDecode,
+    ProtoDecode,
+}
+
+enum Direction<'a> {
     Tx(WriteBuf<'a>),
-    Rx(ParseBuf<'a>),
+    Rx(ParseBuf<'a>, RxState),
 }
 
 pub struct Packet<'a> {
@@ -95,7 +103,7 @@ impl<'a> Packet<'a> {
             proto: Default::default(),
             buffer_index,
             peer: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 8080),
-            data: Direction::Rx(ParseBuf::new(buffer, buf_len)),
+            data: Direction::Rx(ParseBuf::new(buffer, buf_len), RxState::Uninit),
         })
     }
 
@@ -120,13 +128,13 @@ impl<'a> Packet<'a> {
 
     pub fn as_borrow_slice(&mut self) -> &mut [u8] {
         match &mut self.data {
-            Direction::Rx(pb) => (pb.as_borrow_slice()),
+            Direction::Rx(pb, _) => (pb.as_borrow_slice()),
             Direction::Tx(wb) => (wb.as_mut_slice()),
         }
     }
 
     pub fn get_parsebuf(&mut self) -> Result<&mut ParseBuf<'a>, Error> {
-        if let Direction::Rx(pbuf) = &mut self.data {
+        if let Direction::Rx(pbuf, _) = &mut self.data {
             Ok(pbuf)
         } else {
             Err(Error::Invalid)
@@ -171,17 +179,41 @@ impl<'a> Packet<'a> {
 
     pub fn proto_decode(&mut self, peer_nodeid: u64, dec_key: Option<&[u8]>) -> Result<(), Error> {
         match &mut self.data {
-            Direction::Rx(pb) => {
-                self.proto
-                    .decrypt_and_decode(&self.plain, pb, peer_nodeid, dec_key)
+            Direction::Rx(pb, state) => {
+                if *state == RxState::PlainDecode {
+                    *state = RxState::ProtoDecode;
+                    self.proto
+                        .decrypt_and_decode(&self.plain, pb, peer_nodeid, dec_key)
+                } else {
+                    error!("Invalid state for proto_decode");
+                    Err(Error::InvalidState)
+                }
             }
             _ => Err(Error::InvalidState),
         }
     }
 
-    pub fn plain_decode(&mut self) -> Result<(), Error> {
+    pub fn is_plain_hdr_decoded(&self) -> Result<bool, Error> {
+        match &self.data {
+            Direction::Rx(_, state) => match state {
+                RxState::Uninit => Ok(false),
+                _ => Ok(true),
+            },
+            _ => Err(Error::InvalidState),
+        }
+    }
+
+    pub fn plain_hdr_decode(&mut self) -> Result<(), Error> {
         match &mut self.data {
-            Direction::Rx(pb) => self.plain.decode(pb),
+            Direction::Rx(pb, state) => {
+                if *state == RxState::Uninit {
+                    *state = RxState::PlainDecode;
+                    self.plain.decode(pb)
+                } else {
+                    error!("Invalid state for plain_decode");
+                    Err(Error::InvalidState)
+                }
+            }
             _ => Err(Error::InvalidState),
         }
     }

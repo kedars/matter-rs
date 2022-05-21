@@ -1,12 +1,16 @@
+use boxslab::Slab;
 use colored::*;
 use log::{error, info, trace};
 use std::fmt;
 use std::{any::Any, ops::DerefMut};
 
 use crate::error::Error;
+use crate::secure_channel;
 
 use heapless::LinearMap;
 
+use super::packet::PacketPool;
+use super::session::CloneData;
 use super::{
     mrp::ReliableMessage,
     packet::Packet,
@@ -229,17 +233,30 @@ impl ExchangeMgr {
     }
     pub fn get(
         &mut self,
-        sess_id: u16,
+        local_sess_id: u16,
         id: u16,
         role: ExchangeRole,
         create_new: bool,
     ) -> Result<&mut Exchange, Error> {
-        ExchangeMgr::_get(&mut self.exchanges, sess_id, id, role, create_new)
+        ExchangeMgr::_get(&mut self.exchanges, local_sess_id, id, role, create_new)
     }
 
     pub fn recv(&mut self, proto_rx: &mut Packet) -> Result<ExchangeCtx, Error> {
         // Get the session
-        let mut session = self.sess_mgr.recv(proto_rx)?;
+        let s = match self.sess_mgr.recv(proto_rx) {
+            Ok(s) => s,
+            Err(Error::NoSpace) => {
+                let evict_index = self.sess_mgr.get_lru();
+                self.evict_session(evict_index)?;
+                info!("Reattempting session creation");
+                self.sess_mgr.recv(proto_rx)?
+            }
+            Err(e) => {
+                return Err(e);
+            }
+        };
+
+        let mut session = self.sess_mgr.get_session_handle(s);
 
         // Decrypt the message
         session.recv(proto_rx)?;
@@ -293,6 +310,71 @@ impl ExchangeMgr {
             }
         }
     }
+
+    pub fn evict_session(&mut self, index: usize) -> Result<(), Error> {
+        info!("Sessions full, vacating session with index: {}", index);
+        // If we enter here, we have an LRU session that needs to be reclaimed
+        // As per the spec, we need to send a CLOSE here
+
+        let session = self.sess_mgr.mut_by_index(index).ok_or(Error::Invalid)?;
+        let mut tx = Slab::<PacketPool>::new(Packet::new_tx()?).ok_or(Error::NoSpace)?;
+        secure_channel::common::create_sc_status_report(
+            &mut tx,
+            secure_channel::common::SCStatusCodes::CloseSession,
+            None,
+        )?;
+
+        let sess_id = session.get_local_sess_id();
+
+        if let Some((_, exchange)) =
+            self.exchanges
+                .iter_mut()
+                .find(|(_, e)| if e.sess_id == sess_id { true } else { false })
+        {
+            // Send Close_session on this exchange, and then close the session
+            // Should this be done for all exchanges?
+            error!("Sending Close Session");
+            exchange.send(&mut tx, session)?;
+            // TODO: This wouldn't actually send it out, because 'transport' isn't owned yet.
+        }
+
+        let remove_exchanges: Vec<u16> = self
+            .exchanges
+            .iter()
+            .filter_map(|(eid, e)| {
+                if e.sess_id == sess_id {
+                    Some(*eid)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        info!(
+            "Terminating the following exchanges: {:?}",
+            remove_exchanges
+        );
+        for exch_id in remove_exchanges {
+            // Remove from exchange list
+            self.exchanges.remove(&exch_id);
+        }
+        self.sess_mgr.remove(index);
+        Ok(())
+    }
+
+    pub fn add_session(&mut self, clone_data: CloneData) -> Result<SessionHandle, Error> {
+        let sess_idx = match self.sess_mgr.clone_session(&clone_data) {
+            Ok(idx) => idx,
+            Err(Error::NoSpace) => {
+                let evict_index = self.sess_mgr.get_lru();
+                self.evict_session(evict_index)?;
+                self.sess_mgr.clone_session(&clone_data)?
+            }
+            Err(e) => {
+                return Err(e);
+            }
+        };
+        Ok(self.sess_mgr.get_session_handle(sess_idx))
+    }
 }
 
 impl fmt::Display for ExchangeMgr {
@@ -309,7 +391,12 @@ impl fmt::Display for ExchangeMgr {
 
 #[cfg(test)]
 mod tests {
-    use crate::transport::session::SessionMgr;
+    use std::net::{Ipv4Addr, SocketAddr};
+
+    use crate::{
+        error::Error,
+        transport::session::{CloneData, SessionMgr, SessionMode, MAX_SESSIONS},
+    };
 
     use super::{ExchangeMgr, ExchangeRole};
 
@@ -348,5 +435,98 @@ mod tests {
         e2.release();
         mgr.purge();
         assert_eq!(mgr.get_with_id(3).is_some(), false);
+    }
+
+    fn get_clone_data(peer_sess_id: u16, local_sess_id: u16) -> CloneData {
+        CloneData::new(
+            12341234,
+            43211234,
+            peer_sess_id,
+            local_sess_id,
+            SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::new(10, 0, 10, 1)), 8080),
+            SessionMode::Pase,
+        )
+    }
+
+    fn fill_sessions(mgr: &mut ExchangeMgr, count: usize) {
+        let mut local_sess_id = 1;
+        let mut peer_sess_id = 100;
+        for _ in 1..count {
+            let clone_data = get_clone_data(peer_sess_id, local_sess_id);
+            match mgr.add_session(clone_data) {
+                Ok(s) => (assert_eq!(peer_sess_id, s.get_peer_sess_id())),
+                Err(Error::NoSpace) => break,
+                _ => {
+                    panic!("Couldn't, create session");
+                }
+            }
+            local_sess_id += 1;
+            peer_sess_id += 1;
+        }
+    }
+
+    #[test]
+    /// We purposefuly overflow the sessions
+    /// and when the overflow happens, we confirm that
+    /// - The sessions are evicted in LRU
+    /// - The exchanges associated with those sessions are evicted too
+    fn test_sess_evict() {
+        let sess_mgr = SessionMgr::new();
+        let mut mgr = ExchangeMgr::new(sess_mgr);
+
+        fill_sessions(&mut mgr, MAX_SESSIONS + 1);
+        // Sessions are now full from local session id 1 to 16
+
+        // Create exchanges for sessions 2 and 3
+        //   Exchange IDs are 20 and 30 respectively
+        let _ = mgr.get(2, 20, ExchangeRole::Responder, true).unwrap();
+        let _ = mgr.get(3, 30, ExchangeRole::Responder, true).unwrap();
+
+        // Confirm that session ids 1 to MAX_SESSIONS exists
+        for i in 1..(MAX_SESSIONS + 1) {
+            assert_eq!(mgr.sess_mgr.get_with_id(i as u16).is_none(), false);
+        }
+        // Confirm that the exchanges are around
+        assert_eq!(mgr.get_with_id(20).is_none(), false);
+        assert_eq!(mgr.get_with_id(30).is_none(), false);
+
+        let mut old_local_sess_id = 1;
+        let mut new_local_sess_id = 100;
+        let mut new_peer_sess_id = 200;
+
+        for i in 1..(MAX_SESSIONS + 1) {
+            // Now purposefully overflow the sessions by adding another session
+            let session = mgr
+                .add_session(get_clone_data(new_peer_sess_id, new_local_sess_id))
+                .unwrap();
+            assert_eq!(session.get_peer_sess_id(), new_peer_sess_id);
+
+            // This should have evicted session with local sess_id
+            assert_eq!(mgr.sess_mgr.get_with_id(old_local_sess_id).is_none(), true);
+
+            new_local_sess_id += 1;
+            new_peer_sess_id += 1;
+            old_local_sess_id += 1;
+
+            match i {
+                1 => {
+                    // Both exchanges should exist
+                    assert_eq!(mgr.get_with_id(20).is_none(), false);
+                    assert_eq!(mgr.get_with_id(30).is_none(), false);
+                }
+                2 => {
+                    // Exchange 20 would have been evicted
+                    assert_eq!(mgr.get_with_id(20).is_none(), true);
+                    assert_eq!(mgr.get_with_id(30).is_none(), false);
+                }
+                3 => {
+                    // Exchange 20 and 30 would have been evicted
+                    assert_eq!(mgr.get_with_id(20).is_none(), true);
+                    assert_eq!(mgr.get_with_id(30).is_none(), true);
+                }
+                _ => {}
+            }
+        }
+        //        println!("Session mgr {}", mgr.sess_mgr);
     }
 }

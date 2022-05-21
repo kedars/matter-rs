@@ -148,7 +148,14 @@ impl PAKE {
             let data = sd.spake2p.get_app_data();
             let peer_sessid: u16 = (data & 0xff) as u16;
             let local_sessid: u16 = ((data >> 16) & 0xff) as u16;
-            let mut clone_data = CloneData::new(0, 0, peer_sessid, local_sessid, SessionMode::Pase);
+            let mut clone_data = CloneData::new(
+                0,
+                0,
+                peer_sessid,
+                local_sessid,
+                ctx.exch_ctx.sess.get_peer_addr(),
+                SessionMode::Pase,
+            );
             clone_data.dec_key.copy_from_slice(&session_keys[0..16]);
             clone_data.enc_key.copy_from_slice(&session_keys[16..32]);
             clone_data
@@ -156,7 +163,7 @@ impl PAKE {
                 .copy_from_slice(&session_keys[32..48]);
 
             // Queue a transport mgr request to add a new session
-            WorkQ::get()?.sync_send(Msg::NewSession(ctx.exch_ctx.sess.clone(&clone_data)))?;
+            WorkQ::get()?.sync_send(Msg::NewSession(clone_data))?;
         }
 
         create_sc_status_report(&mut ctx.tx, status_code, None)?;

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 
 use log::{error, trace};
 use owning_ref::RwLockReadGuardRef;
@@ -139,10 +139,11 @@ impl Case {
             fabric.ipk.op_key(),
             fabric.get_node_id(),
             initiator_noc.get_node_id()?,
+            ctx.exch_ctx.sess.get_peer_addr(),
             &case_session,
         )?;
         // Queue a transport mgr request to add a new session
-        WorkQ::get()?.sync_send(Msg::NewSession(ctx.exch_ctx.sess.clone(&clone_data)))?;
+        WorkQ::get()?.sync_send(Msg::NewSession(clone_data))?;
 
         common::create_sc_status_report(
             &mut ctx.tx,
@@ -255,6 +256,7 @@ impl Case {
         ipk: &[u8],
         local_nodeid: u64,
         peer_nodeid: u64,
+        peer_addr: SocketAddr,
         case_session: &CaseSession,
     ) -> Result<CloneData, Error> {
         let mut session_keys = [0_u8; 3 * crypto::SYMM_KEY_LEN_BYTES];
@@ -270,6 +272,7 @@ impl Case {
             peer_nodeid,
             case_session.peer_sessid,
             case_session.local_sessid,
+            peer_addr,
             SessionMode::Case(case_session.local_fabric_idx as u8),
         );
 

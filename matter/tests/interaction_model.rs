@@ -83,7 +83,7 @@ fn handle_data(action: OpCode, data_in: &[u8], data_out: &mut [u8]) -> (DataMode
     let mut interaction_model = InteractionModel::new(Box::new(data_model.clone()));
     let mut exch: Exchange = Default::default();
     let mut sess_mgr: SessionMgr = Default::default();
-    let sess = sess_mgr
+    let sess_idx = sess_mgr
         .get_or_add(
             0,
             SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 5542),
@@ -91,6 +91,7 @@ fn handle_data(action: OpCode, data_in: &[u8], data_out: &mut [u8]) -> (DataMode
             false,
         )
         .unwrap();
+    let sess = sess_mgr.get_session_handle(sess_idx);
     let exch_ctx = ExchangeCtx {
         exch: &mut exch,
         sess,
