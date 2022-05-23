@@ -80,6 +80,7 @@ pub fn im_engine(action: OpCode, data_in: &[u8], data_out: &mut [u8]) -> (DataMo
     let in_data_len = data_in.len();
     let rx_buf = rx.as_borrow_slice();
     rx_buf[..in_data_len].copy_from_slice(data_in);
+    rx.get_parsebuf().unwrap().set_len(in_data_len);
 
     let mut ctx = ProtoCtx::new(exch_ctx, rx, tx);
     interaction_model.handle_proto_id(&mut ctx).unwrap();

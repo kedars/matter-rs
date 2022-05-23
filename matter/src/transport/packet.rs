@@ -1,4 +1,4 @@
-use log::error;
+use log::{error, trace};
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Mutex,
@@ -42,13 +42,13 @@ impl BufferPool {
     }
 
     pub fn alloc() -> Option<(usize, &'static mut Buffer)> {
-        println!("Buffer Alloc called\n");
+        trace!("Buffer Alloc called\n");
 
         let mut pool = BufferPool::get().lock().unwrap();
         for i in 0..MAX_POOL_SIZE {
-            print!("{} ", pool.buffers[i].is_some());
+            trace!("{} ", pool.buffers[i].is_some());
         }
-        println!("");
+        trace!("");
         for i in 0..MAX_POOL_SIZE {
             if pool.buffers[i].is_none() {
                 pool.buffers[i] = Some([0; MAX_RX_BUF_SIZE]);
@@ -64,7 +64,7 @@ impl BufferPool {
     }
 
     pub fn free(index: usize) {
-        println!("Buffer Free called\n");
+        trace!("Buffer Free called\n");
         let mut pool = BufferPool::get().lock().unwrap();
         if pool.buffers[index].is_some() {
             pool.buffers[index] = None;
@@ -222,7 +222,7 @@ impl<'a> Packet<'a> {
 impl<'a> Drop for Packet<'a> {
     fn drop(&mut self) {
         BufferPool::free(self.buffer_index);
-        println!("Dropping Packet......");
+        trace!("Dropping Packet......");
     }
 }
 

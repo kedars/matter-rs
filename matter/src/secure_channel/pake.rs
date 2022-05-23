@@ -146,8 +146,8 @@ impl PAKE {
 
             // Create a session
             let data = sd.spake2p.get_app_data();
-            let peer_sessid: u16 = (data & 0xff) as u16;
-            let local_sessid: u16 = ((data >> 16) & 0xff) as u16;
+            let peer_sessid: u16 = (data & 0xffff) as u16;
+            let local_sessid: u16 = ((data >> 16) & 0xffff) as u16;
             let mut clone_data = CloneData::new(
                 0,
                 0,
@@ -291,7 +291,7 @@ fn extract_pasepake_1_or_3_params(buf: &[u8]) -> Result<&[u8], Error> {
 #[tlvargs(lifetime = "'a", start = 1)]
 struct PBKDFParamReq<'a> {
     initiator_random: OctetStr<'a>,
-    initiator_ssid: u8,
-    passcode_id: u8,
+    initiator_ssid: u16,
+    passcode_id: u16,
     has_params: bool,
 }

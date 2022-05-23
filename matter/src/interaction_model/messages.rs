@@ -67,11 +67,10 @@ pub mod msg {
     #[tlvargs(lifetime = "'a")]
     pub struct ReadReq<'a> {
         pub attr_requests: Option<TLVArray<'a, AttrPath>>,
-        // Placeholder
-        pub dataver_filters: Option<TLVArray<'a, bool>>,
         event_requests: Option<bool>,
         event_filters: Option<bool>,
         pub fabric_filtered: bool,
+        pub dataver_filters: Option<TLVArray<'a, bool>>,
     }
 
     impl<'a> ReadReq<'a> {

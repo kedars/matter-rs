@@ -556,7 +556,10 @@ impl<'a> TLVListIterator<'a> {
         }
         let mut size = VALUE_SIZE_MAP[element_type as usize];
         if size > self.left {
-            error!("Invalid value found: {}", element_type);
+            error!(
+                "Invalid value found: {} self {:?} size {}",
+                element_type, self, size
+            );
             return None;
         }
 
