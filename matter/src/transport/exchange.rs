@@ -30,14 +30,26 @@ impl<'a> ExchangeCtx<'a> {
 }
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub enum ExchangeRole {
+pub enum Role {
     Initiator = 0,
     Responder = 1,
 }
 
-impl Default for ExchangeRole {
+impl Default for Role {
     fn default() -> Self {
-        ExchangeRole::Initiator
+        Role::Initiator
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum State {
+    Open,
+    Close,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        State::Open
     }
 }
 
@@ -45,11 +57,8 @@ impl Default for ExchangeRole {
 pub struct Exchange {
     id: u16,
     sess_id: u16,
-    role: ExchangeRole,
-    // The number of users currently using this exchange. This will go away when
-    // we start using Arc/Rc and the Exchange object itself is dynamically allocated
-    // But, maybe that never happens
-    user_cnt: u8,
+    role: Role,
+    state: State,
     // Currently I see this primarily used in PASE and CASE. If that is the limited use
     // of this, we might move this into a separate data structure, so as not to burden
     // all 'exchanges'.
@@ -58,12 +67,12 @@ pub struct Exchange {
 }
 
 impl Exchange {
-    pub fn new(id: u16, sess_id: u16, role: ExchangeRole) -> Exchange {
+    pub fn new(id: u16, sess_id: u16, role: Role) -> Exchange {
         Exchange {
             id,
             sess_id,
             role,
-            user_cnt: 1,
+            state: State::Open,
             data: None,
             mrp: ReliableMessage::new(),
         }
@@ -71,29 +80,23 @@ impl Exchange {
 
     pub fn close(&mut self) {
         self.data = None;
-        self.release();
+        self.state = State::Close;
     }
 
-    pub fn acquire(&mut self) {
-        self.user_cnt += 1;
-    }
-
-    pub fn release(&mut self) {
-        self.user_cnt -= 1;
-        // Even if we get to a zero reference count, because the memory is static,
-        // an exchange manager purge call is required to clean us up
+    pub fn is_state_open(&self) -> bool {
+        self.state == State::Open
     }
 
     pub fn is_purgeable(&self) -> bool {
         // No Users, No pending ACKs/Retrans
-        self.user_cnt == 0 && self.mrp.is_empty()
+        self.state == State::Close && self.mrp.is_empty()
     }
 
     pub fn get_id(&self) -> u16 {
         self.id
     }
 
-    pub fn get_role(&self) -> ExchangeRole {
+    pub fn get_role(&self) -> Role {
         self.role
     }
 
@@ -127,7 +130,7 @@ impl Exchange {
             return Err(Error::InvalidState);
         }
         proto_tx.proto.exch_id = self.id;
-        if self.role == ExchangeRole::Initiator {
+        if self.role == Role::Initiator {
             proto_tx.proto.set_initiator();
         }
 
@@ -141,25 +144,25 @@ impl fmt::Display for Exchange {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "exch_id: {:?}, sess_id: {}, role: {:?}, data: {:?}, use_cnt: {} mrp: {:?}",
-            self.id, self.sess_id, self.role, self.data, self.user_cnt, self.mrp,
+            "exch_id: {:?}, sess_id: {}, role: {:?}, data: {:?}, mrp: {:?}, state: {:?}",
+            self.id, self.sess_id, self.role, self.data, self.mrp, self.state
         )
     }
 }
 
-pub fn get_role(is_initiator: bool) -> ExchangeRole {
+pub fn get_role(is_initiator: bool) -> Role {
     if is_initiator {
-        ExchangeRole::Initiator
+        Role::Initiator
     } else {
-        ExchangeRole::Responder
+        Role::Responder
     }
 }
 
-pub fn get_complementary_role(is_initiator: bool) -> ExchangeRole {
+pub fn get_complementary_role(is_initiator: bool) -> Role {
     if is_initiator {
-        ExchangeRole::Responder
+        Role::Responder
     } else {
-        ExchangeRole::Initiator
+        Role::Initiator
     }
 }
 
@@ -197,11 +200,11 @@ impl ExchangeMgr {
         ExchangeMgr::_get_with_id(&mut self.exchanges, exch_id)
     }
 
-    pub fn _get(
+    fn _get(
         exchanges: &mut LinearMap<u16, Exchange, MAX_EXCHANGES>,
         sess_id: u16,
         id: u16,
-        role: ExchangeRole,
+        role: Role,
         create_new: bool,
     ) -> Result<&mut Exchange, Error> {
         // I don't prefer that we scan the list twice here (once for contains_key and other)
@@ -231,16 +234,8 @@ impl ExchangeMgr {
             Err(Error::NoSpace)
         }
     }
-    pub fn get(
-        &mut self,
-        local_sess_id: u16,
-        id: u16,
-        role: ExchangeRole,
-        create_new: bool,
-    ) -> Result<&mut Exchange, Error> {
-        ExchangeMgr::_get(&mut self.exchanges, local_sess_id, id, role, create_new)
-    }
 
+    /// The Exchange Mgr receive is like a big processing function
     pub fn recv(&mut self, proto_rx: &mut Packet) -> Result<ExchangeCtx, Error> {
         // Get the session
         let s = match self.sess_mgr.recv(proto_rx) {
@@ -274,10 +269,14 @@ impl ExchangeMgr {
         // Message Reliability Protocol
         exch.mrp.recv(&proto_rx)?;
 
-        Ok(ExchangeCtx {
-            exch,
-            sess: session,
-        })
+        if exch.is_state_open() {
+            Ok(ExchangeCtx {
+                exch,
+                sess: session,
+            })
+        } else {
+            Err(Error::NoExchange)
+        }
     }
 
     pub fn send(&mut self, exch_id: u16, proto_tx: &mut Packet) -> Result<(), Error> {
@@ -398,43 +397,37 @@ mod tests {
         transport::session::{CloneData, SessionMgr, SessionMode, MAX_SESSIONS},
     };
 
-    use super::{ExchangeMgr, ExchangeRole};
+    use super::{ExchangeMgr, Role};
 
     #[test]
     fn test_purge() {
         let sess_mgr = SessionMgr::new();
         let mut mgr = ExchangeMgr::new(sess_mgr);
-        let _ = mgr.get(1, 2, ExchangeRole::Responder, true).unwrap();
-        let _ = mgr.get(1, 3, ExchangeRole::Responder, true).unwrap();
+        let _ = ExchangeMgr::_get(&mut mgr.exchanges, 1, 2, Role::Responder, true).unwrap();
+        let _ = ExchangeMgr::_get(&mut mgr.exchanges, 1, 3, Role::Responder, true).unwrap();
 
         mgr.purge();
-        assert_eq!(mgr.get_with_id(2).is_some(), true);
-        assert_eq!(mgr.get_with_id(3).is_some(), true);
+        assert_eq!(
+            ExchangeMgr::_get(&mut mgr.exchanges, 1, 2, Role::Responder, false).is_ok(),
+            true
+        );
+        assert_eq!(
+            ExchangeMgr::_get(&mut mgr.exchanges, 1, 3, Role::Responder, false).is_ok(),
+            true
+        );
 
-        // Release e1
-        let e1 = mgr.get_with_id(2).unwrap();
-        e1.release();
+        // Close e1
+        let e1 = ExchangeMgr::_get(&mut mgr.exchanges, 1, 2, Role::Responder, false).unwrap();
+        e1.close();
         mgr.purge();
-        assert_eq!(mgr.get_with_id(2).is_some(), false);
-        assert_eq!(mgr.get_with_id(3).is_some(), true);
-
-        // Acquire e2
-        let e2 = mgr.get_with_id(3).unwrap();
-        e2.acquire();
-        mgr.purge();
-        assert_eq!(mgr.get_with_id(3).is_some(), true);
-
-        // Release e2 once
-        let e2 = mgr.get_with_id(3).unwrap();
-        e2.release();
-        mgr.purge();
-        assert_eq!(mgr.get_with_id(3).is_some(), true);
-
-        // Release e2 again
-        let e2 = mgr.get_with_id(3).unwrap();
-        e2.release();
-        mgr.purge();
-        assert_eq!(mgr.get_with_id(3).is_some(), false);
+        assert_eq!(
+            ExchangeMgr::_get(&mut mgr.exchanges, 1, 2, Role::Responder, false).is_ok(),
+            false
+        );
+        assert_eq!(
+            ExchangeMgr::_get(&mut mgr.exchanges, 1, 3, Role::Responder, false).is_ok(),
+            true
+        );
     }
 
     fn get_clone_data(peer_sess_id: u16, local_sess_id: u16) -> CloneData {
@@ -479,8 +472,8 @@ mod tests {
 
         // Create exchanges for sessions 2 and 3
         //   Exchange IDs are 20 and 30 respectively
-        let _ = mgr.get(2, 20, ExchangeRole::Responder, true).unwrap();
-        let _ = mgr.get(3, 30, ExchangeRole::Responder, true).unwrap();
+        let _ = ExchangeMgr::_get(&mut mgr.exchanges, 2, 20, Role::Responder, true).unwrap();
+        let _ = ExchangeMgr::_get(&mut mgr.exchanges, 3, 30, Role::Responder, true).unwrap();
 
         // Confirm that session ids 1 to MAX_SESSIONS exists
         for i in 1..(MAX_SESSIONS + 1) {

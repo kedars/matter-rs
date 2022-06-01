@@ -14,7 +14,7 @@ use matter::{
     transport::packet::Packet,
     transport::proto_demux::HandleProto,
     transport::{
-        exchange::{Exchange, ExchangeCtx},
+        exchange::{self, Exchange, ExchangeCtx},
         packet::PacketPool,
         proto_demux::ProtoCtx,
         session::SessionMgr,
@@ -55,8 +55,8 @@ pub fn im_engine(action: OpCode, data_in: &[u8], data_out: &mut [u8]) -> (DataMo
     }
 
     let mut interaction_model = Box::new(InteractionModel::new(Box::new(data_model.clone())));
-    let mut exch: Exchange = Default::default();
-    exch.acquire();
+    let mut exch = Exchange::new(1, 0, exchange::Role::Responder);
+
     let mut sess_mgr: SessionMgr = Default::default();
     let sess_idx = sess_mgr
         .get_or_add(
