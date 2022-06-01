@@ -9,6 +9,7 @@ use crate::transport::mrp::ReliableMessage;
 use crate::transport::packet::PacketPool;
 use crate::transport::{
     exchange::{self, ExchangeCtx},
+    network::NetworkInterface,
     packet::Packet,
     proto_demux::{self},
     queue,

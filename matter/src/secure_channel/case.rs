@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::sync::Arc;
 
 use log::{error, trace};
 use owning_ref::RwLockReadGuardRef;
@@ -13,6 +13,7 @@ use crate::{
     secure_channel::common::SCStatusCodes,
     tlv::{get_root_node_struct, FromTLV, OctetStr, TLVElement, TLVWriter, TagType},
     transport::{
+        network::Address,
         proto_demux::ProtoCtx,
         queue::{Msg, WorkQ},
         session::{CloneData, SessionMode},
@@ -256,7 +257,7 @@ impl Case {
         ipk: &[u8],
         local_nodeid: u64,
         peer_nodeid: u64,
-        peer_addr: SocketAddr,
+        peer_addr: Address,
         case_session: &CaseSession,
     ) -> Result<CloneData, Error> {
         let mut session_keys = [0_u8; 3 * crypto::SYMM_KEY_LEN_BYTES];

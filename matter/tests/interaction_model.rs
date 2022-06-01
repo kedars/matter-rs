@@ -10,12 +10,12 @@ use matter::interaction_model::Transaction;
 use matter::tlv::{TLVElement, TLVWriter};
 use matter::transport::exchange::Exchange;
 use matter::transport::exchange::ExchangeCtx;
+use matter::transport::network::Address;
 use matter::transport::packet::Packet;
 use matter::transport::packet::PacketPool;
 use matter::transport::proto_demux::HandleProto;
 use matter::transport::proto_demux::ProtoCtx;
 use matter::transport::session::SessionMgr;
-use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -86,7 +86,10 @@ fn handle_data(action: OpCode, data_in: &[u8], data_out: &mut [u8]) -> (DataMode
     let sess_idx = sess_mgr
         .get_or_add(
             0,
-            SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 5542),
+            Address::Udp(SocketAddr::new(
+                std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+                5542,
+            )),
             None,
             false,
         )
@@ -101,7 +104,7 @@ fn handle_data(action: OpCode, data_in: &[u8], data_out: &mut [u8]) -> (DataMode
     // Create fake rx packet
     rx.set_proto_id(0x01);
     rx.set_proto_opcode(action as u8);
-    rx.peer = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+    rx.peer = Address::default();
     let in_data_len = data_in.len();
     let rx_buf = rx.as_borrow_slice();
     rx_buf[..in_data_len].copy_from_slice(data_in);

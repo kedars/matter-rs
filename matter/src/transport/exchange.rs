@@ -390,11 +390,13 @@ impl fmt::Display for ExchangeMgr {
 
 #[cfg(test)]
 mod tests {
-    use std::net::{Ipv4Addr, SocketAddr};
 
     use crate::{
         error::Error,
-        transport::session::{CloneData, SessionMgr, SessionMode, MAX_SESSIONS},
+        transport::{
+            network::Address,
+            session::{CloneData, SessionMgr, SessionMode, MAX_SESSIONS},
+        },
     };
 
     use super::{ExchangeMgr, Role};
@@ -436,7 +438,7 @@ mod tests {
             43211234,
             peer_sess_id,
             local_sess_id,
-            SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::new(10, 0, 10, 1)), 8080),
+            Address::default(),
             SessionMode::Pase,
         )
     }

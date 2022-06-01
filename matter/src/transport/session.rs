@@ -1,7 +1,6 @@
 use core::fmt;
 use std::{
     any::Any,
-    net::SocketAddr,
     ops::{Deref, DerefMut},
     time::SystemTime,
 };
@@ -14,7 +13,7 @@ use crate::{
 use log::{info, trace};
 use rand::Rng;
 
-use super::packet::Packet;
+use super::{network::Address, packet::Packet};
 
 const MATTER_AES128_KEY_SIZE: usize = 16;
 
@@ -34,7 +33,7 @@ impl Default for SessionMode {
 
 #[derive(Debug)]
 pub struct Session {
-    peer_addr: std::net::SocketAddr,
+    peer_addr: Address,
     local_nodeid: u64,
     peer_nodeid: Option<u64>,
     // I find the session initiator/responder role getting confused with exchange initiator/responder
@@ -59,7 +58,7 @@ pub struct CloneData {
     peer_sess_id: u16,
     local_nodeid: u64,
     peer_nodeid: u64,
-    peer_addr: SocketAddr,
+    peer_addr: Address,
     mode: SessionMode,
 }
 impl CloneData {
@@ -68,7 +67,7 @@ impl CloneData {
         peer_nodeid: u64,
         peer_sess_id: u16,
         local_sess_id: u16,
-        peer_addr: SocketAddr,
+        peer_addr: Address,
         mode: SessionMode,
     ) -> CloneData {
         CloneData {
@@ -88,7 +87,7 @@ impl CloneData {
 const MATTER_MSG_CTR_RANGE: u32 = 0x0fffffff;
 
 impl Session {
-    pub fn new(peer_addr: std::net::SocketAddr, peer_nodeid: Option<u64>) -> Session {
+    pub fn new(peer_addr: Address, peer_nodeid: Option<u64>) -> Session {
         Session {
             peer_addr,
             local_nodeid: 0,
@@ -152,7 +151,7 @@ impl Session {
         self.peer_sess_id
     }
 
-    pub fn get_peer_addr(&self) -> SocketAddr {
+    pub fn get_peer_addr(&self) -> Address {
         self.peer_addr
     }
 
@@ -332,11 +331,7 @@ impl SessionMgr {
         lru_index
     }
 
-    pub fn add(
-        &mut self,
-        peer_addr: std::net::SocketAddr,
-        peer_nodeid: Option<u64>,
-    ) -> Result<usize, Error> {
+    pub fn add(&mut self, peer_addr: Address, peer_nodeid: Option<u64>) -> Result<usize, Error> {
         let session = Session::new(peer_addr, peer_nodeid);
         self.add_session(session)
     }
@@ -367,7 +362,7 @@ impl SessionMgr {
     fn _get(
         &self,
         sess_id: u16,
-        peer_addr: std::net::SocketAddr,
+        peer_addr: Address,
         peer_nodeid: Option<u64>,
         is_encrypted: bool,
     ) -> Option<usize> {
@@ -399,7 +394,7 @@ impl SessionMgr {
     pub fn get_or_add(
         &mut self,
         sess_id: u16,
-        peer_addr: std::net::SocketAddr,
+        peer_addr: Address,
         peer_nodeid: Option<u64>,
         is_encrypted: bool,
     ) -> Result<usize, Error> {
@@ -477,28 +472,19 @@ impl<'a> DerefMut for SessionHandle<'a> {
 #[cfg(test)]
 mod tests {
 
+    use crate::transport::network::Address;
+
     use super::SessionMgr;
-    use std::net::{Ipv4Addr, SocketAddr};
 
     #[test]
     fn test_next_sess_id_doesnt_reuse() {
         let mut sm = SessionMgr::new();
-        let sess_idx = sm
-            .add(
-                SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
-                None,
-            )
-            .unwrap();
+        let sess_idx = sm.add(Address::default(), None).unwrap();
         let mut sess = sm.get_session_handle(sess_idx);
         sess.set_local_sess_id(1);
         assert_eq!(sm.get_next_sess_id(), 2);
         assert_eq!(sm.get_next_sess_id(), 3);
-        let sess_idx = sm
-            .add(
-                SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
-                None,
-            )
-            .unwrap();
+        let sess_idx = sm.add(Address::default(), None).unwrap();
         let mut sess = sm.get_session_handle(sess_idx);
         sess.set_local_sess_id(4);
         assert_eq!(sm.get_next_sess_id(), 5);
@@ -507,12 +493,7 @@ mod tests {
     #[test]
     fn test_next_sess_id_overflows() {
         let mut sm = SessionMgr::new();
-        let sess_idx = sm
-            .add(
-                SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
-                None,
-            )
-            .unwrap();
+        let sess_idx = sm.add(Address::default(), None).unwrap();
         let mut sess = sm.get_session_handle(sess_idx);
         sess.set_local_sess_id(1);
         assert_eq!(sm.get_next_sess_id(), 2);

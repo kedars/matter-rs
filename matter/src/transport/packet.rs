@@ -1,8 +1,5 @@
 use log::{error, trace};
-use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::Mutex,
-};
+use std::sync::Mutex;
 
 use boxslab::box_slab;
 
@@ -12,6 +9,7 @@ use crate::{
 };
 
 use super::{
+    network::Address,
     plain_hdr::{self, PlainHdr},
     proto_hdr::{self, ProtoHdr},
 };
@@ -87,7 +85,7 @@ enum Direction<'a> {
 pub struct Packet<'a> {
     pub plain: PlainHdr,
     pub proto: ProtoHdr,
-    pub peer: SocketAddr,
+    pub peer: Address,
     data: Direction<'a>,
     buffer_index: usize,
 }
@@ -102,7 +100,7 @@ impl<'a> Packet<'a> {
             plain: Default::default(),
             proto: Default::default(),
             buffer_index,
-            peer: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 8080),
+            peer: Address::default(),
             data: Direction::Rx(ParseBuf::new(buffer, buf_len), RxState::Uninit),
         })
     }
@@ -118,7 +116,7 @@ impl<'a> Packet<'a> {
             plain: Default::default(),
             proto: Default::default(),
             buffer_index,
-            peer: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 8080),
+            peer: Address::default(),
             data: Direction::Tx(wb),
         };
         // Reliability on by default

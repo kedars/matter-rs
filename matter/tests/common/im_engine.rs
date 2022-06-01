@@ -15,6 +15,7 @@ use matter::{
     transport::proto_demux::HandleProto,
     transport::{
         exchange::{self, Exchange, ExchangeCtx},
+        network::Address,
         packet::PacketPool,
         proto_demux::ProtoCtx,
         session::SessionMgr,
@@ -22,7 +23,7 @@ use matter::{
     utils::writebuf::WriteBuf,
 };
 use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr},
+    net::{Ipv4Addr, SocketAddr},
     sync::Arc,
 };
 
@@ -61,7 +62,10 @@ pub fn im_engine(action: OpCode, data_in: &[u8], data_out: &mut [u8]) -> (DataMo
     let sess_idx = sess_mgr
         .get_or_add(
             0,
-            SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 5542),
+            Address::Udp(SocketAddr::new(
+                std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+                5542,
+            )),
             None,
             false,
         )
@@ -76,7 +80,7 @@ pub fn im_engine(action: OpCode, data_in: &[u8], data_out: &mut [u8]) -> (DataMo
     // Create fake rx packet
     rx.set_proto_id(0x01);
     rx.set_proto_opcode(action as u8);
-    rx.peer = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+    rx.peer = Address::default();
     let in_data_len = data_in.len();
     let rx_buf = rx.as_borrow_slice();
     rx_buf[..in_data_len].copy_from_slice(data_in);

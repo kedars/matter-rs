@@ -1,7 +1,4 @@
-use std::{
-    net::SocketAddr,
-    time::{Duration, SystemTime},
-};
+use std::time::{Duration, SystemTime};
 
 use super::{
     common::{create_sc_status_report, SCStatusCodes},
@@ -13,6 +10,7 @@ use crate::{
     tlv::{self, get_root_node_struct, FromTLV, OctetStr, TLVElement, TLVWriter, TagType, ToTLV},
     transport::{
         exchange::ExchangeCtx,
+        network::Address,
         proto_demux::ProtoCtx,
         queue::{Msg, WorkQ},
         session::{CloneData, SessionMode},
@@ -39,7 +37,7 @@ const SPAKE2_SESSION_KEYS_INFO: [u8; 11] = *b"SessionKeys";
 struct SessionData {
     start_time: SystemTime,
     exch_id: u16,
-    peer_addr: SocketAddr,
+    peer_addr: Address,
     spake2p: Box<Spake2P>,
 }
 
