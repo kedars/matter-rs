@@ -1,6 +1,5 @@
 * udp.c:
   * Could get rid of 'smol' in here, no other processing is performed in this thread
-  * Move the 'in_buf' out of the stack to bss
 * TLVList:
   * The 'Pointer' could be directly used in the TLVListIterator, makes it common
   * Not too happy with the way iterator_consumer is done for ContainerIterator, we could just zip the internal ListIterator instead?
@@ -8,8 +7,6 @@
 * Some configurable values like number of exchanges per session, number of sessions supported etc, can be bubbled up to some configurator for this crate. I wonder how that is done.
 * About outgoing counter, is it incremented if we send mutliple acknowledgements to the same retransmitted packet? So let's say peer retransmits a packet with ctr 4, for 3 times. Our response ctr, is, say 20. Then should we respond with 20, 21, 22, or 20, 20, 20?
 * I had to use Box::new() to pin ownership for certain objects. Not yet able to use try_new() in the stable releases, and I am not a fan of APIs that panic. We should mostly look at things like heapless:pool or stuff. These objects should really be in the bss, with a single ownership.
-* Session:
-  - Some reaper thread must go through the stale sessions/exchanges and clear them off
 * It might be more efficient to avoid using .find_element() on TLVs. Earlier it was created this way because the spec mentions that the order may change, but it appears that this is unlikely, looking at the C++ implementation. If so, we could be faster, by just specifying looking for tag followed by value.
 * PASE:
   - Pick some sensible and strong values for PBKDF2{iterCnt and Salt-length} based on SoC capability
@@ -30,3 +27,14 @@
 * Cert Verification:
   - Time validation (Not Before/Not After)
   - KeyUsage flags and others are pending
+* Transport Mgr:
+  - Add plain_encode and proto_encode in Packet
+  - A new proto_tx should be created in the acks_to_send loop also, otherwise, there is a potential chance of reuse
+  - 'transport' object's ownership needs to be inside session, or in the least 'exchange'
+  - Sending 'close session' is pending on session reclamation because 'transport' object isn't owned
+  - Convert the SessionHandle to &Session? Why maintain a separate object for this?
+* Exchange:
+  - What should happen when an exchange is closed by the higher layer, our tx-retrans is pending, and we got a retrans for that exchange?
+
+	
+ 

@@ -18,6 +18,10 @@ $ cd matter
 $ RUST_LOG="matter" cargo run --example onoff_light
 ```
 
+With the chip-tool (the current tool for testing Matter) use the Ethernet commissioning mechanism:
+```
+$ chip-tool pairing ethernet 12344321 123456 0 <IP-Address> 5540
+```
 
 ## Functionality
 - Secure Channel:
