@@ -1,7 +1,7 @@
 use async_channel::Receiver;
 use boxslab::{BoxSlab, Slab};
 use heapless::LinearMap;
-use log::{debug, error, info, trace};
+use log::{debug, error, info};
 
 use crate::error::*;
 
@@ -9,20 +9,17 @@ use crate::transport::mrp::ReliableMessage;
 use crate::transport::packet::PacketPool;
 use crate::transport::{
     exchange::{self, ExchangeCtx},
-    network::NetworkInterface,
     packet::Packet,
     proto_demux::{self},
     queue,
     session::{self},
     udp::{self},
 };
-use colored::*;
 
 use super::proto_demux::ProtoCtx;
 use super::queue::Msg;
 
 pub struct Mgr {
-    transport: udp::UdpListener,
     exch_mgr: exchange::ExchangeMgr,
     proto_demux: proto_demux::ProtoDemux,
     rx_q: Receiver<Msg>,
@@ -30,10 +27,12 @@ pub struct Mgr {
 
 impl Mgr {
     pub fn new() -> Result<Mgr, Error> {
+        let mut sess_mgr = session::SessionMgr::new();
+        let udp_transport = Box::new(udp::UdpListener::new()?);
+        sess_mgr.add_network_interface(udp_transport)?;
         Ok(Mgr {
-            transport: udp::UdpListener::new()?,
             proto_demux: proto_demux::ProtoDemux::new(),
-            exch_mgr: exchange::ExchangeMgr::new(session::SessionMgr::new()),
+            exch_mgr: exchange::ExchangeMgr::new(sess_mgr),
             rx_q: queue::WorkQ::init()?,
         })
     }
@@ -47,50 +46,25 @@ impl Mgr {
     }
 
     fn recv<'a>(
-        transport: &mut udp::UdpListener,
         exch_mgr: &'a mut exchange::ExchangeMgr,
-    ) -> Result<(ExchangeCtx<'a>, BoxSlab<PacketPool>), Error> {
-        let mut rx = Slab::<PacketPool>::new(Packet::new_rx()?).ok_or(Error::PacketPoolExhaust)?;
-
-        // Read from the transport
-        let (len, src) = transport.recv(rx.as_borrow_slice())?;
-        rx.get_parsebuf()?.set_len(len);
-        rx.peer = src;
-
-        info!("{} from src: {}", "Received".blue(), src);
-        trace!("payload: {:x?}", rx.as_borrow_slice());
-
+    ) -> Result<(BoxSlab<PacketPool>, ExchangeCtx<'a>), Error> {
         // Get the exchange
-        let exch_ctx = exch_mgr.recv(&mut rx)?;
+        let (rx, exch_ctx) = exch_mgr.recv()?;
         debug!("Exchange is {:?}", exch_ctx.exch);
 
-        Ok((exch_ctx, rx))
+        Ok((rx, exch_ctx))
     }
 
-    fn send_to_exchange_id(&mut self, exch_id: u16, proto_tx: &mut Packet) -> Result<(), Error> {
-        self.exch_mgr.send(exch_id, proto_tx)?;
-        let peer = proto_tx.peer;
-        self.transport.send(proto_tx.as_borrow_slice(), peer)?;
-        Ok(())
-    }
-
-    // This function is send_to_exchange(). There will be multiple higher layer send_*() functions
-    // all of them will eventually call send_to_exchange() after creating the necessary session and exchange
-    // objects
     fn send_to_exchange(
-        transport: &udp::UdpListener,
-        exch_ctx: &mut exchange::ExchangeCtx,
-        mut proto_tx: BoxSlab<PacketPool>,
+        &mut self,
+        exch_id: u16,
+        proto_tx: BoxSlab<PacketPool>,
     ) -> Result<(), Error> {
-        exch_ctx.send(&mut proto_tx)?;
-
-        let peer = proto_tx.peer;
-        transport.send(proto_tx.as_borrow_slice(), peer)?;
-        Ok(())
+        self.exch_mgr.send(exch_id, proto_tx)
     }
 
     fn handle_rxtx(&mut self) -> Result<(), Error> {
-        let (exch_ctx, rx) = Mgr::recv(&mut self.transport, &mut self.exch_mgr).map_err(|e| {
+        let (rx, exch_ctx) = Mgr::recv(&mut self.exch_mgr).map_err(|e| {
             error!("Error in recv: {:?}", e);
             e
         })?;
@@ -112,12 +86,14 @@ impl Mgr {
         }
 
         let ProtoCtx {
-            mut exch_ctx,
+            exch_ctx,
             rx: _,
             tx,
         } = proto_ctx;
+
         // tx_ctx now contains the response payload, send the packet
-        Mgr::send_to_exchange(&self.transport, &mut exch_ctx, tx).map_err(|e| {
+        let exch_id = exch_ctx.exch.get_id();
+        self.send_to_exchange(exch_id, tx).map_err(|e| {
             error!("Error in sending msg {:?}", e);
             e
         })?;
@@ -156,22 +132,21 @@ impl Mgr {
                 continue;
             }
 
-            let mut proto_tx = match Self::new_tx() {
-                Ok(p) => p,
-                Err(e) => {
-                    error!("Error creating proto_tx {:?}", e);
-                    continue;
-                }
-            };
-
             // Handle any pending acknowledgement send
             let mut acks_to_send: LinearMap<u16, (), { exchange::MAX_MRP_ENTRIES }> =
                 LinearMap::new();
             self.exch_mgr.pending_acks(&mut acks_to_send);
             for exch_id in acks_to_send.keys() {
                 info!("Sending MRP Standalone ACK for  exch {}", exch_id);
+                let mut proto_tx = match Self::new_tx() {
+                    Ok(p) => p,
+                    Err(e) => {
+                        error!("Error creating proto_tx {:?}", e);
+                        break;
+                    }
+                };
                 ReliableMessage::prepare_ack(*exch_id, &mut proto_tx);
-                if let Err(e) = self.send_to_exchange_id(*exch_id, &mut proto_tx) {
+                if let Err(e) = self.send_to_exchange(*exch_id, proto_tx) {
                     error!("Error in sending Ack {:?}", e);
                 }
             }

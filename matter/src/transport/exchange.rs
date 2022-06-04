@@ -1,8 +1,8 @@
-use boxslab::Slab;
+use boxslab::{BoxSlab, Slab};
 use colored::*;
 use log::{error, info, trace};
+use std::any::Any;
 use std::fmt;
-use std::{any::Any, ops::DerefMut};
 
 use crate::error::Error;
 use crate::secure_channel;
@@ -11,22 +11,11 @@ use heapless::LinearMap;
 
 use super::packet::PacketPool;
 use super::session::CloneData;
-use super::{
-    mrp::ReliableMessage,
-    packet::Packet,
-    session::SessionHandle,
-    session::{Session, SessionMgr},
-};
+use super::{mrp::ReliableMessage, packet::Packet, session::SessionHandle, session::SessionMgr};
 
 pub struct ExchangeCtx<'a> {
     pub exch: &'a mut Exchange,
     pub sess: SessionHandle<'a>,
-}
-
-impl<'a> ExchangeCtx<'a> {
-    pub fn send(&mut self, proto_tx: &mut Packet) -> Result<(), Error> {
-        self.exch.send(proto_tx, self.sess.deref_mut())
-    }
 }
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -116,7 +105,11 @@ impl Exchange {
         self.data.take()?.downcast::<T>().ok()
     }
 
-    pub fn send(&mut self, proto_tx: &mut Packet, session: &mut Session) -> Result<(), Error> {
+    fn send(
+        &mut self,
+        mut proto_tx: BoxSlab<PacketPool>,
+        session: &mut SessionHandle,
+    ) -> Result<(), Error> {
         trace!("payload: {:x?}", proto_tx.as_borrow_slice());
         info!(
             "{} with proto id: {} opcode: {}",
@@ -134,8 +127,8 @@ impl Exchange {
             proto_tx.proto.set_initiator();
         }
 
-        session.pre_send(proto_tx)?;
-        self.mrp.pre_send(proto_tx)?;
+        session.pre_send(&mut proto_tx)?;
+        self.mrp.pre_send(&mut proto_tx)?;
         session.send(proto_tx)
     }
 }
@@ -236,25 +229,24 @@ impl ExchangeMgr {
     }
 
     /// The Exchange Mgr receive is like a big processing function
-    pub fn recv(&mut self, proto_rx: &mut Packet) -> Result<ExchangeCtx, Error> {
+    pub fn recv(&mut self) -> Result<(BoxSlab<PacketPool>, ExchangeCtx), Error> {
         // Get the session
-        let s = match self.sess_mgr.recv(proto_rx) {
-            Ok(s) => s,
-            Err(Error::NoSpace) => {
+        let (mut proto_rx, index) = self.sess_mgr.recv()?;
+
+        let index = match index {
+            Some(s) => s,
+            None => {
+                // The sessions were full, evict one session, and re-perform post-recv
                 let evict_index = self.sess_mgr.get_lru();
                 self.evict_session(evict_index)?;
                 info!("Reattempting session creation");
-                self.sess_mgr.recv(proto_rx)?
-            }
-            Err(e) => {
-                return Err(e);
+                self.sess_mgr.post_recv(&proto_rx)?.ok_or(Error::Invalid)?
             }
         };
-
-        let mut session = self.sess_mgr.get_session_handle(s);
+        let mut session = self.sess_mgr.get_session_handle(index);
 
         // Decrypt the message
-        session.recv(proto_rx)?;
+        session.recv(&mut proto_rx)?;
 
         // Get the exchange
         let exch = ExchangeMgr::_get(
@@ -270,16 +262,19 @@ impl ExchangeMgr {
         exch.mrp.recv(&proto_rx)?;
 
         if exch.is_state_open() {
-            Ok(ExchangeCtx {
-                exch,
-                sess: session,
-            })
+            Ok((
+                proto_rx,
+                ExchangeCtx {
+                    exch,
+                    sess: session,
+                },
+            ))
         } else {
             Err(Error::NoExchange)
         }
     }
 
-    pub fn send(&mut self, exch_id: u16, proto_tx: &mut Packet) -> Result<(), Error> {
+    pub fn send(&mut self, exch_id: u16, proto_tx: BoxSlab<PacketPool>) -> Result<(), Error> {
         let exchange =
             ExchangeMgr::_get_with_id(&mut self.exchanges, exch_id).ok_or(Error::NoExchange)?;
         let mut session = self
@@ -315,7 +310,7 @@ impl ExchangeMgr {
         // If we enter here, we have an LRU session that needs to be reclaimed
         // As per the spec, we need to send a CLOSE here
 
-        let session = self.sess_mgr.mut_by_index(index).ok_or(Error::Invalid)?;
+        let mut session = self.sess_mgr.get_session_handle(index);
         let mut tx = Slab::<PacketPool>::new(Packet::new_tx()?).ok_or(Error::NoSpace)?;
         secure_channel::common::create_sc_status_report(
             &mut tx,
@@ -333,7 +328,7 @@ impl ExchangeMgr {
             // Send Close_session on this exchange, and then close the session
             // Should this be done for all exchanges?
             error!("Sending Close Session");
-            exchange.send(&mut tx, session)?;
+            exchange.send(tx, &mut session)?;
             // TODO: This wouldn't actually send it out, because 'transport' isn't owned yet.
         }
 
@@ -394,7 +389,7 @@ mod tests {
     use crate::{
         error::Error,
         transport::{
-            network::Address,
+            network::{Address, NetworkInterface},
             session::{CloneData, SessionMgr, SessionMode, MAX_SESSIONS},
         },
     };
@@ -460,13 +455,32 @@ mod tests {
         }
     }
 
+    pub struct DummyNetwork;
+    impl DummyNetwork {
+        pub fn new() -> Self {
+            Self {}
+        }
+    }
+
+    impl NetworkInterface for DummyNetwork {
+        fn recv(&self, _in_buf: &mut [u8]) -> Result<(usize, Address), Error> {
+            Ok((0, Address::default()))
+        }
+
+        fn send(&self, _out_buf: &[u8], _addr: Address) -> Result<usize, Error> {
+            Ok(0)
+        }
+    }
+
     #[test]
     /// We purposefuly overflow the sessions
     /// and when the overflow happens, we confirm that
     /// - The sessions are evicted in LRU
     /// - The exchanges associated with those sessions are evicted too
     fn test_sess_evict() {
-        let sess_mgr = SessionMgr::new();
+        let mut sess_mgr = SessionMgr::new();
+        let transport = Box::new(DummyNetwork::new());
+        sess_mgr.add_network_interface(transport).unwrap();
         let mut mgr = ExchangeMgr::new(sess_mgr);
 
         fill_sessions(&mut mgr, MAX_SESSIONS + 1);

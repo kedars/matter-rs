@@ -10,10 +10,15 @@ use crate::{
     transport::{plain_hdr, proto_hdr},
     utils::writebuf::WriteBuf,
 };
+use boxslab::{BoxSlab, Slab};
+use colored::*;
 use log::{info, trace};
 use rand::Rng;
 
-use super::{network::Address, packet::Packet};
+use super::{
+    network::{Address, NetworkInterface},
+    packet::{Packet, PacketPool},
+};
 
 const MATTER_AES128_KEY_SIZE: usize = 16;
 
@@ -212,9 +217,8 @@ impl Session {
     }
 
     // TODO: Most of this can now be moved into the 'Packet' module
-    pub fn send(&mut self, proto_tx: &mut Packet) -> Result<(), Error> {
+    fn do_send(&mut self, proto_tx: &mut Packet) -> Result<(), Error> {
         self.last_use = SystemTime::now();
-
         proto_tx.peer = self.peer_addr;
 
         // Generate encrypted header
@@ -253,12 +257,6 @@ impl Session {
     }
 }
 
-impl Default for SessionMgr {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl fmt::Display for Session {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -276,10 +274,16 @@ impl fmt::Display for Session {
 }
 
 pub const MAX_SESSIONS: usize = 16;
-#[derive(Debug)]
 pub struct SessionMgr {
     next_sess_id: u16,
     sessions: [Option<Session>; MAX_SESSIONS],
+    network: Option<Box<dyn NetworkInterface>>,
+}
+
+impl Default for SessionMgr {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SessionMgr {
@@ -287,6 +291,19 @@ impl SessionMgr {
         SessionMgr {
             sessions: Default::default(),
             next_sess_id: 1,
+            network: None,
+        }
+    }
+
+    pub fn add_network_interface(
+        &mut self,
+        interface: Box<dyn NetworkInterface>,
+    ) -> Result<(), Error> {
+        if self.network.is_none() {
+            self.network = Some(interface);
+            Ok(())
+        } else {
+            Err(Error::Invalid)
         }
     }
 
@@ -409,18 +426,59 @@ impl SessionMgr {
         }
     }
 
-    pub fn recv(&mut self, proto_rx: &mut Packet) -> Result<usize, Error> {
-        if !proto_rx.is_plain_hdr_decoded()? {
-            // Read unencrypted packet header
-            proto_rx.plain_hdr_decode()?;
-        }
+    // We will try to get a session for this Packet. If no session exists, we will try to add one
+    // If the session list is full we will return a None
+    pub fn post_recv(&mut self, rx: &Packet) -> Result<Option<usize>, Error> {
+        let sess_index = match self.get_or_add(
+            rx.plain.sess_id,
+            rx.peer,
+            rx.plain.get_src_u64(),
+            rx.plain.is_encrypted(),
+        ) {
+            Ok(s) => Some(s),
+            Err(Error::NoSpace) => None,
+            Err(e) => {
+                return Err(e);
+            }
+        };
+        Ok(sess_index)
+    }
+
+    pub fn recv(&mut self) -> Result<(BoxSlab<PacketPool>, Option<usize>), Error> {
+        let mut rx = Slab::<PacketPool>::new(Packet::new_rx()?).ok_or(Error::PacketPoolExhaust)?;
+
+        let network = self.network.as_ref().ok_or(Error::NoNetworkInterface)?;
+
+        let (len, src) = network.recv(rx.as_borrow_slice())?;
+        rx.get_parsebuf()?.set_len(len);
+        rx.peer = src;
+
+        info!("{} from src: {}", "Received".blue(), src);
+        trace!("payload: {:x?}", rx.as_borrow_slice());
+
+        // Read unencrypted packet header
+        rx.plain_hdr_decode()?;
+
         // Get session
-        self.get_or_add(
-            proto_rx.plain.sess_id,
-            proto_rx.peer,
-            proto_rx.plain.get_src_u64(),
-            proto_rx.plain.is_encrypted(),
-        )
+        let sess_handle = self.post_recv(&rx)?;
+        Ok((rx, sess_handle))
+    }
+
+    pub fn send(
+        &mut self,
+        sess_idx: usize,
+        mut proto_tx: BoxSlab<PacketPool>,
+    ) -> Result<(), Error> {
+        self.sessions[sess_idx]
+            .as_mut()
+            .ok_or(Error::NoSession)?
+            .do_send(&mut proto_tx)?;
+
+        let network = self.network.as_ref().ok_or(Error::NoNetworkInterface)?;
+        let peer = proto_tx.peer;
+        network.send(proto_tx.as_borrow_slice(), peer)?;
+        println!("Message Sent to {}", peer);
+        Ok(())
     }
 
     pub fn get_session_handle(&mut self, sess_idx: usize) -> SessionHandle {
@@ -442,7 +500,6 @@ impl fmt::Display for SessionMgr {
     }
 }
 
-#[derive(Debug)]
 pub struct SessionHandle<'a> {
     sess_mgr: &'a mut SessionMgr,
     sess_idx: usize,
@@ -451,6 +508,10 @@ pub struct SessionHandle<'a> {
 impl<'a> SessionHandle<'a> {
     pub fn reserve_new_sess_id(&mut self) -> u16 {
         self.sess_mgr.get_next_sess_id()
+    }
+
+    pub fn send(&mut self, proto_tx: BoxSlab<PacketPool>) -> Result<(), Error> {
+        self.sess_mgr.send(self.sess_idx, proto_tx)
     }
 }
 

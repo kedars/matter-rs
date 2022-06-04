@@ -19,6 +19,7 @@ pub enum Error {
     NoExchange,
     NoFabricId,
     NoHandler,
+    NoNetworkInterface,
     NoNodeId,
     NoSession,
     NoSpace,
