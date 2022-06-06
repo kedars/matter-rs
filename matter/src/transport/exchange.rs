@@ -45,7 +45,7 @@ impl Default for State {
 #[derive(Debug, Default)]
 pub struct Exchange {
     id: u16,
-    sess_id: u16,
+    sess_idx: usize,
     role: Role,
     state: State,
     // Currently I see this primarily used in PASE and CASE. If that is the limited use
@@ -56,10 +56,10 @@ pub struct Exchange {
 }
 
 impl Exchange {
-    pub fn new(id: u16, sess_id: u16, role: Role) -> Exchange {
+    pub fn new(id: u16, sess_idx: usize, role: Role) -> Exchange {
         Exchange {
             id,
-            sess_id,
+            sess_idx,
             role,
             state: State::Open,
             data: None,
@@ -118,10 +118,6 @@ impl Exchange {
             proto_tx.get_proto_opcode(),
         );
 
-        if self.sess_id != session.get_local_sess_id() {
-            error!("This should have never happened");
-            return Err(Error::InvalidState);
-        }
         proto_tx.proto.exch_id = self.id;
         if self.role == Role::Initiator {
             proto_tx.proto.set_initiator();
@@ -137,8 +133,8 @@ impl fmt::Display for Exchange {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "exch_id: {:?}, sess_id: {}, role: {:?}, data: {:?}, mrp: {:?}, state: {:?}",
-            self.id, self.sess_id, self.role, self.data, self.mrp, self.state
+            "exch_id: {:?}, sess_index: {}, role: {:?}, data: {:?}, mrp: {:?}, state: {:?}",
+            self.id, self.sess_idx, self.role, self.data, self.mrp, self.state
         )
     }
 }
@@ -195,7 +191,7 @@ impl ExchangeMgr {
 
     fn _get(
         exchanges: &mut LinearMap<u16, Exchange, MAX_EXCHANGES>,
-        sess_id: u16,
+        sess_idx: usize,
         id: u16,
         role: Role,
         create_new: bool,
@@ -205,7 +201,7 @@ impl ExchangeMgr {
             if create_new {
                 // If an exchange doesn't exist, create a new one
                 info!("Creating new exchange");
-                let e = Exchange::new(id, sess_id, role);
+                let e = Exchange::new(id, sess_idx, role);
                 if exchanges.insert(id, e).is_err() {
                     return Err(Error::NoSpace);
                 }
@@ -217,7 +213,7 @@ impl ExchangeMgr {
         // At this point, we would either have inserted the record if 'create_new' was set
         // or it existed already
         if let Some(result) = exchanges.get_mut(&id) {
-            if result.get_role() == role && sess_id == result.sess_id {
+            if result.get_role() == role && sess_idx == result.sess_idx {
                 Ok(result)
             } else {
                 Err(Error::NoExchange)
@@ -251,7 +247,7 @@ impl ExchangeMgr {
         // Get the exchange
         let exch = ExchangeMgr::_get(
             &mut self.exchanges,
-            proto_rx.plain.sess_id,
+            index,
             proto_rx.proto.exch_id,
             get_complementary_role(proto_rx.proto.is_initiator()),
             // We create a new exchange, only if the peer is the initiator
@@ -277,10 +273,7 @@ impl ExchangeMgr {
     pub fn send(&mut self, exch_id: u16, proto_tx: BoxSlab<PacketPool>) -> Result<(), Error> {
         let exchange =
             ExchangeMgr::_get_with_id(&mut self.exchanges, exch_id).ok_or(Error::NoExchange)?;
-        let mut session = self
-            .sess_mgr
-            .get_with_id(exchange.sess_id)
-            .ok_or(Error::NoSession)?;
+        let mut session = self.sess_mgr.get_session_handle(exchange.sess_idx);
         exchange.send(proto_tx, &mut session)
     }
 
@@ -318,12 +311,10 @@ impl ExchangeMgr {
             None,
         )?;
 
-        let sess_id = session.get_local_sess_id();
-
         if let Some((_, exchange)) =
             self.exchanges
                 .iter_mut()
-                .find(|(_, e)| if e.sess_id == sess_id { true } else { false })
+                .find(|(_, e)| if e.sess_idx == index { true } else { false })
         {
             // Send Close_session on this exchange, and then close the session
             // Should this be done for all exchanges?
@@ -336,7 +327,7 @@ impl ExchangeMgr {
             .exchanges
             .iter()
             .filter_map(|(eid, e)| {
-                if e.sess_id == sess_id {
+                if e.sess_idx == index {
                     Some(*eid)
                 } else {
                     None
@@ -486,10 +477,10 @@ mod tests {
         fill_sessions(&mut mgr, MAX_SESSIONS + 1);
         // Sessions are now full from local session id 1 to 16
 
-        // Create exchanges for sessions 2 and 3
+        // Create exchanges for sessions 2 (i.e. session index 1) and 3 (session index 2)
         //   Exchange IDs are 20 and 30 respectively
-        let _ = ExchangeMgr::_get(&mut mgr.exchanges, 2, 20, Role::Responder, true).unwrap();
-        let _ = ExchangeMgr::_get(&mut mgr.exchanges, 3, 30, Role::Responder, true).unwrap();
+        let _ = ExchangeMgr::_get(&mut mgr.exchanges, 1, 20, Role::Responder, true).unwrap();
+        let _ = ExchangeMgr::_get(&mut mgr.exchanges, 2, 30, Role::Responder, true).unwrap();
 
         // Confirm that session ids 1 to MAX_SESSIONS exists
         for i in 1..(MAX_SESSIONS + 1) {
@@ -498,7 +489,6 @@ mod tests {
         // Confirm that the exchanges are around
         assert_eq!(mgr.get_with_id(20).is_none(), false);
         assert_eq!(mgr.get_with_id(30).is_none(), false);
-
         let mut old_local_sess_id = 1;
         let mut new_local_sess_id = 100;
         let mut new_peer_sess_id = 200;
