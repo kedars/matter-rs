@@ -7,14 +7,7 @@ use crate::error::*;
 
 use crate::transport::mrp::ReliableMessage;
 use crate::transport::packet::PacketPool;
-use crate::transport::{
-    exchange::{self, ExchangeCtx},
-    packet::Packet,
-    proto_demux::{self},
-    queue,
-    session::{self},
-    udp::{self},
-};
+use crate::transport::{exchange, packet::Packet, proto_demux, queue, session, udp};
 
 use super::proto_demux::ProtoCtx;
 use super::queue::Msg;
@@ -45,16 +38,6 @@ impl Mgr {
         self.proto_demux.register(proto_id_handle)
     }
 
-    fn recv<'a>(
-        exch_mgr: &'a mut exchange::ExchangeMgr,
-    ) -> Result<(BoxSlab<PacketPool>, ExchangeCtx<'a>), Error> {
-        // Get the exchange
-        let (rx, exch_ctx) = exch_mgr.recv()?;
-        debug!("Exchange is {:?}", exch_ctx.exch);
-
-        Ok((rx, exch_ctx))
-    }
-
     fn send_to_exchange(
         &mut self,
         exch_id: u16,
@@ -64,10 +47,20 @@ impl Mgr {
     }
 
     fn handle_rxtx(&mut self) -> Result<(), Error> {
-        let (rx, exch_ctx) = Mgr::recv(&mut self.exch_mgr).map_err(|e| {
+        let result = self.exch_mgr.recv().map_err(|e| {
             error!("Error in recv: {:?}", e);
             e
         })?;
+
+        if result.is_none() {
+            // Nothing to process, return quietly
+            return Ok(());
+        }
+        // result contains something worth processing, we can safely unwrap
+        // as we already checked for none above
+        let (rx, exch_ctx) = result.unwrap();
+
+        debug!("Exchange is {:?}", exch_ctx.exch);
         let tx = Self::new_tx()?;
 
         let mut proto_ctx = ProtoCtx::new(exch_ctx, rx, tx);

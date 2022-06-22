@@ -225,7 +225,7 @@ impl ExchangeMgr {
     }
 
     /// The Exchange Mgr receive is like a big processing function
-    pub fn recv(&mut self) -> Result<(BoxSlab<PacketPool>, ExchangeCtx), Error> {
+    pub fn recv(&mut self) -> Result<Option<(BoxSlab<PacketPool>, ExchangeCtx)>, Error> {
         // Get the session
         let (mut proto_rx, index) = self.sess_mgr.recv()?;
 
@@ -258,15 +258,17 @@ impl ExchangeMgr {
         exch.mrp.recv(&proto_rx)?;
 
         if exch.is_state_open() {
-            Ok((
+            Ok(Some((
                 proto_rx,
                 ExchangeCtx {
                     exch,
                     sess: session,
                 },
-            ))
+            )))
         } else {
-            Err(Error::NoExchange)
+            // Instead of an error, we send None here, because it is likely that
+            // we just processed an acknowledgement that cleared the exchange
+            Ok(None)
         }
     }
 
