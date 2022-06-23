@@ -23,6 +23,18 @@ With the chip-tool (the current tool for testing Matter) use the Ethernet commis
 $ chip-tool pairing ethernet 12344321 123456 0 <IP-Address> 5540
 ```
 
+Interact with the device
+```
+# Read server-list
+$ chip-tool descriptor read server-list 12344321 0
+
+# Read On/Off status
+$ chip-tool onoff read on-off 12344321 1
+
+# Toggle On/Off by invoking the command
+$ chip-tool onoff on 12344321 1
+```
+
 ## Functionality
 - Secure Channel:
   - PASE
