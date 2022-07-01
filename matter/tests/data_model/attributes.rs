@@ -291,8 +291,7 @@ fn get_tlvs<'a>(buf: &'a mut [u8], data: &[u16]) -> TLVElement<'a> {
         let _ = tw.u16(TagType::Anonymous, *e);
     }
     let _ = tw.end_container();
-    let wb_len = wb.as_borrow_slice().len();
-    let tlv_array = TLVList::new(wb.as_slice(), wb_len).iter().next().unwrap();
+    let tlv_array = TLVList::new(wb.as_slice()).iter().next().unwrap();
     tlv_array
 }
 

@@ -271,7 +271,7 @@ mod tests {
         let b = [
             21, 37, 0, 10, 0, 38, 1, 20, 0, 0, 0, 24, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
-        let root = TLVList::new(&b, b.len()).iter().next().unwrap();
+        let root = TLVList::new(&b).iter().next().unwrap();
         let test = TestDeriveSimple::from_tlv(&root).unwrap();
         assert_eq!(test.a, 10);
         assert_eq!(test.b, 20);
@@ -287,7 +287,7 @@ mod tests {
     #[test]
     fn test_derive_fromtlv_str() {
         let b = [21, 37, 0, 10, 0, 0x30, 0x01, 0x03, 10, 11, 12, 0];
-        let root = TLVList::new(&b, b.len()).iter().next().unwrap();
+        let root = TLVList::new(&b).iter().next().unwrap();
         let test = TestDeriveStr::from_tlv(&root).unwrap();
         assert_eq!(test.a, 10);
         assert_eq!(test.b, OctetStr(&[10, 11, 12]));
@@ -303,7 +303,7 @@ mod tests {
     #[test]
     fn test_derive_fromtlv_option() {
         let b = [21, 37, 0, 10, 0, 37, 2, 11, 0];
-        let root = TLVList::new(&b, b.len()).iter().next().unwrap();
+        let root = TLVList::new(&b).iter().next().unwrap();
         let test = TestDeriveOption::from_tlv(&root).unwrap();
         assert_eq!(test.a, 10);
         assert_eq!(test.b, None);
