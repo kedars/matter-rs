@@ -1,5 +1,4 @@
 use std::{
-    char::MAX,
     mem::MaybeUninit,
     ops::{Deref, DerefMut},
     sync::Mutex,
