@@ -4,60 +4,42 @@ use std::{
     sync::Mutex,
 };
 
+// TODO: why is max bitmap size 64 a correct max size? Could we match
+// boxslabs instead or store used/not used inside the box slabs themselves?
+const MAX_BITMAP_SIZE: usize = 64;
 pub struct Bitmap {
-    map: u64,
-    size: usize,
+    inner: bitmaps::Bitmap<MAX_BITMAP_SIZE>,
+    max_size: usize,
 }
 
 impl Bitmap {
-    pub fn new(size: usize) -> Self {
-        Bitmap { map: 0, size }
+    pub fn new(max_size: usize) -> Self {
+        assert!(max_size <= MAX_BITMAP_SIZE);
+        Bitmap {
+            inner: bitmaps::Bitmap::new(),
+            max_size,
+        }
     }
 
     pub fn set(&mut self, index: usize) -> bool {
-        if index < self.size {
-            let mask = 1 << index;
-            let old = (self.map & mask) == 1;
-            self.map |= mask;
-            old
-        } else {
-            panic!("Invalid index");
-        }
+        assert!(index < self.max_size);
+        self.inner.set(index, true)
     }
 
     pub fn reset(&mut self, index: usize) -> bool {
-        if index < self.size {
-            let mask = 1 << index;
-            let old = (self.map & mask) == 1;
-            self.map &= !mask;
-            old
-        } else {
-            panic!("Invalid index");
-        }
+        assert!(index < self.max_size);
+        self.inner.set(index, false)
     }
 
     pub fn first_false_index(&self) -> Option<usize> {
-        if self.map < u64::MAX {
-            let index = self.map.trailing_ones() as usize;
-            if index < self.size {
-                return Some(index);
-            }
+        match self.inner.first_false_index() {
+            Some(idx) if idx < self.max_size => Some(idx),
+            _ => None,
         }
-        None
-    }
-
-    pub fn first_true_index(&self) -> Option<usize> {
-        if self.map != 0 {
-            let index = self.map.trailing_zeros() as usize;
-            if index < self.size {
-                return Some(index);
-            }
-        }
-        None
     }
 
     pub fn is_empty(&self) -> bool {
-        self.first_true_index().is_none()
+        self.inner.is_empty()
     }
 
     pub fn is_full(&self) -> bool {
