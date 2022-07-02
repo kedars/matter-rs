@@ -1,7 +1,8 @@
 use std::{
+    char::MAX,
     mem::MaybeUninit,
     ops::{Deref, DerefMut},
-    sync::Mutex, char::MAX,
+    sync::Mutex,
 };
 
 // TODO: why is max bitmap size 64 a correct max size? Could we match
@@ -15,9 +16,9 @@ pub struct Bitmap {
 impl Bitmap {
     pub fn new(max_size: usize) -> Self {
         assert!(max_size <= MAX_BITMAP_SIZE);
-        Bitmap { 
+        Bitmap {
             inner: bitmaps::Bitmap::new(),
-            max_size 
+            max_size,
         }
     }
 
