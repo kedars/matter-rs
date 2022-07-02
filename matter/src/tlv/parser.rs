@@ -8,12 +8,11 @@ use super::{TagType, MAX_TAG_INDEX, TAG_MASK, TAG_SHIFT_BITS, TAG_SIZE_MAP, TYPE
 
 pub struct TLVList<'a> {
     buf: &'a [u8],
-    len: usize,
 }
 
 impl<'a> TLVList<'a> {
-    pub fn new(buf: &'a [u8], len: usize) -> TLVList<'a> {
-        TLVList { buf, len }
+    pub fn new(buf: &'a [u8]) -> TLVList<'a> {
+        TLVList { buf }
     }
 }
 
@@ -604,7 +603,7 @@ impl<'a> TLVList<'a> {
     pub fn iter(&self) -> TLVListIterator<'a> {
         TLVListIterator {
             current: 0,
-            left: self.len,
+            left: self.buf.len(),
             buf: self.buf,
         }
     }
@@ -691,14 +690,14 @@ impl<'a> Iterator for TLVContainerIterator<'a> {
 }
 
 pub fn get_root_node(b: &[u8]) -> Result<TLVElement, Error> {
-    TLVList::new(b, b.len())
+    TLVList::new(b)
         .iter()
         .next()
         .ok_or(Error::InvalidData)
 }
 
 pub fn get_root_node_struct(b: &[u8]) -> Result<TLVElement, Error> {
-    TLVList::new(b, b.len())
+    TLVList::new(b)
         .iter()
         .next()
         .ok_or(Error::InvalidData)?
@@ -706,7 +705,7 @@ pub fn get_root_node_struct(b: &[u8]) -> Result<TLVElement, Error> {
 }
 
 pub fn get_root_node_list(b: &[u8]) -> Result<TLVElement, Error> {
-    TLVList::new(b, b.len())
+    TLVList::new(b)
         .iter()
         .next()
         .ok_or(Error::InvalidData)?
@@ -714,7 +713,7 @@ pub fn get_root_node_list(b: &[u8]) -> Result<TLVElement, Error> {
 }
 
 pub fn print_tlv_list(b: &[u8]) {
-    let tlvlist = TLVList::new(b, b.len());
+    let tlvlist = TLVList::new(b);
 
     const MAX_DEPTH: usize = 9;
     info!("TLV list:");
@@ -779,7 +778,7 @@ mod tests {
     fn test_short_length_tag() {
         // The 0x36 is an array with a tag, but we leave out the tag field
         let b = [0x15, 0x36];
-        let tlvlist = TLVList::new(&b, b.len());
+        let tlvlist = TLVList::new(&b);
         let mut tlv_iter = tlvlist.iter();
         // Skip the 0x15
         tlv_iter.next();
@@ -790,7 +789,7 @@ mod tests {
     fn test_invalid_value_type() {
         // The 0x24 is a a tagged integer, here we leave out the integer value
         let b = [0x15, 0x1f, 0x0];
-        let tlvlist = TLVList::new(&b, b.len());
+        let tlvlist = TLVList::new(&b);
         let mut tlv_iter = tlvlist.iter();
         // Skip the 0x15
         tlv_iter.next();
@@ -801,7 +800,7 @@ mod tests {
     fn test_short_length_value_immediate() {
         // The 0x24 is a a tagged integer, here we leave out the integer value
         let b = [0x15, 0x24, 0x0];
-        let tlvlist = TLVList::new(&b, b.len());
+        let tlvlist = TLVList::new(&b);
         let mut tlv_iter = tlvlist.iter();
         // Skip the 0x15
         tlv_iter.next();
@@ -812,7 +811,7 @@ mod tests {
     fn test_short_length_value_string() {
         // This is a tagged string, with tag 0 and length 0xb, but we only have 4 bytes in the string
         let b = [0x15, 0x30, 0x00, 0x0b, 0x73, 0x6d, 0x61, 0x72];
-        let tlvlist = TLVList::new(&b, b.len());
+        let tlvlist = TLVList::new(&b);
         let mut tlv_iter = tlvlist.iter();
         // Skip the 0x15
         tlv_iter.next();
@@ -823,7 +822,7 @@ mod tests {
     fn test_valid_tag() {
         // The 0x36 is an array with a tag, here tag is 0
         let b = [0x15, 0x36, 0x0];
-        let tlvlist = TLVList::new(&b, b.len());
+        let tlvlist = TLVList::new(&b);
         let mut tlv_iter = tlvlist.iter();
         // Skip the 0x15
         tlv_iter.next();
@@ -844,7 +843,7 @@ mod tests {
     fn test_valid_value_immediate() {
         // The 0x24 is a a tagged integer, here the integer is 2
         let b = [0x15, 0x24, 0x1, 0x2];
-        let tlvlist = TLVList::new(&b, b.len());
+        let tlvlist = TLVList::new(&b);
         let mut tlv_iter = tlvlist.iter();
         // Skip the 0x15
         tlv_iter.next();
@@ -861,7 +860,7 @@ mod tests {
     fn test_valid_value_string() {
         // This is a tagged string, with tag 0 and length 4, and we have 4 bytes in the string
         let b = [0x15, 0x30, 0x5, 0x04, 0x73, 0x6d, 0x61, 0x72];
-        let tlvlist = TLVList::new(&b, b.len());
+        let tlvlist = TLVList::new(&b);
         let mut tlv_iter = tlvlist.iter();
         // Skip the 0x15
         tlv_iter.next();
@@ -912,7 +911,7 @@ mod tests {
             0x3, 0x6c, 0xd2, 0x9b, 0xa6, 0x39, 0x3e, 0xc7, 0xef, 0xad, 0x87, 0x14, 0xab, 0x71,
             0x82, 0x19, 0x26, 0x2, 0x3e, 0x0, 0x0, 0x0,
         ];
-        let tlvlist = TLVList::new(&b, b.len());
+        let tlvlist = TLVList::new(&b);
         let mut tlv_iter = tlvlist.iter();
         // Skip the 0x15
         tlv_iter.next();
@@ -972,7 +971,7 @@ mod tests {
     fn test_no_iterator_for_int() {
         // The 0x24 is a a tagged integer, here the integer is 2
         let b = [0x15, 0x24, 0x1, 0x2];
-        let tlvlist = TLVList::new(&b, b.len());
+        let tlvlist = TLVList::new(&b);
         let mut tlv_iter = tlvlist.iter();
         // Skip the 0x15
         tlv_iter.next();
@@ -1179,7 +1178,7 @@ mod tests {
             (TagType::Anonymous, ElementType::EndCnt),
         ];
 
-        let mut list_iter = TLVList::new(&b, b.len()).iter();
+        let mut list_iter = TLVList::new(&b).iter();
         let mut index = 0;
         loop {
             let element = list_iter.next();
