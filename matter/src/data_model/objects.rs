@@ -24,6 +24,7 @@ bitflags! {
         const TIMED_ONLY = 0x0100;
         const RV = Self::READ.bits | Self::NEED_VIEW.bits;
         const RWVA = Self::READ.bits | Self::WRITE.bits | Self::NEED_VIEW.bits | Self::NEED_ADMIN.bits;
+        const RWFA = Self::READ.bits | Self::WRITE.bits | Self::FAB_SCOPED.bits | Self::NEED_ADMIN.bits;
         const RWVM = Self::READ.bits | Self::WRITE.bits | Self::NEED_VIEW.bits | Self::NEED_MANAGE.bits;
     }
 }
