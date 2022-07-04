@@ -322,7 +322,7 @@ impl Cluster {
         if let Some(global_attr) = global_attr {
             match global_attr {
                 GlobalElements::AttributeList => {
-                    let _ = tw.start_list(tag);
+                    let _ = tw.start_array(tag);
                     for a in &self.attributes {
                         let _ = tw.u16(TagType::Anonymous, a.id);
                     }
