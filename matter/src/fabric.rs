@@ -190,7 +190,7 @@ impl Fabric {
     }
 }
 
-const MAX_SUPPORTED_FABRICS: usize = 3;
+pub const MAX_SUPPORTED_FABRICS: usize = 3;
 #[derive(Default)]
 pub struct FabricMgrInner {
     // The outside world expects Fabric Index to be one more than the actual one

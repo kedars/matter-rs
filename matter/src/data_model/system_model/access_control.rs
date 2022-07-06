@@ -1,5 +1,6 @@
 use num_derive::FromPrimitive;
 
+use crate::acl;
 use crate::data_model::objects::*;
 use crate::error::*;
 use crate::interaction_model::core::IMStatusCode;
@@ -7,11 +8,6 @@ use crate::tlv::{TLVWriter, TagType};
 use log::error;
 
 pub const ID: u32 = 0x001F;
-
-// Some placeholder values
-const SUBJECTS_PER_ENTRY: u16 = 3;
-const TARGETS_PER_ENTRY: u16 = 3;
-const ENTRIES_PER_FABRIC: u16 = 3;
 
 #[derive(FromPrimitive)]
 enum Attributes {
@@ -95,7 +91,7 @@ fn attr_extension_new() -> Result<Attribute, Error> {
 fn attr_subjects_per_entry_new() -> Result<Attribute, Error> {
     Attribute::new(
         Attributes::SubjectsPerEntry as u16,
-        AttrValue::Uint16(SUBJECTS_PER_ENTRY),
+        AttrValue::Uint16(acl::SUBJECTS_PER_ENTRY as u16),
         Access::RV,
         Quality::FIXED,
     )
@@ -104,7 +100,7 @@ fn attr_subjects_per_entry_new() -> Result<Attribute, Error> {
 fn attr_targets_per_entry_new() -> Result<Attribute, Error> {
     Attribute::new(
         Attributes::TargetsPerEntry as u16,
-        AttrValue::Uint16(TARGETS_PER_ENTRY),
+        AttrValue::Uint16(acl::TARGETS_PER_ENTRY as u16),
         Access::RV,
         Quality::FIXED,
     )
@@ -113,7 +109,7 @@ fn attr_targets_per_entry_new() -> Result<Attribute, Error> {
 fn attr_entries_per_fabric_new() -> Result<Attribute, Error> {
     Attribute::new(
         Attributes::EntriesPerFabric as u16,
-        AttrValue::Uint16(ENTRIES_PER_FABRIC),
+        AttrValue::Uint16(acl::ENTRIES_PER_FABRIC as u16),
         Access::RV,
         Quality::FIXED,
     )

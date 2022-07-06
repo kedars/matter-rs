@@ -41,6 +41,7 @@
 //! ```
 //! Start off exploring by going to the [Matter] object.
 
+pub mod acl;
 pub mod cert;
 pub mod core;
 pub mod crypto;
