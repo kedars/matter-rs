@@ -24,6 +24,7 @@ bitflags! {
         const TIMED_ONLY = 0x0100;
         const RV = Self::READ.bits | Self::NEED_VIEW.bits;
         const RWVA = Self::READ.bits | Self::WRITE.bits | Self::NEED_VIEW.bits | Self::NEED_ADMIN.bits;
+        const RWFA = Self::READ.bits | Self::WRITE.bits | Self::FAB_SCOPED.bits | Self::NEED_ADMIN.bits;
         const RWVM = Self::READ.bits | Self::WRITE.bits | Self::NEED_VIEW.bits | Self::NEED_MANAGE.bits;
     }
 }
@@ -170,7 +171,7 @@ pub enum GlobalElements {
     _EventList = 0xFFFA,
     _ClientGenCmd = 0xFFF9,
     ServerGenCmd = 0xFFF8,
-    _FabricIndex = 0xFE,
+    FabricIndex = 0xFE,
 }
 
 pub trait ClusterType {
@@ -321,7 +322,7 @@ impl Cluster {
         if let Some(global_attr) = global_attr {
             match global_attr {
                 GlobalElements::AttributeList => {
-                    let _ = tw.start_list(tag);
+                    let _ = tw.start_array(tag);
                     for a in &self.attributes {
                         let _ = tw.u16(TagType::Anonymous, a.id);
                     }
