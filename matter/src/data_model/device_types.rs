@@ -7,6 +7,7 @@ use super::sdm::general_commissioning::GenCommCluster;
 use super::sdm::noc::NocCluster;
 use super::sdm::nw_commissioning::NwCommCluster;
 use super::system_model::access_control::AccessControlCluster;
+use crate::acl::AclMgr;
 use crate::error::*;
 use crate::fabric::FabricMgr;
 use std::sync::Arc;
@@ -19,6 +20,7 @@ pub fn device_type_add_root_node(
     dev_info: BasicInfoConfig,
     dev_att: Box<dyn DevAttDataFetcher>,
     fabric_mgr: Arc<FabricMgr>,
+    acl_mgr: Arc<AclMgr>,
 ) -> Result<u32, Error> {
     // Add the root endpoint
     let endpoint = node.add_endpoint()?;
@@ -32,8 +34,11 @@ pub fn device_type_add_root_node(
     let failsafe = general_commissioning.failsafe();
     node.add_cluster(0, general_commissioning)?;
     node.add_cluster(0, NwCommCluster::new()?)?;
-    node.add_cluster(0, NocCluster::new(dev_att, fabric_mgr, failsafe)?)?;
-    node.add_cluster(0, AccessControlCluster::new()?)?;
+    node.add_cluster(
+        0,
+        NocCluster::new(dev_att, fabric_mgr, acl_mgr.clone(), failsafe)?,
+    )?;
+    node.add_cluster(0, AccessControlCluster::new(acl_mgr)?)?;
     Ok(endpoint)
 }
 

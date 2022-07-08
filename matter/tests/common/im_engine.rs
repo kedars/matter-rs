@@ -1,6 +1,7 @@
 use crate::common::echo_cluster;
 use boxslab::Slab;
 use matter::{
+    acl::AclMgr,
     data_model::{
         cluster_basic_information::BasicInfoConfig,
         core::DataModel,
@@ -44,7 +45,8 @@ pub fn im_engine(action: OpCode, data_in: &[u8], data_out: &mut [u8]) -> (DataMo
     };
     let dev_att = Box::new(DummyDevAtt {});
     let fabric_mgr = Arc::new(FabricMgr::new().unwrap());
-    let data_model = DataModel::new(dev_det, dev_att, fabric_mgr.clone()).unwrap();
+    let acl_mgr = Arc::new(AclMgr::new());
+    let data_model = DataModel::new(dev_det, dev_att, fabric_mgr.clone(), acl_mgr.clone()).unwrap();
 
     {
         let mut d = data_model.node.write().unwrap();

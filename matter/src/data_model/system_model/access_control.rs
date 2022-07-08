@@ -1,10 +1,12 @@
+use std::sync::Arc;
+
 use num_derive::FromPrimitive;
 
-use crate::acl;
+use crate::acl::{self, AclMgr};
 use crate::data_model::objects::*;
 use crate::error::*;
 use crate::interaction_model::core::IMStatusCode;
-use crate::tlv::{TLVWriter, TagType};
+use crate::tlv::{TLVWriter, TagType, ToTLV};
 use log::error;
 
 pub const ID: u32 = 0x001F;
@@ -20,12 +22,14 @@ enum Attributes {
 
 pub struct AccessControlCluster {
     base: Cluster,
+    acl_mgr: Arc<AclMgr>,
 }
 
 impl AccessControlCluster {
-    pub fn new() -> Result<Box<Self>, Error> {
+    pub fn new(acl_mgr: Arc<AclMgr>) -> Result<Box<Self>, Error> {
         let mut c = Box::new(AccessControlCluster {
             base: Cluster::new(ID)?,
+            acl_mgr,
         });
         c.base.add_attribute(attr_acl_new()?)?;
         c.base.add_attribute(attr_extension_new()?)?;
@@ -54,6 +58,9 @@ impl ClusterType for AccessControlCluster {
             Attributes::Acl => {
                 // Empty for now
                 let _ = tw.start_array(tag);
+                self.acl_mgr.for_each_acl(|entry| {
+                    let _ = entry.to_tlv(tw, TagType::Anonymous);
+                })?;
                 let _ = tw.end_container();
             }
             Attributes::Extension => {

@@ -1,4 +1,5 @@
 use crate::{
+    acl::AclMgr,
     data_model::{
         cluster_basic_information::BasicInfoConfig, core::DataModel,
         sdm::dev_att::DevAttDataFetcher,
@@ -30,8 +31,9 @@ impl Matter {
         dev_att: Box<dyn DevAttDataFetcher>,
     ) -> Result<Box<Matter>, Error> {
         let fabric_mgr = Arc::new(FabricMgr::new()?);
+        let acl_mgr = Arc::new(AclMgr::new());
         let open_comm_window = fabric_mgr.is_empty();
-        let data_model = DataModel::new(dev_det, dev_att, fabric_mgr.clone())?;
+        let data_model = DataModel::new(dev_det, dev_att, fabric_mgr.clone(), acl_mgr.clone())?;
         let mut matter = Box::new(Matter {
             transport_mgr: transport::mgr::Mgr::new()?,
             data_model,

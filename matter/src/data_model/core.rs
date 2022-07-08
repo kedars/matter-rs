@@ -6,6 +6,7 @@ use super::{
     system_model::descriptor::DescriptorCluster,
 };
 use crate::{
+    acl::AclMgr,
     error::*,
     fabric::FabricMgr,
     interaction_model::{
@@ -32,6 +33,7 @@ impl DataModel {
         dev_details: BasicInfoConfig,
         dev_att: Box<dyn DevAttDataFetcher>,
         fabric_mgr: Arc<FabricMgr>,
+        acl_mgr: Arc<AclMgr>,
     ) -> Result<Self, Error> {
         let dm = DataModel {
             node: Arc::new(RwLock::new(Node::new()?)),
@@ -39,7 +41,7 @@ impl DataModel {
         {
             let mut node = dm.node.write()?;
             node.set_changes_cb(Box::new(dm.clone()));
-            device_type_add_root_node(&mut node, dev_details, dev_att, fabric_mgr)?;
+            device_type_add_root_node(&mut node, dev_details, dev_att, fabric_mgr, acl_mgr)?;
         }
         Ok(dm)
     }

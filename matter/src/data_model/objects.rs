@@ -171,7 +171,7 @@ pub enum GlobalElements {
     _EventList = 0xFFFA,
     _ClientGenCmd = 0xFFF9,
     ServerGenCmd = 0xFFF8,
-    _FabricIndex = 0xFE,
+    FabricIndex = 0xFE,
 }
 
 pub trait ClusterType {

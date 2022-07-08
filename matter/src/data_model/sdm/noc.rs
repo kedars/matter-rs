@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::acl::{AclEntry, AclMgr, AuthMode, Privilege};
 use crate::cert::Cert;
 use crate::crypto::{self, CryptoKeyPair, KeyPair};
 use crate::data_model::objects::*;
@@ -64,6 +65,7 @@ pub struct NocCluster {
     base: Cluster,
     dev_att: Box<dyn DevAttDataFetcher>,
     fabric_mgr: Arc<FabricMgr>,
+    acl_mgr: Arc<AclMgr>,
     failsafe: Arc<FailSafe>,
 }
 struct NocData {
@@ -84,14 +86,22 @@ impl NocCluster {
     pub fn new(
         dev_att: Box<dyn DevAttDataFetcher>,
         fabric_mgr: Arc<FabricMgr>,
+        acl_mgr: Arc<AclMgr>,
         failsafe: Arc<FailSafe>,
     ) -> Result<Box<Self>, Error> {
         Ok(Box::new(Self {
             dev_att,
             fabric_mgr,
+            acl_mgr,
             failsafe,
             base: Cluster::new(ID)?,
         }))
+    }
+
+    fn add_acl(&self, fab_idx: u8, admin_subject: u64) -> Result<(), Error> {
+        let mut acl = AclEntry::new(fab_idx as u8, Privilege::ADMIN, AuthMode::Case);
+        acl.add_subject(admin_subject)?;
+        self.acl_mgr.add(acl)
     }
 
     fn _handle_command_addnoc(&mut self, cmd_req: &mut CommandReq) -> Result<(), NocStatus> {
@@ -129,6 +139,10 @@ impl NocCluster {
             .fabric_mgr
             .add(fabric)
             .map_err(|_| NocStatus::TableFull)?;
+
+        if self.add_acl(fab_idx as u8, r.case_admin_subject).is_err() {
+            error!("Failed to add ACL, what to do?");
+        }
 
         if self.failsafe.record_add_noc(fab_idx).is_err() {
             error!("Failed to record NoC in the FailSafe, what to do?");
@@ -375,7 +389,7 @@ struct AddNocReq<'a> {
     noc_value: OctetStr<'a>,
     icac_value: OctetStr<'a>,
     ipk_value: OctetStr<'a>,
-    _case_admin_node_id: u32,
+    case_admin_subject: u64,
     _vendor_id: u16,
 }
 
