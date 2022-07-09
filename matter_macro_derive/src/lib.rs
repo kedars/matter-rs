@@ -9,6 +9,66 @@ use syn::{
     MetaList, MetaNameValue, Type,
 };
 
+struct TlvArgs {
+    start: u8,
+    datatype: String,
+    unordered: bool,
+    lifetime: syn::Lifetime,
+}
+
+impl Default for TlvArgs {
+    fn default() -> Self {
+        Self {
+            start: 0,
+            datatype: "struct".to_string(),
+            unordered: false,
+            lifetime: Lifetime::new("'_", Span::call_site()),
+        }
+    }
+}
+
+fn parse_tlvargs(ast: &DeriveInput) -> TlvArgs {
+    let mut tlvargs: TlvArgs = Default::default();
+
+    if ast.attrs.len() > 0 {
+        if let List(MetaList {
+            path,
+            paren_token: _,
+            nested,
+        }) = ast.attrs[0].parse_meta().unwrap()
+        {
+            if path.is_ident("tlvargs") {
+                for a in nested {
+                    if let Meta(NameValue(MetaNameValue {
+                        path: key_path,
+                        eq_token: _,
+                        lit: key_val,
+                    })) = a
+                    {
+                        if key_path.is_ident("start") {
+                            if let Int(litint) = key_val {
+                                tlvargs.start = litint.base10_parse::<u8>().unwrap();
+                            }
+                        } else if key_path.is_ident("lifetime") {
+                            if let Str(litstr) = key_val {
+                                tlvargs.lifetime =
+                                    Lifetime::new(&litstr.value(), Span::call_site());
+                            }
+                        } else if key_path.is_ident("datatype") {
+                            if let Str(litstr) = key_val {
+                                tlvargs.datatype = litstr.value();
+                            }
+                        } else if key_path.is_ident("unordered") {
+                            tlvargs.unordered = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    tlvargs
+}
+
 /// Derive ToTLV Macro
 ///
 /// This macro works for structures. It will create an implementation
@@ -29,39 +89,10 @@ pub fn derive_totlv(item: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(item as DeriveInput);
     let struct_name = &ast.ident;
 
-    // Overridable stuff
-    let mut tag_start = 0_u8;
-    let mut data_type = format_ident!("start_struct");
+    let tlvargs = parse_tlvargs(&ast);
+    let start = tlvargs.start;
+    let datatype = format_ident!("start_{}", tlvargs.datatype);
 
-    if ast.attrs.len() > 0 {
-        if let List(MetaList {
-            path,
-            paren_token: _,
-            nested,
-        }) = ast.attrs[0].parse_meta().unwrap()
-        {
-            if path.is_ident("tlvargs") {
-                for a in nested {
-                    if let Meta(NameValue(MetaNameValue {
-                        path: key_path,
-                        eq_token: _,
-                        lit: key_val,
-                    })) = a
-                    {
-                        if key_path.is_ident("start") {
-                            if let Int(litint) = key_val {
-                                tag_start = litint.base10_parse::<u8>().unwrap();
-                            }
-                        } else if key_path.is_ident("datatype") {
-                            if let Str(litstr) = key_val {
-                                data_type = format_ident!("start_{}", litstr.value());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
     let generics = ast.generics;
 
     let fields = if let syn::Data::Struct(syn::DataStruct {
@@ -89,8 +120,8 @@ pub fn derive_totlv(item: TokenStream) -> TokenStream {
     let expanded = quote! {
         impl #generics ToTLV for #struct_name #generics {
             fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
-                tw. #data_type (tag_type)?;
-                let mut tag = #tag_start;
+                tw. #datatype (tag_type)?;
+                let mut tag = #start;
                 #(
                     self.#idents.to_tlv(tw, TagType::Context(tag))?;
                     tag += 1;
@@ -128,47 +159,11 @@ pub fn derive_fromtlv(item: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(item as DeriveInput);
     let struct_name = &ast.ident;
 
-    // Overridable items
-    let mut tag_start = 0_u8;
-    let mut lifetime = Lifetime::new("'_", Span::call_site());
-    let mut data_type = format_ident!("confirm_struct");
-    let mut out_of_order = false;
+    let tlvargs = parse_tlvargs(&ast);
+    let start = tlvargs.start;
+    let lifetime = tlvargs.lifetime;
+    let datatype = format_ident!("confirm_{}", tlvargs.datatype);
 
-    if ast.attrs.len() > 0 {
-        if let List(MetaList {
-            path,
-            paren_token: _,
-            nested,
-        }) = ast.attrs[0].parse_meta().unwrap()
-        {
-            if path.is_ident("tlvargs") {
-                for a in nested {
-                    if let Meta(NameValue(MetaNameValue {
-                        path: key_path,
-                        eq_token: _,
-                        lit: key_val,
-                    })) = a
-                    {
-                        if key_path.is_ident("start") {
-                            if let Int(litint) = key_val {
-                                tag_start = litint.base10_parse::<u8>().unwrap();
-                            }
-                        } else if key_path.is_ident("lifetime") {
-                            if let Str(litstr) = key_val {
-                                lifetime = Lifetime::new(&litstr.value(), Span::call_site());
-                            }
-                        } else if key_path.is_ident("datatype") {
-                            if let Str(litstr) = key_val {
-                                data_type = format_ident!("confirm_{}", litstr.value());
-                            }
-                        } else if key_path.is_ident("unordered") {
-                            out_of_order = true;
-                        }
-                    }
-                }
-            }
-        }
-    }
     let generics = ast.generics;
 
     let fields = if let syn::Data::Struct(syn::DataStruct {
@@ -198,12 +193,12 @@ pub fn derive_fromtlv(item: TokenStream) -> TokenStream {
     // Currently we don't use find_tag() because the tags come in sequential
     // order. If ever the tags start coming out of order, we can use find_tag()
     // instead
-    let expanded = if !out_of_order {
+    let expanded = if !tlvargs.unordered {
         quote! {
            impl #generics FromTLV <#lifetime> for #struct_name #generics {
                fn from_tlv(t: &TLVElement<#lifetime>) -> Result<Self, Error> {
-                   let mut t_iter = t.#data_type ()?.iter().ok_or(Error::Invalid)?;
-                   let mut tag = #tag_start;
+                   let mut t_iter = t.#datatype ()?.iter().ok_or(Error::Invalid)?;
+                   let mut tag = #start;
                    let mut item = t_iter.next();
                    #(
                        let #idents = if Some(true) == item.map(|x| x.check_ctx_tag(tag)) {
@@ -227,7 +222,7 @@ pub fn derive_fromtlv(item: TokenStream) -> TokenStream {
         quote! {
            impl #generics FromTLV <#lifetime> for #struct_name #generics {
                fn from_tlv(t: &TLVElement<#lifetime>) -> Result<Self, Error> {
-                   let mut tag = #tag_start;
+                   let mut tag = #start;
                    #(
                        let #idents = if let Ok(s) = t.find_tag(tag as u32) {
                            #types::from_tlv(&s)
