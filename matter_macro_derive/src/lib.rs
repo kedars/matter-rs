@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use proc_macro2::Span;
-use quote::{quote, format_ident};
+use quote::{format_ident, quote};
 use syn::Lit::{Int, Str};
 use syn::NestedMeta::Meta;
 use syn::{parse_macro_input, DeriveInput, Lifetime};
@@ -8,6 +8,21 @@ use syn::{
     Meta::{List, NameValue},
     MetaList, MetaNameValue, Type,
 };
+
+/// Derive ToTLV Macro
+///
+/// This macro works for structures. It will create an implementation
+/// of the ToTLV trait for that structure.  All the members of the
+/// structure, sequentially, will get Context tags starting from 0
+/// Some configurations are possible through the 'tlvargs' attributes.
+/// For example:
+///  #[tlvargs(start = 1, datatype = "list")]
+///
+/// start: This can be used to override the default tag from which the
+///        encoding starts (Default: 0)
+/// datatype: This can be used to define whether this data structure is
+///        to be encoded as a structure or list. Possible values: list
+///        (Default: struct)
 
 #[proc_macro_derive(ToTLV, attributes(tlvargs))]
 pub fn derive_totlv(item: TokenStream) -> TokenStream {
@@ -59,9 +74,7 @@ pub fn derive_totlv(item: TokenStream) -> TokenStream {
         panic!("Derive ToTLV - Only supported Struct for now")
     };
 
-    //    let mut keys = Vec::new();
     let mut idents = Vec::new();
-    //    let mut types = Vec::new();
 
     for field in fields.named.iter() {
         //        let field_name: &syn::Ident = field.ident.as_ref().unwrap();
@@ -90,6 +103,25 @@ pub fn derive_totlv(item: TokenStream) -> TokenStream {
     expanded.into()
 }
 
+/// Derive FromTLV Macro
+///
+/// This macro works for structures. It will create an implementation
+/// of the FromTLV trait for that structure.  All the members of the
+/// structure, sequentially, will get Context tags starting from 0
+/// Some configurations are possible through the 'tlvargs' attributes.
+/// For example:
+///  #[tlvargs(lifetime = "'a", start = 1, datatype = "list", unordered)]
+///
+/// start: This can be used to override the default tag from which the
+///        decoding starts (Default: 0)
+/// datatype: This can be used to define whether this data structure is
+///        to be decoded as a structure or list. Possible values: list
+///        (Default: struct)
+/// lifetime: If the structure has a lifetime annotation, use this variable
+///        to indicate that. The 'impl' will then use that lifetime
+///        indicator.
+/// unordered: By default, the decoder expects that the tags are in
+///        sequentially increasing order. Set this if that is not the case.
 
 #[proc_macro_derive(FromTLV, attributes(tlvargs))]
 pub fn derive_fromtlv(item: TokenStream) -> TokenStream {
@@ -124,7 +156,6 @@ pub fn derive_fromtlv(item: TokenStream) -> TokenStream {
                         } else if key_path.is_ident("lifetime") {
                             if let Str(litstr) = key_val {
                                 lifetime = Lifetime::new(&litstr.value(), Span::call_site());
-                                // panic!("key val is {:?}", litstr.value());
                             }
                         } else if key_path.is_ident("datatype") {
                             if let Str(litstr) = key_val {
@@ -158,7 +189,6 @@ pub fn derive_fromtlv(item: TokenStream) -> TokenStream {
         idents.push(&field.ident);
 
         if let Type::Path(path) = type_name {
-            //            panic!("type is {:?}", path.path.segments[0].ident);
             types.push(&path.path.segments[0].ident);
         } else {
             panic!("Don't know what to do");
@@ -169,56 +199,52 @@ pub fn derive_fromtlv(item: TokenStream) -> TokenStream {
     // order. If ever the tags start coming out of order, we can use find_tag()
     // instead
     let expanded = if !out_of_order {
-     quote! {
-        impl #generics FromTLV <#lifetime> for #struct_name #generics {
-            fn from_tlv(t: &TLVElement<#lifetime>) -> Result<Self, Error> {
-                let mut t_iter = t.#data_type ()?.iter().ok_or(Error::Invalid)?;
-                let mut tag = #tag_start;
-                let mut item = t_iter.next();
-                #(
-                    let #idents = if Some(true) == item.map(|x| x.check_ctx_tag(tag)) {
-                          let backup = item;
-                        item = t_iter.next();
-                        #types::from_tlv(&backup.unwrap())
-                    } else {
-                        #types::tlv_not_found()
-                    }?;
-                    tag += 1;
-                )*
+        quote! {
+           impl #generics FromTLV <#lifetime> for #struct_name #generics {
+               fn from_tlv(t: &TLVElement<#lifetime>) -> Result<Self, Error> {
+                   let mut t_iter = t.#data_type ()?.iter().ok_or(Error::Invalid)?;
+                   let mut tag = #tag_start;
+                   let mut item = t_iter.next();
+                   #(
+                       let #idents = if Some(true) == item.map(|x| x.check_ctx_tag(tag)) {
+                           let backup = item;
+                           item = t_iter.next();
+                           #types::from_tlv(&backup.unwrap())
+                       } else {
+                           #types::tlv_not_found()
+                       }?;
+                       tag += 1;
+                   )*
 
-                Ok(Self {
-                    #(#idents,
-                    )*
-                })
-            }
+                   Ok(Self {
+                       #(#idents,
+                       )*
+                   })
+               }
+           }
         }
-     }
+    } else {
+        quote! {
+           impl #generics FromTLV <#lifetime> for #struct_name #generics {
+               fn from_tlv(t: &TLVElement<#lifetime>) -> Result<Self, Error> {
+                   let mut tag = #tag_start;
+                   #(
+                       let #idents = if let Ok(s) = t.find_tag(tag as u32) {
+                           #types::from_tlv(&s)
+                       } else {
+                           #types::tlv_not_found()
+                       }?;
+                       tag += 1;
+                   )*
 
-     } else {
-     quote! {
-        impl #generics FromTLV <#lifetime> for #struct_name #generics {
-            fn from_tlv(t: &TLVElement<#lifetime>) -> Result<Self, Error> {
-                let mut tag = #tag_start;
-                #(
-                    let #idents = if let Ok(s) = t.find_tag(tag as u32) {
-                        #types::from_tlv(&s)
-                    } else {
-                        #types::tlv_not_found()
-                    }?;
-                    tag += 1;
-                )*
-                
-                Ok(Self {
-                    #(#idents,
-                    )*
-                })
-            }
+                   Ok(Self {
+                       #(#idents,
+                       )*
+                   })
+               }
+           }
         }
-     }
-    
     };
-//    if out_of_order {
-//        panic!("The generated code is {}", expanded);
-//    }
+    //        panic!("The generated code is {}", expanded);
     expanded.into()
 }
