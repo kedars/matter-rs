@@ -1,11 +1,10 @@
 use std::sync::RwLock;
 
 use crate::{
-    data_model::objects::GlobalElements,
     error::Error,
     fabric,
     interaction_model::messages::GenericPath,
-    tlv::{FromTLV, TLVElement, TagType, ToTLV},
+    tlv::{FromTLV, TLVElement, TLVWriter, TagType, ToTLV},
 };
 use bitflags::bitflags;
 use log::error;
@@ -106,11 +105,15 @@ impl ToTLV for AuthMode {
     }
 }
 
+#[derive(ToTLV)]
+#[tlvargs(start = 1)]
 pub struct AclEntry {
     privilege: Privilege,
     auth_mode: AuthMode,
     subjects: [Option<u64>; SUBJECTS_PER_ENTRY],
     targets: [Option<GenericPath>; TARGETS_PER_ENTRY],
+    // TODO: Instead of the direct value, we should consider GlobalElements::FabricIndex
+    #[tagval(0xFE)]
     fab_idx: u8,
 }
 
@@ -146,48 +149,6 @@ impl AclEntry {
             .ok_or(Error::NoSpace)?;
         self.targets[index] = Some(target);
         Ok(())
-    }
-}
-
-enum AclEntryTag {
-    Privilege = 1,
-    AuthMode = 2,
-    Subject = 3,
-    Targets = 4,
-}
-
-impl ToTLV for AclEntry {
-    fn to_tlv(
-        &self,
-        tw: &mut crate::tlv::TLVWriter,
-        tag: crate::tlv::TagType,
-    ) -> Result<(), Error> {
-        tw.start_struct(tag)?;
-        self.privilege
-            .to_tlv(tw, TagType::Context(AclEntryTag::Privilege as u8))?;
-
-        self.auth_mode
-            .to_tlv(tw, TagType::Context(AclEntryTag::AuthMode as u8))?;
-
-        tw.start_array(TagType::Context(AclEntryTag::Subject as u8))?;
-        for element in self.subjects {
-            if let Some(a) = element {
-                a.to_tlv(tw, TagType::Anonymous)?;
-            }
-        }
-        tw.end_container()?;
-
-        tw.start_array(TagType::Context(AclEntryTag::Targets as u8))?;
-        for element in self.targets {
-            if let Some(a) = element {
-                a.to_tlv(tw, TagType::Anonymous)?;
-            }
-        }
-        tw.end_container()?;
-
-        self.fab_idx
-            .to_tlv(tw, TagType::Context(GlobalElements::FabricIndex as u8))?;
-        tw.end_container()
     }
 }
 

@@ -46,10 +46,10 @@ macro_rules! totlv_for {
     };
 }
 
-impl<'a, T: ToTLV> ToTLV for &'a [T] {
+impl<'a, T: ToTLV, const N: usize> ToTLV for [T; N] {
     fn to_tlv(&self, tw: &mut TLVWriter, tag: TagType) -> Result<(), Error> {
         tw.start_array(tag)?;
-        for i in *self {
+        for i in self {
             i.to_tlv(tw, TagType::Anonymous)?;
         }
         tw.end_container()
