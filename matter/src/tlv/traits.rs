@@ -309,4 +309,35 @@ mod tests {
         assert_eq!(test.b, None);
         assert_eq!(test.c, Some(11));
     }
+
+    #[derive(FromTLV, ToTLV, Debug)]
+    struct TestDeriveFabScoped {
+        a: u16,
+        #[tagval(0xFE)]
+        fab_idx: u16,
+    }
+    #[test]
+    fn test_derive_fromtlv_fab_scoped() {
+        let b = [21, 37, 0, 10, 0, 37, 0xFE, 11, 0];
+        let root = TLVList::new(&b).iter().next().unwrap();
+        let test = TestDeriveFabScoped::from_tlv(&root).unwrap();
+        assert_eq!(test.a, 10);
+        assert_eq!(test.fab_idx, 11);
+    }
+
+    #[test]
+    fn test_derive_totlv_fab_scoped() {
+        let mut buf: [u8; 20] = [0; 20];
+        let buf_len = buf.len();
+        let mut writebuf = WriteBuf::new(&mut buf, buf_len);
+        let mut tw = TLVWriter::new(&mut writebuf);
+
+        let abc = TestDeriveFabScoped { a: 20, fab_idx: 3 };
+
+        abc.to_tlv(&mut tw, TagType::Anonymous).unwrap();
+        assert_eq!(
+            buf,
+            [21, 36, 0, 20, 36, 0xFE, 3, 24, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        );
+    }
 }
