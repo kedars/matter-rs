@@ -1,10 +1,12 @@
-use std::sync::RwLock;
+use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 
 use crate::{
     error::Error,
     fabric,
     interaction_model::messages::GenericPath,
-    tlv::{FromTLV, TLVElement, TLVWriter, TagType, ToTLV},
+    sys::Psm,
+    tlv::{FromTLV, TLVElement, TLVList, TLVWriter, TagType, ToTLV},
+    utils::writebuf::WriteBuf,
 };
 use bitflags::bitflags;
 use log::error;
@@ -105,13 +107,15 @@ impl ToTLV for AuthMode {
     }
 }
 
-#[derive(ToTLV)]
+type Subjects = [Option<u64>; SUBJECTS_PER_ENTRY];
+type Targets = [Option<GenericPath>; TARGETS_PER_ENTRY];
+#[derive(ToTLV, FromTLV, Copy, Clone)]
 #[tlvargs(start = 1)]
 pub struct AclEntry {
     privilege: Privilege,
     auth_mode: AuthMode,
-    subjects: [Option<u64>; SUBJECTS_PER_ENTRY],
-    targets: [Option<GenericPath>; TARGETS_PER_ENTRY],
+    subjects: Subjects,
+    targets: Targets,
     // TODO: Instead of the direct value, we should consider GlobalElements::FabricIndex
     #[tagval(0xFE)]
     fab_idx: u8,
@@ -153,23 +157,61 @@ impl AclEntry {
 }
 
 const MAX_ACL_ENTRIES: usize = ENTRIES_PER_FABRIC * fabric::MAX_SUPPORTED_FABRICS;
+type AclEntries = [Option<AclEntry>; MAX_ACL_ENTRIES];
+
+#[derive(ToTLV, FromTLV)]
 struct AclMgrInner {
-    // Fabric 1's entry goes into 0th index
-    entries: [Option<AclEntry>; MAX_ACL_ENTRIES],
+    entries: AclEntries,
+}
+
+const ACL_KV_ENTRY: &str = "acl";
+const ACL_KV_MAX_SIZE: usize = 300;
+impl AclMgrInner {
+    pub fn store(&self, psm: &MutexGuard<Psm>) -> Result<(), Error> {
+        let mut acl_tlvs = [0u8; ACL_KV_MAX_SIZE];
+        let mut wb = WriteBuf::new(&mut acl_tlvs, ACL_KV_MAX_SIZE);
+        let mut tw = TLVWriter::new(&mut wb);
+        self.entries.to_tlv(&mut tw, TagType::Anonymous)?;
+        psm.set_kv_slice(ACL_KV_ENTRY, wb.as_slice())
+    }
+
+    pub fn load(psm: &MutexGuard<Psm>) -> Result<Self, Error> {
+        let mut acl_tlvs = Vec::new();
+        psm.get_kv_slice(ACL_KV_ENTRY, &mut acl_tlvs)?;
+        let root = TLVList::new(&acl_tlvs)
+            .iter()
+            .next()
+            .ok_or(Error::Invalid)?;
+
+        Ok(Self {
+            entries: AclEntries::from_tlv(&root)?,
+        })
+    }
 }
 
 pub struct AclMgr {
     inner: RwLock<AclMgrInner>,
+    psm: Arc<Mutex<Psm>>,
 }
 
 impl AclMgr {
-    pub fn new() -> Self {
-        const INIT: Option<AclEntry> = None;
-        Self {
-            inner: RwLock::new(AclMgrInner {
-                entries: [INIT; MAX_ACL_ENTRIES],
-            }),
-        }
+    pub fn new() -> Result<Self, Error> {
+        let psm = Psm::get()?;
+        let inner = {
+            let psm_lock = psm.lock().unwrap();
+            if let Ok(i) = AclMgrInner::load(&psm_lock) {
+                i
+            } else {
+                const INIT: Option<AclEntry> = None;
+                AclMgrInner {
+                    entries: [INIT; MAX_ACL_ENTRIES],
+                }
+            }
+        };
+        Ok(Self {
+            inner: RwLock::new(inner),
+            psm,
+        })
     }
 
     pub fn add(&self, entry: AclEntry) -> Result<(), Error> {
@@ -189,7 +231,9 @@ impl AclMgr {
             .position(|a| a.is_none())
             .ok_or(Error::NoSpace)?;
         inner.entries[index] = Some(entry);
-        Ok(())
+
+        let psm = self.psm.lock().unwrap();
+        inner.store(&psm)
     }
 
     pub fn for_each_acl<T>(&self, mut f: T) -> Result<(), Error>

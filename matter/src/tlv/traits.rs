@@ -1,6 +1,7 @@
 use super::{TLVContainerIterator, TLVElement, TLVWriter, TagType};
 use crate::error::Error;
 use core::slice::Iter;
+use log::error;
 
 pub trait FromTLV<'a> {
     fn from_tlv(t: &TLVElement<'a>) -> Result<Self, Error>
@@ -13,6 +14,29 @@ pub trait FromTLV<'a> {
         Self: Sized,
     {
         Err(Error::TLVNotFound)
+    }
+}
+
+impl<'a, T: Default + FromTLV<'a> + Copy, const N: usize> FromTLV<'a> for [T; N] {
+    fn from_tlv(t: &TLVElement<'a>) -> Result<Self, Error>
+    where
+        Self: Sized,
+    {
+        t.confirm_array()?;
+        let mut a: [T; N] = [Default::default(); N];
+        let mut index = 0;
+        if let Some(tlv_iter) = t.iter() {
+            for element in tlv_iter {
+                if index < N {
+                    a[index] = T::from_tlv(&element)?;
+                    index += 1;
+                } else {
+                    error!("Received TLV Array with elements larger than current size");
+                    break;
+                }
+            }
+        }
+        Ok(a)
     }
 }
 
