@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::acl::{AclEntry, AclMgr, AuthMode, Privilege};
+use crate::acl::{AclEntry, AclMgr, AuthMode};
 use crate::cert::Cert;
 use crate::crypto::{self, CryptoKeyPair, KeyPair};
 use crate::data_model::objects::*;

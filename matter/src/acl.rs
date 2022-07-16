@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 
 use crate::{
+    data_model::objects::Privilege,
     error::Error,
     fabric,
     interaction_model::messages::GenericPath,
@@ -8,8 +9,6 @@ use crate::{
     tlv::{FromTLV, TLVElement, TLVList, TLVWriter, TagType, ToTLV},
     utils::writebuf::WriteBuf,
 };
-use bitflags::bitflags;
-use log::error;
 use num_derive::FromPrimitive;
 
 // Matter Minimum Requirements
@@ -17,71 +16,7 @@ pub const SUBJECTS_PER_ENTRY: usize = 4;
 pub const TARGETS_PER_ENTRY: usize = 3;
 pub const ENTRIES_PER_FABRIC: usize = 3;
 
-bitflags! {
-    #[derive(Default)]
-    pub struct Privilege: u8 {
-        const VIEW = 0x01;
-        const OPERATE = 0x02;
-        const MANAGE = 0x04;
-        const ADMIN = 0x08;
-    }
-}
-
-fn unfurl(privilege: Privilege) -> Privilege {
-    if privilege.contains(Privilege::ADMIN) {
-        Privilege::ADMIN | Privilege::OPERATE | Privilege::MANAGE | Privilege::VIEW
-    } else if privilege.contains(Privilege::OPERATE) {
-        Privilege::OPERATE | Privilege::MANAGE | Privilege::VIEW
-    } else if privilege.contains(Privilege::MANAGE) {
-        Privilege::MANAGE | Privilege::VIEW
-    } else if privilege.contains(Privilege::VIEW) {
-        Privilege::VIEW
-    } else {
-        Default::default()
-    }
-}
-
-impl FromTLV<'_> for Privilege {
-    fn from_tlv(t: &TLVElement) -> Result<Self, Error>
-    where
-        Self: Sized,
-    {
-        match t.u32()? {
-            1 => Ok(unfurl(Privilege::VIEW)),
-            2 => {
-                error!("ProxyView privilege not yet supporteds");
-                Err(Error::Invalid)
-            }
-            3 => Ok(unfurl(Privilege::OPERATE)),
-            4 => Ok(unfurl(Privilege::MANAGE)),
-            5 => Ok(unfurl(Privilege::ADMIN)),
-            _ => Err(Error::Invalid),
-        }
-    }
-}
-
-impl ToTLV for Privilege {
-    fn to_tlv(
-        &self,
-        tw: &mut crate::tlv::TLVWriter,
-        tag: crate::tlv::TagType,
-    ) -> Result<(), Error> {
-        let val = if self.contains(Privilege::ADMIN) {
-            5
-        } else if self.contains(Privilege::OPERATE) {
-            4
-        } else if self.contains(Privilege::MANAGE) {
-            3
-        } else if self.contains(Privilege::VIEW) {
-            1
-        } else {
-            0
-        };
-        tw.u8(tag, val)
-    }
-}
-
-#[derive(FromPrimitive, Copy, Clone)]
+#[derive(FromPrimitive, Copy, Clone, PartialEq)]
 pub enum AuthMode {
     Pase = 1,
     Case = 2,
@@ -125,7 +60,7 @@ impl AclEntry {
     pub fn new(fab_idx: u8, privilege: Privilege, auth_mode: AuthMode) -> Self {
         const INIT_SUBJECTS: Option<u64> = None;
         const INIT_TARGETS: Option<GenericPath> = None;
-        let privilege = unfurl(privilege);
+        let privilege = privilege;
         Self {
             fab_idx,
             privilege,

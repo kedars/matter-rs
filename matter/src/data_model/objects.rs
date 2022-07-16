@@ -9,3 +9,6 @@ pub use endpoint::*;
 
 mod node;
 pub use node::*;
+
+mod privilege;
+pub use privilege::*;
