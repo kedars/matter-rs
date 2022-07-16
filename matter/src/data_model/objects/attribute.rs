@@ -1,4 +1,4 @@
-use super::GlobalElements;
+use super::{GlobalElements, Privilege};
 use crate::{
     error::*,
     // TODO: This layer shouldn't really depend on the TLV layer, should create an abstraction layer
@@ -11,19 +11,47 @@ use std::fmt::{self, Debug, Formatter};
 bitflags! {
     #[derive(Default)]
     pub struct Access: u16 {
-        const READ = 0x0001;
-        const WRITE = 0x0002;
-        const FAB_SCOPED = 0x0004;
-        const FAB_SENSITIVE = 0x0008;
-        const NEED_VIEW = 0x0010;
-        const NEED_OPERATE = 0x0020;
-        const NEED_MANAGE = 0x0040;
-        const NEED_ADMIN = 0x0080;
+        // These must match the bits in the Privilege object :-|
+        const NEED_VIEW = 0x00001;
+        const NEED_OPERATE = 0x0002;
+        const NEED_MANAGE = 0x0004;
+        const NEED_ADMIN = 0x0008;
+
+        const READ = 0x0010;
+        const WRITE = 0x0020;
+        const FAB_SCOPED = 0x0040;
+        const FAB_SENSITIVE = 0x0080;
         const TIMED_ONLY = 0x0100;
+
+        const READ_PRIVILEGE_MASK = Self::NEED_VIEW.bits | Self::NEED_MANAGE.bits | Self::NEED_OPERATE.bits | Self::NEED_ADMIN.bits;
+        const WRITE_PRIVILEGE_MASK = Self::NEED_MANAGE.bits | Self::NEED_OPERATE.bits | Self::NEED_ADMIN.bits;
         const RV = Self::READ.bits | Self::NEED_VIEW.bits;
         const RWVA = Self::READ.bits | Self::WRITE.bits | Self::NEED_VIEW.bits | Self::NEED_ADMIN.bits;
         const RWFA = Self::READ.bits | Self::WRITE.bits | Self::FAB_SCOPED.bits | Self::NEED_ADMIN.bits;
         const RWVM = Self::READ.bits | Self::WRITE.bits | Self::NEED_VIEW.bits | Self::NEED_MANAGE.bits;
+    }
+}
+
+impl Access {
+    pub fn is_ok(&self, operation: Access, privilege: Privilege) -> bool {
+        let required = if operation.contains(Access::READ) {
+            *self & Access::READ_PRIVILEGE_MASK
+        } else if operation.contains(Access::WRITE) {
+            *self & Access::WRITE_PRIVILEGE_MASK
+        } else {
+            return false;
+        };
+
+        if required.is_empty() {
+            // There must some required privilege for any object
+            return false;
+        }
+
+        if ((privilege.bits() as u16) & required.bits()) == 0 {
+            return false;
+        }
+
+        self.contains(operation)
     }
 }
 
@@ -154,5 +182,76 @@ impl Attribute {
 impl std::fmt::Display for Attribute {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}: {:?}", self.id, self.value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Access;
+    use crate::data_model::objects::Privilege;
+
+    #[test]
+    fn test_read() {
+        let c = Access::READ;
+        // Read without NEED_VIEW, implies No Read is possible
+        assert_eq!(c.is_ok(Access::READ, Privilege::VIEW), false);
+
+        let c = Access::WRITE | Access::NEED_VIEW;
+        // Read without Read, implies No Read is possible
+        assert_eq!(c.is_ok(Access::READ, Privilege::VIEW), false);
+
+        let c = Access::RV;
+        // Read with View or Admin privilege
+        assert_eq!(c.is_ok(Access::READ, Privilege::VIEW), true);
+        assert_eq!(c.is_ok(Access::READ, Privilege::ADMIN), true);
+
+        let c = Access::READ | Access::NEED_ADMIN;
+        // Read without Admin privilege
+        assert_eq!(c.is_ok(Access::READ, Privilege::VIEW), false);
+        assert_eq!(c.is_ok(Access::READ, Privilege::OPERATE), false);
+        assert_eq!(c.is_ok(Access::READ, Privilege::MANAGE), false);
+        assert_eq!(c.is_ok(Access::READ, Privilege::ADMIN), true);
+
+        let c = Access::READ | Access::NEED_OPERATE;
+        // Read without Operate privilege
+        assert_eq!(c.is_ok(Access::READ, Privilege::VIEW), false);
+        assert_eq!(c.is_ok(Access::READ, Privilege::OPERATE), true);
+        assert_eq!(c.is_ok(Access::READ, Privilege::MANAGE), true);
+        assert_eq!(c.is_ok(Access::READ, Privilege::ADMIN), true);
+    }
+
+    #[test]
+    fn test_write() {
+        let c = Access::WRITE;
+        // Write NEED_*, implies No Write is possible
+        assert_eq!(c.is_ok(Access::WRITE, Privilege::VIEW), false);
+
+        let c = Access::READ | Access::NEED_MANAGE;
+        // Write without Write, implies No Write is possible
+        assert_eq!(c.is_ok(Access::WRITE, Privilege::MANAGE), false);
+
+        let c = Access::RWVA;
+        // Write with View and Admin privilege
+        assert_eq!(c.is_ok(Access::WRITE, Privilege::VIEW), false);
+        assert_eq!(c.is_ok(Access::WRITE, Privilege::ADMIN), true);
+
+        let c = Access::RWVA;
+        // WRITE without Admin privilege
+        assert_eq!(c.is_ok(Access::WRITE, Privilege::VIEW), false);
+        assert_eq!(c.is_ok(Access::WRITE, Privilege::OPERATE), false);
+        assert_eq!(c.is_ok(Access::WRITE, Privilege::MANAGE), false);
+        assert_eq!(c.is_ok(Access::WRITE, Privilege::ADMIN), true);
+        // Read with View Privilege
+        assert_eq!(c.is_ok(Access::READ, Privilege::VIEW), true);
+        assert_eq!(c.is_ok(Access::READ, Privilege::OPERATE), true);
+        assert_eq!(c.is_ok(Access::READ, Privilege::MANAGE), true);
+        assert_eq!(c.is_ok(Access::READ, Privilege::ADMIN), true);
+
+        let c = Access::WRITE | Access::NEED_OPERATE;
+        // WRITE without Operate privilege
+        assert_eq!(c.is_ok(Access::WRITE, Privilege::VIEW), false);
+        assert_eq!(c.is_ok(Access::WRITE, Privilege::OPERATE), true);
+        assert_eq!(c.is_ok(Access::WRITE, Privilege::MANAGE), true);
+        assert_eq!(c.is_ok(Access::WRITE, Privilege::ADMIN), true);
     }
 }
