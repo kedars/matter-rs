@@ -12,3 +12,6 @@ pub use node::*;
 
 mod privilege;
 pub use privilege::*;
+
+mod encoder;
+pub use encoder::*;

@@ -13,7 +13,7 @@ use crate::{
         command::CommandReq,
         core::IMStatusCode,
         messages::{
-            ib::{self, AttrData, AttrDataType, AttrPath},
+            ib::{self, AttrData, AttrPath},
             msg::{self, ReadReq, WriteReq},
             GenericPath,
         },
@@ -62,16 +62,16 @@ impl DataModel {
         c: &mut dyn ClusterType,
         tw: &mut TLVWriter,
         path: &GenericPath,
-        data: &AttrDataType,
+        data: &EncodeValue,
         attr_id: u16,
         skip_error: bool,
     ) {
         let result = match data {
-            AttrDataType::Closure(_) => {
+            EncodeValue::Closure(_) | EncodeValue::Value(_) => {
                 error!("Not supported");
                 Err(IMStatusCode::Failure)
             }
-            AttrDataType::Tlv(t) => c.write_attribute(t, attr_id),
+            EncodeValue::Tlv(t) => c.write_attribute(t, attr_id),
         };
         if skip_error && result.is_err() {
             // For wildcard scenarios
@@ -146,7 +146,7 @@ impl DataModel {
         let data = |tag: TagType, tw: &mut TLVWriter| Cluster::read_attribute(c, tag, tw, attr_id);
 
         let attr_resp =
-            ib::AttrResp::new(c.base().get_dataver(), &path, AttrDataType::Closure(&data));
+            ib::AttrResp::new(c.base().get_dataver(), &path, EncodeValue::Closure(&data));
         let result = attr_resp.write_tlv(tw, TagType::Anonymous);
         if result.is_err() {
             tw.rewind_to(anchor);
@@ -296,5 +296,52 @@ impl InteractionConsumer for DataModel {
         DataModel::handle_command_path(&mut node, &mut cmd_req);
 
         Ok(())
+    }
+}
+
+pub struct AttributeEncoder<'a> {
+    tw: &'a mut TLVWriter<'a, 'a>,
+    tag: TagType,
+    data_ver: u32,
+    path: &'a GenericPath,
+    skip_error: bool,
+}
+
+impl<'a> AttributeEncoder<'a> {
+    pub fn new(
+        tw: &'a mut TLVWriter<'a, 'a>,
+        tag: TagType,
+        data_ver: u32,
+        path: &'a GenericPath,
+    ) -> Self {
+        Self {
+            tw,
+            tag,
+            data_ver,
+            path,
+            skip_error: false,
+        }
+    }
+
+    pub fn skip_error(&mut self) {
+        self.skip_error = true;
+    }
+}
+
+impl<'a> Encoder for AttributeEncoder<'a> {
+    fn encode(&mut self, value: EncodeValue) {
+        let resp = ib::AttrResp::Data(ib::AttrData::new(
+            Some(self.data_ver),
+            ib::AttrPath::new(self.path),
+            value,
+        ));
+        let _ = resp.to_tlv(self.tw, self.tag);
+    }
+
+    fn encode_status(&mut self, status: IMStatusCode, cluster_status: u16) {
+        if !self.skip_error {
+            let resp = ib::AttrResp::Status(ib::AttrStatus::new(self.path, status, cluster_status));
+            let _ = resp.to_tlv(self.tw, self.tag);
+        }
     }
 }

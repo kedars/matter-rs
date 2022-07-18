@@ -2,12 +2,12 @@ use matter::{
     data_model::{
         cluster_on_off,
         core::DataModel,
-        objects::{AttrValue, GlobalElements},
+        objects::{AttrValue, EncodeValue, GlobalElements},
     },
     interaction_model::{
         core::{IMStatusCode, OpCode},
         messages::{
-            ib::{AttrData, AttrDataTag, AttrDataType, AttrPath, AttrResp, AttrStatus},
+            ib::{AttrData, AttrDataTag, AttrPath, AttrResp, AttrStatus},
             msg::{ReadReq, WriteReq},
         },
         messages::{msg, GenericPath},
@@ -122,7 +122,7 @@ macro_rules! attr_data {
                 attr: $path.leaf.map(|x| x as u16),
                 ..Default::default()
             },
-            data: AttrDataType::Tlv(TLVElement::new(
+            data: EncodeValue::Tlv(TLVElement::new(
                 TagType::Context(AttrDataTag::Data as u8),
                 $data,
             )),
@@ -417,12 +417,12 @@ fn test_write_success() {
         AttrData::new(
             None,
             AttrPath::new(&ep0_att),
-            AttrDataType::Closure(&attr_data0),
+            EncodeValue::Closure(&attr_data0),
         ),
         AttrData::new(
             None,
             AttrPath::new(&ep1_att),
-            AttrDataType::Closure(&attr_data1),
+            EncodeValue::Closure(&attr_data1),
         ),
     ];
     let expected = &[
@@ -469,7 +469,7 @@ fn test_write_wc_endpoint() {
     let input = &[AttrData::new(
         None,
         AttrPath::new(&ep_att),
-        AttrDataType::Closure(&attr_data0),
+        EncodeValue::Closure(&attr_data0),
     )];
 
     let ep0_att = GenericPath::new(
@@ -556,37 +556,37 @@ fn test_write_unsupported_fields() {
         AttrData::new(
             None,
             AttrPath::new(&invalid_endpoint),
-            AttrDataType::Closure(&attr_data0),
+            EncodeValue::Closure(&attr_data0),
         ),
         AttrData::new(
             None,
             AttrPath::new(&invalid_cluster),
-            AttrDataType::Closure(&attr_data0),
+            EncodeValue::Closure(&attr_data0),
         ),
         AttrData::new(
             None,
             AttrPath::new(&invalid_attribute),
-            AttrDataType::Closure(&attr_data0),
+            EncodeValue::Closure(&attr_data0),
         ),
         AttrData::new(
             None,
             AttrPath::new(&wc_endpoint_invalid_cluster),
-            AttrDataType::Closure(&attr_data0),
+            EncodeValue::Closure(&attr_data0),
         ),
         AttrData::new(
             None,
             AttrPath::new(&wc_endpoint_invalid_attribute),
-            AttrDataType::Closure(&attr_data0),
+            EncodeValue::Closure(&attr_data0),
         ),
         AttrData::new(
             None,
             AttrPath::new(&wc_cluster),
-            AttrDataType::Closure(&attr_data0),
+            EncodeValue::Closure(&attr_data0),
         ),
         AttrData::new(
             None,
             AttrPath::new(&wc_attribute),
-            AttrDataType::Closure(&attr_data0),
+            EncodeValue::Closure(&attr_data0),
         ),
     ];
     let expected = &[

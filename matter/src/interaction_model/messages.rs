@@ -138,6 +138,7 @@ pub mod ib {
     use std::fmt::{Debug, Formatter};
 
     use crate::{
+        data_model::objects::EncodeValue,
         error::Error,
         interaction_model::core::IMStatusCode,
         tlv::{FromTLV, TLVElement, TLVWriter, TagType, ToTLV},
@@ -318,7 +319,7 @@ pub mod ib {
     }
 
     impl<'a> AttrResp<'a> {
-        pub fn new(data_ver: u32, path: &AttrPath, data: AttrDataType<'a>) -> Self {
+        pub fn new(data_ver: u32, path: &AttrPath, data: EncodeValue<'a>) -> Self {
             AttrResp::Data(AttrData::new(Some(data_ver), *path, data))
         }
 
@@ -366,45 +367,12 @@ pub mod ib {
         }
     }
 
-    type AttrDataGen<'a> = &'a dyn Fn(TagType, &mut TLVWriter) -> Result<(), IMStatusCode>;
-
-    #[derive(Clone, Copy)]
-    pub enum AttrDataType<'a> {
-        Closure(AttrDataGen<'a>),
-        Tlv(TLVElement<'a>),
-    }
-
-    impl<'a> PartialEq for AttrDataType<'a> {
-        fn eq(&self, other: &Self) -> bool {
-            match *self {
-                AttrDataType::Closure(_) => false,
-                AttrDataType::Tlv(a) => {
-                    if let AttrDataType::Tlv(b) = *other {
-                        a == b
-                    } else {
-                        false
-                    }
-                }
-            }
-        }
-    }
-
-    impl<'a> Debug for AttrDataType<'a> {
-        fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-            match *self {
-                AttrDataType::Closure(_) => write!(f, "Contains closure"),
-                AttrDataType::Tlv(t) => write!(f, "{:?}", t),
-            }?;
-            Ok(())
-        }
-    }
-
     // Attribute Data
     #[derive(Clone, Copy, PartialEq)]
     pub struct AttrData<'a> {
         pub data_ver: Option<u32>,
         pub path: AttrPath,
-        pub data: AttrDataType<'a>,
+        pub data: EncodeValue<'a>,
     }
 
     pub enum AttrDataTag {
@@ -414,7 +382,7 @@ pub mod ib {
     }
 
     impl<'a> AttrData<'a> {
-        pub fn new(data_ver: Option<u32>, path: AttrPath, data: AttrDataType<'a>) -> Self {
+        pub fn new(data_ver: Option<u32>, path: AttrPath, data: EncodeValue<'a>) -> Self {
             Self {
                 data_ver,
                 path,
@@ -431,8 +399,9 @@ pub mod ib {
                 .path
                 .to_tlv(tw, TagType::Context(AttrDataTag::Path as u8));
             match self.data {
-                AttrDataType::Closure(f) => (f)(TagType::Context(AttrDataTag::Data as u8), tw)?,
-                AttrDataType::Tlv(_) => (panic!("Not yet implemented")),
+                EncodeValue::Closure(f) => (f)(TagType::Context(AttrDataTag::Data as u8), tw)?,
+                EncodeValue::Tlv(_) => (panic!("Not yet implemented")),
+                EncodeValue::Value(v) => v.to_tlv(tw, TagType::Context(AttrDataTag::Data as u8))?,
             }
             let _ = tw.end_container();
             Ok(())
@@ -455,7 +424,7 @@ pub mod ib {
             Ok(Self {
                 data_ver,
                 path,
-                data: AttrDataType::Tlv(data),
+                data: EncodeValue::Tlv(data),
             })
         }
     }
