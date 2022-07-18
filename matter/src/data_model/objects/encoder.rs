@@ -5,14 +5,16 @@ use crate::{
     tlv::{TLVElement, TLVWriter, TagType, ToTLV},
 };
 
-type ValueGen<'a> = &'a dyn Fn(TagType, &mut TLVWriter) -> Result<(), IMStatusCode>;
-pub trait ToTLVDebug: ToTLV + Debug {}
+// TODO: Should this return an IMStatusCode Error? But if yes, the higher layer
+// may have already started encoding the 'success' headers, we might not to manage
+// the tw.rewind() in that case, if we add this support
+type ValueGen<'a> = &'a dyn Fn(TagType, &mut TLVWriter);
 
 #[derive(Copy, Clone)]
 pub enum EncodeValue<'a> {
     Closure(ValueGen<'a>),
     Tlv(TLVElement<'a>),
-    Value(&'a dyn ToTLVDebug),
+    Value(&'a (dyn ToTLV)),
 }
 
 pub trait Encoder {
@@ -42,7 +44,7 @@ impl<'a> Debug for EncodeValue<'a> {
         match *self {
             EncodeValue::Closure(_) => write!(f, "Contains closure"),
             EncodeValue::Tlv(t) => write!(f, "{:?}", t),
-            EncodeValue::Value(v) => write!(f, "{:?}", v),
+            EncodeValue::Value(v) => write!(f, "EncodeValue"),
         }?;
         Ok(())
     }

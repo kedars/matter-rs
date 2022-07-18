@@ -1,14 +1,16 @@
 use crate::{
-    data_model::objects::{Access, AttrValue, Attribute, Quality},
+    data_model::objects::{Access, AttrValue, Attribute, EncodeValue, Quality},
     error::*,
     interaction_model::{command::CommandReq, core::IMStatusCode},
     // TODO: This layer shouldn't really depend on the TLV layer, should create an abstraction layer
-    tlv::{TLVElement, TLVWriter, TagType, ToTLV},
+    tlv::{TLVElement, TLVWriter, TagType},
 };
 use log::error;
 use num_derive::FromPrimitive;
 use rand::Rng;
 use std::fmt::{self, Debug};
+
+use super::Encoder;
 
 pub const ATTRS_PER_CLUSTER: usize = 8;
 pub const CMDS_PER_CLUSTER: usize = 8;
@@ -141,58 +143,58 @@ impl Cluster {
         }
     }
 
-    pub fn read_attribute(
-        c: &dyn ClusterType,
-        tag: TagType,
-        tw: &mut TLVWriter,
-        attr_id: u16,
-    ) -> Result<(), IMStatusCode> {
+    pub fn read_attribute(c: &dyn ClusterType, encoder: &mut dyn Encoder, attr_id: u16) {
         let base = c.base();
-        let a = base
-            .get_attribute(attr_id)
-            .map_err(|_| IMStatusCode::UnsupportedAttribute)?;
+        let a = if let Ok(a) = base.get_attribute(attr_id) {
+            a
+        } else {
+            encoder.encode_status(IMStatusCode::UnsupportedAttribute, 0);
+            return;
+        };
+
         if !a.access.contains(Access::READ) {
-            return Err(IMStatusCode::UnsupportedRead);
+            encoder.encode_status(IMStatusCode::UnsupportedRead, 0);
+            return;
         }
 
-        if a.value != AttrValue::Custom || Attribute::is_system_attr(attr_id) {
-            base.read_standard_attribute(tag, tw, a)
+        if Attribute::is_system_attr(attr_id) {
+            c.base().read_system_attribute(encoder, a)
+        } else if a.value != AttrValue::Custom {
+            encoder.encode(EncodeValue::Value(&a.value))
         } else {
-            c.read_custom_attribute(tag, tw, attr_id)
+            //            c.read_custom_attribute(tag, tw, attr_id)
         }
     }
 
-    fn read_standard_attribute(
-        &self,
-        tag: TagType,
-        tw: &mut TLVWriter,
-        attr: &Attribute,
-    ) -> Result<(), IMStatusCode> {
+    fn encode_attribute_ids(&self, tag: TagType, tw: &mut TLVWriter) {
+        let _ = tw.start_array(tag);
+        for a in &self.attributes {
+            let _ = tw.u16(TagType::Anonymous, a.id);
+        }
+        let _ = tw.end_container();
+    }
+
+    fn read_system_attribute(&self, encoder: &mut dyn Encoder, attr: &Attribute) {
         let global_attr: Option<GlobalElements> = num::FromPrimitive::from_u16(attr.id);
         if let Some(global_attr) = global_attr {
             match global_attr {
                 GlobalElements::AttributeList => {
-                    let _ = tw.start_array(tag);
-                    for a in &self.attributes {
-                        let _ = tw.u16(TagType::Anonymous, a.id);
-                    }
-                    let _ = tw.end_container();
-                    Ok(())
+                    encoder.encode(EncodeValue::Closure(&|tag, tw| {
+                        self.encode_attribute_ids(tag, tw)
+                    }));
+                    return;
                 }
                 GlobalElements::FeatureMap => {
                     let val = if let Some(m) = self.feature_map { m } else { 0 };
-                    let _ = tw.u32(tag, val);
-                    Ok(())
+                    encoder.encode(EncodeValue::Value(&val));
+                    return;
                 }
                 _ => {
                     error!("This attribute not yet handled {:?}", global_attr);
-                    Err(IMStatusCode::UnsupportedAttribute)
                 }
             }
-        } else {
-            let _ = attr.value.to_tlv(tw, tag);
-            Ok(())
         }
+        encoder.encode_status(IMStatusCode::UnsupportedAttribute, 0)
     }
 
     pub fn read_attribute_raw(&self, attr_id: u16) -> Result<&AttrValue, IMStatusCode> {

@@ -395,11 +395,9 @@ fn test_write_success() {
     let _ = env_logger::try_init();
     let attr_data0 = |tag, t: &mut TLVWriter| {
         let _ = t.u16(tag, val0);
-        Ok(())
     };
     let attr_data1 = |tag, t: &mut TLVWriter| {
         let _ = t.u16(tag, val1);
-        Ok(())
     };
 
     let ep0_att = GenericPath::new(
@@ -458,7 +456,6 @@ fn test_write_wc_endpoint() {
     let _ = env_logger::try_init();
     let attr_data0 = |tag, t: &mut TLVWriter| {
         let _ = t.u16(tag, val0);
-        Ok(())
     };
 
     let ep_att = GenericPath::new(
@@ -524,7 +521,6 @@ fn test_write_unsupported_fields() {
     let val0 = 50;
     let attr_data0 = |tag, t: &mut TLVWriter| {
         let _ = t.u16(tag, val0);
-        Ok(())
     };
 
     let invalid_endpoint = GenericPath::new(

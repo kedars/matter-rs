@@ -399,7 +399,9 @@ pub mod ib {
                 .path
                 .to_tlv(tw, TagType::Context(AttrDataTag::Path as u8));
             match self.data {
-                EncodeValue::Closure(f) => (f)(TagType::Context(AttrDataTag::Data as u8), tw)?,
+                EncodeValue::Closure(f) => {
+                    let _ = (f)(TagType::Context(AttrDataTag::Data as u8), tw);
+                }
                 EncodeValue::Tlv(_) => (panic!("Not yet implemented")),
                 EncodeValue::Value(v) => v.to_tlv(tw, TagType::Context(AttrDataTag::Data as u8))?,
             }

@@ -133,27 +133,6 @@ impl DataModel {
         }
     }
 
-    // A valid attribute on a valid cluster should be encoded. Both wildcard and non-wildcard paths end up calling this API
-    // Note that it is possibe that some internal checks don't match even at this stage (read on a write-only attribute, invalid attr-id).
-    // If there was an error, we rewind, so the TLVWriter doesn't include any half-baked data about the 'AttrData' IB
-    fn handle_read_attr_data(
-        c: &dyn ClusterType,
-        tw: &mut TLVWriter,
-        path: AttrPath,
-        attr_id: u16,
-    ) -> Result<(), IMStatusCode> {
-        let anchor = tw.get_tail();
-        let data = |tag: TagType, tw: &mut TLVWriter| Cluster::read_attribute(c, tag, tw, attr_id);
-
-        let attr_resp =
-            ib::AttrResp::new(c.base().get_dataver(), &path, EncodeValue::Closure(&data));
-        let result = attr_resp.write_tlv(tw, TagType::Anonymous);
-        if result.is_err() {
-            tw.rewind_to(anchor);
-        }
-        result
-    }
-
     // Encode a read attribute from a path that may or may not be wildcard
     fn handle_read_attr_path(
         node: &RwLockReadGuard<Box<Node>>,
@@ -161,34 +140,18 @@ impl DataModel {
         tw: &mut TLVWriter,
     ) {
         let gen_path = attr_path.to_gp();
-        if let Ok((e, c, a)) = gen_path.not_wildcard() {
-            // The non-wildcard path
-            let cluster = node.get_cluster(e, c);
-            let result = match cluster {
-                Ok(cluster) => DataModel::handle_read_attr_data(cluster, tw, attr_path, a as u16),
-                Err(e) => Err(e.into()),
-            };
-
-            if let Err(e) = result {
-                let attr_status = ib::AttrStatus::new(&gen_path, e, 0);
-                let attr_resp = ib::AttrResp::Status(attr_status);
-                let _ = attr_resp.to_tlv(tw, TagType::Anonymous);
-            }
-        } else {
-            // The wildcard path
-            node.for_each_attribute(&gen_path, |path, c| {
-                let attr_id = if let Some(a) = path.leaf { a } else { 0 } as u16;
-                let path = ib::AttrPath::new(path);
-                // Note: In the case of wildcard scenario, we do NOT encode AttrStatus in case of errors
-                // This is as per the spec, because we don't want ot encode UnsupportedRead/UnsupportedWrite type of errors
-
-                // TODO: It is likely that there may be genuine cases where the error code needs to be encoded
-                // in this response. If such a thing is desirable, we'll have to make the wildcard traversal
-                // routines 'Access' aware, so that they only provide attributes that are compatible with the
-                // operation under consideration (Access:RV for read, Access:W*for write)
-                let _ = DataModel::handle_read_attr_data(c, tw, path, attr_id);
-            });
+        let mut attr_encoder = AttributeEncoder::new(tw, TagType::Anonymous);
+        if gen_path.not_wildcard().is_err() {
+            // This is a wildcard path, skip error
+            attr_encoder.skip_error();
         }
+
+        node.for_each_attribute(&gen_path, |path, c| {
+            let attr_id = if let Some(a) = path.leaf { a } else { 0 } as u16;
+            attr_encoder.set_path(*path);
+
+            Cluster::read_attribute(c, &mut attr_encoder, attr_id);
+        });
     }
 
     // Handle command from a path that may or may not be wildcard
@@ -299,26 +262,21 @@ impl InteractionConsumer for DataModel {
     }
 }
 
-pub struct AttributeEncoder<'a> {
-    tw: &'a mut TLVWriter<'a, 'a>,
+pub struct AttributeEncoder<'a, 'b, 'c> {
+    tw: &'a mut TLVWriter<'b, 'c>,
     tag: TagType,
     data_ver: u32,
-    path: &'a GenericPath,
+    path: GenericPath,
     skip_error: bool,
 }
 
-impl<'a> AttributeEncoder<'a> {
-    pub fn new(
-        tw: &'a mut TLVWriter<'a, 'a>,
-        tag: TagType,
-        data_ver: u32,
-        path: &'a GenericPath,
-    ) -> Self {
+impl<'a, 'b, 'c> AttributeEncoder<'a, 'b, 'c> {
+    pub fn new(tw: &'a mut TLVWriter<'b, 'c>, tag: TagType) -> Self {
         Self {
             tw,
             tag,
-            data_ver,
-            path,
+            data_ver: 0,
+            path: Default::default(),
             skip_error: false,
         }
     }
@@ -326,13 +284,21 @@ impl<'a> AttributeEncoder<'a> {
     pub fn skip_error(&mut self) {
         self.skip_error = true;
     }
+
+    pub fn set_data_ver(&mut self, data_ver: u32) {
+        self.data_ver = data_ver;
+    }
+
+    pub fn set_path(&mut self, path: GenericPath) {
+        self.path = path;
+    }
 }
 
-impl<'a> Encoder for AttributeEncoder<'a> {
+impl<'a, 'b, 'c> Encoder for AttributeEncoder<'a, 'b, 'c> {
     fn encode(&mut self, value: EncodeValue) {
         let resp = ib::AttrResp::Data(ib::AttrData::new(
             Some(self.data_ver),
-            ib::AttrPath::new(self.path),
+            ib::AttrPath::new(&self.path),
             value,
         ));
         let _ = resp.to_tlv(self.tw, self.tag);
@@ -340,7 +306,8 @@ impl<'a> Encoder for AttributeEncoder<'a> {
 
     fn encode_status(&mut self, status: IMStatusCode, cluster_status: u16) {
         if !self.skip_error {
-            let resp = ib::AttrResp::Status(ib::AttrStatus::new(self.path, status, cluster_status));
+            let resp =
+                ib::AttrResp::Status(ib::AttrStatus::new(&self.path, status, cluster_status));
             let _ = resp.to_tlv(self.tw, self.tag);
         }
     }
