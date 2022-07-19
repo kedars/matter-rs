@@ -1,5 +1,7 @@
 use matter::{
-    data_model::objects::{Access, AttrValue, Attribute, Cluster, ClusterType, Quality},
+    data_model::objects::{
+        Access, AttrValue, Attribute, Cluster, ClusterType, EncodeValue, Encoder, Quality,
+    },
     error::Error,
     interaction_model::{command::CommandReq, core::IMStatusCode, messages::ib},
     tlv::{TLVWriter, TagType, ToTLV},
@@ -39,18 +41,12 @@ impl ClusterType for EchoCluster {
         &mut self.base
     }
 
-    fn read_custom_attribute(
-        &self,
-        tag: TagType,
-        tw: &mut TLVWriter,
-        attr_id: u16,
-    ) -> Result<(), IMStatusCode> {
-        match num::FromPrimitive::from_u16(attr_id).ok_or(IMStatusCode::UnsupportedAttribute)? {
-            Attributes::AttCustom => {
+    fn read_custom_attribute(&self, encoder: &mut dyn Encoder, attr_id: u16) {
+        match num::FromPrimitive::from_u16(attr_id) {
+            Some(Attributes::AttCustom) => encoder.encode(EncodeValue::Closure(&|tag, tw| {
                 let _ = tw.u32(tag, ATTR_CUSTOM_VALUE);
-                Ok(())
-            }
-            _ => Err(IMStatusCode::UnsupportedAttribute),
+            })),
+            _ => (),
         }
     }
 

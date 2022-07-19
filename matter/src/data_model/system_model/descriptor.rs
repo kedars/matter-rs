@@ -3,7 +3,6 @@ use num_derive::FromPrimitive;
 use crate::data_model::core::DataModel;
 use crate::data_model::objects::*;
 use crate::error::*;
-use crate::interaction_model::core::IMStatusCode;
 use crate::interaction_model::messages::GenericPath;
 use crate::tlv::{TLVWriter, TagType};
 use log::error;
@@ -34,6 +33,20 @@ impl DescriptorCluster {
         c.base.add_attribute(attr_serverlist_new()?)?;
         Ok(c)
     }
+
+    fn encode_server_list(&self, tag: TagType, tw: &mut TLVWriter) {
+        let path = GenericPath {
+            endpoint: Some(self.endpoint_id),
+            cluster: None,
+            leaf: None,
+        };
+        let _ = tw.start_array(tag);
+        let dm = self.data_model.node.read().unwrap();
+        dm.for_each_cluster(&path, |_current_path, c| {
+            let _ = tw.u32(TagType::Anonymous, c.base().id());
+        });
+        let _ = tw.end_container();
+    }
 }
 
 impl ClusterType for DescriptorCluster {
@@ -44,32 +57,16 @@ impl ClusterType for DescriptorCluster {
         &mut self.base
     }
 
-    fn read_custom_attribute(
-        &self,
-        tag: TagType,
-        tw: &mut TLVWriter,
-        attr_id: u16,
-    ) -> Result<(), IMStatusCode> {
-        match num::FromPrimitive::from_u16(attr_id).ok_or(IMStatusCode::UnsupportedAttribute)? {
-            Attributes::ServerList => {
-                let path = GenericPath {
-                    endpoint: Some(self.endpoint_id),
-                    cluster: None,
-                    leaf: None,
-                };
-                let _ = tw.start_array(tag);
-                let dm = self.data_model.node.read().unwrap();
-                dm.for_each_cluster(&path, |_current_path, c| {
-                    let _ = tw.u32(TagType::Anonymous, c.base().id());
-                });
-                let _ = tw.end_container();
-            }
+    fn read_custom_attribute(&self, encoder: &mut dyn Encoder, attr_id: u16) {
+        match num::FromPrimitive::from_u16(attr_id) {
+            Some(Attributes::ServerList) => encoder.encode(EncodeValue::Closure(&|tag, tw| {
+                self.encode_server_list(tag, tw)
+            })),
+
             _ => {
-                error!("Not yet supported");
-                return Err(IMStatusCode::UnsupportedAttribute);
+                error!("Attribute not supported: this shouldn't happen");
             }
         }
-        Ok(())
     }
 }
 

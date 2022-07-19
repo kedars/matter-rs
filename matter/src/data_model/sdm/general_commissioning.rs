@@ -5,7 +5,7 @@ use crate::interaction_model::core::IMStatusCode;
 use crate::interaction_model::messages::ib;
 use crate::tlv::{FromTLV, TLVElement, TLVWriter, TagType, ToTLV};
 use crate::{error::*, interaction_model::command::CommandReq};
-use log::info;
+use log::{error, info};
 use num_derive::FromPrimitive;
 use std::sync::Arc;
 
@@ -100,20 +100,18 @@ impl ClusterType for GenCommCluster {
         &mut self.base
     }
 
-    fn read_custom_attribute(
-        &self,
-        tag: TagType,
-        tw: &mut TLVWriter,
-        attr_id: u16,
-    ) -> Result<(), IMStatusCode> {
-        match num::FromPrimitive::from_u16(attr_id).ok_or(IMStatusCode::UnsupportedAttribute)? {
-            Attributes::BasicCommissioningInfo => {
-                let _ = tw.start_struct(tag);
-                let _ = tw.u16(TagType::Context(0), self.expiry_len);
-                let _ = tw.end_container();
-                Ok(())
+    fn read_custom_attribute(&self, encoder: &mut dyn Encoder, attr_id: u16) {
+        match num::FromPrimitive::from_u16(attr_id) {
+            Some(Attributes::BasicCommissioningInfo) => {
+                encoder.encode(EncodeValue::Closure(&|tag, tw| {
+                    let _ = tw.start_struct(tag);
+                    let _ = tw.u16(TagType::Context(0), self.expiry_len);
+                    let _ = tw.end_container();
+                }))
             }
-            _ => Err(IMStatusCode::UnsupportedAttribute),
+            _ => {
+                error!("Unsupported Attribute: this shouldn't happen");
+            }
         }
     }
 

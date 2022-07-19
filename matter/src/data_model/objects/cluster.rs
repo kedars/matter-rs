@@ -29,14 +29,7 @@ pub enum GlobalElements {
 pub trait ClusterType {
     fn base(&self) -> &Cluster;
     fn base_mut(&mut self) -> &mut Cluster;
-    fn read_custom_attribute(
-        &self,
-        _tag: TagType,
-        _tw: &mut TLVWriter,
-        _attr_id: u16,
-    ) -> Result<(), IMStatusCode> {
-        Err(IMStatusCode::UnsupportedAttribute)
-    }
+    fn read_custom_attribute(&self, _encoder: &mut dyn Encoder, _attr_id: u16) {}
 
     fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
         let cmd = cmd_req.cmd.path.leaf.map(|a| a as u16);
@@ -162,7 +155,7 @@ impl Cluster {
         } else if a.value != AttrValue::Custom {
             encoder.encode(EncodeValue::Value(&a.value))
         } else {
-            //            c.read_custom_attribute(tag, tw, attr_id)
+            c.read_custom_attribute(encoder, attr_id)
         }
     }
 

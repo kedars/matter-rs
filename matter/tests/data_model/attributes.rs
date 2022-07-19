@@ -23,7 +23,7 @@ enum ExpectedReportData<'a> {
     Status(AttrStatus),
 }
 
-// Helper for handling Invoke Command sequences
+// Helper for handling Read Req sequences
 fn handle_read_reqs(input: &[AttrPath], expected: &[ExpectedReportData]) {
     let mut buf = [0u8; 400];
 

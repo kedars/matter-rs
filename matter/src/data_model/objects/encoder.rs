@@ -34,7 +34,7 @@ impl<'a> PartialEq for EncodeValue<'a> {
                 }
             }
             // Just claim false for now
-            EncodeValue::Value(a) => false,
+            EncodeValue::Value(_) => false,
         }
     }
 }
@@ -44,7 +44,7 @@ impl<'a> Debug for EncodeValue<'a> {
         match *self {
             EncodeValue::Closure(_) => write!(f, "Contains closure"),
             EncodeValue::Tlv(t) => write!(f, "{:?}", t),
-            EncodeValue::Value(v) => write!(f, "EncodeValue"),
+            EncodeValue::Value(_) => write!(f, "EncodeValue"),
         }?;
         Ok(())
     }

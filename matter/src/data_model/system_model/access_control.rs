@@ -5,8 +5,7 @@ use num_derive::FromPrimitive;
 use crate::acl::{self, AclMgr};
 use crate::data_model::objects::*;
 use crate::error::*;
-use crate::interaction_model::core::IMStatusCode;
-use crate::tlv::{TLVWriter, TagType, ToTLV};
+use crate::tlv::{TagType, ToTLV};
 use log::error;
 
 pub const ID: u32 = 0x001F;
@@ -48,32 +47,25 @@ impl ClusterType for AccessControlCluster {
         &mut self.base
     }
 
-    fn read_custom_attribute(
-        &self,
-        tag: TagType,
-        tw: &mut TLVWriter,
-        attr_id: u16,
-    ) -> Result<(), IMStatusCode> {
-        match num::FromPrimitive::from_u16(attr_id).ok_or(IMStatusCode::UnsupportedAttribute)? {
-            Attributes::Acl => {
+    fn read_custom_attribute(&self, encoder: &mut dyn Encoder, attr_id: u16) {
+        match num::FromPrimitive::from_u16(attr_id) {
+            Some(Attributes::Acl) => encoder.encode(EncodeValue::Closure(&|tag, tw| {
                 // Empty for now
                 let _ = tw.start_array(tag);
-                self.acl_mgr.for_each_acl(|entry| {
+                let _ = self.acl_mgr.for_each_acl(|entry| {
                     let _ = entry.to_tlv(tw, TagType::Anonymous);
-                })?;
+                });
                 let _ = tw.end_container();
-            }
-            Attributes::Extension => {
+            })),
+            Some(Attributes::Extension) => encoder.encode(EncodeValue::Closure(&|tag, tw| {
                 // Empty for now
                 let _ = tw.start_array(tag);
                 let _ = tw.end_container();
-            }
+            })),
             _ => {
-                error!("Not yet supported");
-                return Err(IMStatusCode::UnsupportedAttribute);
+                error!("Attribute not yet supported: this shouldn't happen");
             }
         }
-        Ok(())
     }
 }
 
