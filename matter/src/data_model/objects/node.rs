@@ -1,7 +1,7 @@
 use crate::{
     data_model::objects::{ClusterType, Endpoint},
     error::*,
-    interaction_model::messages::GenericPath,
+    interaction_model::{core::IMStatusCode, messages::GenericPath},
     // TODO: This layer shouldn't really depend on the TLV layer, should create an abstraction layer
 };
 use std::fmt;
@@ -104,109 +104,170 @@ impl Node {
     pub fn get_wildcard_endpoints(
         &self,
         endpoint: Option<u16>,
-    ) -> (&[Option<Box<Endpoint>>], usize) {
+    ) -> Result<(&[Option<Box<Endpoint>>], usize, bool), IMStatusCode> {
         if let Some(e) = endpoint {
             let e = e as usize;
-            if self.endpoints[e].is_none() {
-                // empty slice
-                (&[] as &[Option<Box<Endpoint>>], 0_usize)
+            if self.endpoints.len() <= e || self.endpoints[e].is_none() {
+                Err(IMStatusCode::UnsupportedEndpoint)
             } else {
-                (&self.endpoints[e..e + 1], e)
+                Ok((&self.endpoints[e..e + 1], e, false))
             }
         } else {
-            (&self.endpoints[..], 0)
+            Ok((&self.endpoints[..], 0, true))
         }
     }
 
     pub fn get_wildcard_endpoints_mut(
         &mut self,
         endpoint: Option<u16>,
-    ) -> (&mut [Option<Box<Endpoint>>], usize) {
+    ) -> Result<(&mut [Option<Box<Endpoint>>], usize, bool), IMStatusCode> {
         if let Some(e) = endpoint {
             let e = e as usize;
-            if self.endpoints[e].is_none() {
-                // empty slice
-                (&mut [] as &mut [Option<Box<Endpoint>>], 0_usize)
+            if self.endpoints.len() <= e || self.endpoints[e].is_none() {
+                Err(IMStatusCode::UnsupportedEndpoint)
             } else {
-                (&mut self.endpoints[e..e + 1], e)
+                Ok((&mut self.endpoints[e..e + 1], e, false))
             }
         } else {
-            (&mut self.endpoints[..], 0)
+            Ok((&mut self.endpoints[..], 0, true))
         }
     }
 
-    pub fn for_each_endpoint<T>(&self, path: &GenericPath, mut f: T)
+    /// Run a closure for all endpoints as specified in the path
+    ///
+    /// Note that the path is a GenericPath and hence can be a wildcard path. The behaviour
+    /// of this function is to only capture the successful invocations and ignore the erroneous
+    /// ones. This is inline with the expected behaviour for wildcard, where it implies that
+    /// 'please run this operation on this wildcard path "wherever possible"'
+    ///
+    /// It is expected that if the closure that you pass here returns an error it may not reach
+    /// out to the caller, in case there was a wildcard path specified
+    pub fn for_each_endpoint<T>(&self, path: &GenericPath, mut f: T) -> Result<(), IMStatusCode>
     where
-        T: FnMut(&GenericPath, &Endpoint),
+        T: FnMut(&GenericPath, &Endpoint) -> Result<(), IMStatusCode>,
     {
         let mut current_path = *path;
-        let (endpoints, mut endpoint_id) = self.get_wildcard_endpoints(path.endpoint);
+        let (endpoints, mut endpoint_id, wildcard) = self.get_wildcard_endpoints(path.endpoint)?;
         for e in endpoints.iter() {
             if let Some(e) = e {
                 current_path.endpoint = Some(endpoint_id as u16);
-                f(&current_path, e.as_ref());
+                f(&current_path, e.as_ref())
+                    .or_else(|e| if !wildcard { Err(e) } else { Ok(()) })?;
             }
             endpoint_id += 1;
         }
+        Ok(())
     }
 
-    pub fn for_each_endpoint_mut<T>(&mut self, path: &GenericPath, mut f: T)
+    /// Run a closure for all endpoints  (mutable) as specified in the path
+    ///
+    /// Note that the path is a GenericPath and hence can be a wildcard path. The behaviour
+    /// of this function is to only capture the successful invocations and ignore the erroneous
+    /// ones. This is inline with the expected behaviour for wildcard, where it implies that
+    /// 'please run this operation on this wildcard path "wherever possible"'
+    ///
+    /// It is expected that if the closure that you pass here returns an error it may not reach
+    /// out to the caller, in case there was a wildcard path specified
+    pub fn for_each_endpoint_mut<T>(
+        &mut self,
+        path: &GenericPath,
+        mut f: T,
+    ) -> Result<(), IMStatusCode>
     where
-        T: FnMut(&GenericPath, &mut Endpoint),
+        T: FnMut(&GenericPath, &mut Endpoint) -> Result<(), IMStatusCode>,
     {
         let mut current_path = *path;
-        let (endpoints, mut endpoint_id) = self.get_wildcard_endpoints_mut(path.endpoint);
+        let (endpoints, mut endpoint_id, wildcard) =
+            self.get_wildcard_endpoints_mut(path.endpoint)?;
         for e in endpoints.iter_mut() {
             if let Some(e) = e {
                 current_path.endpoint = Some(endpoint_id as u16);
-                f(&current_path, e.as_mut());
+                f(&current_path, e.as_mut())
+                    .or_else(|e| if !wildcard { Err(e) } else { Ok(()) })?;
             }
             endpoint_id += 1;
         }
+        Ok(())
     }
 
-    pub fn for_each_cluster<T>(&self, path: &GenericPath, mut f: T)
+    /// Run a closure for all clusters as specified in the path
+    ///
+    /// Note that the path is a GenericPath and hence can be a wildcard path. The behaviour
+    /// of this function is to only capture the successful invocations and ignore the erroneous
+    /// ones. This is inline with the expected behaviour for wildcard, where it implies that
+    /// 'please run this operation on this wildcard path "wherever possible"'
+    ///
+    /// It is expected that if the closure that you pass here returns an error it may not reach
+    /// out to the caller, in case there was a wildcard path specified
+    pub fn for_each_cluster<T>(&self, path: &GenericPath, mut f: T) -> Result<(), IMStatusCode>
     where
-        T: FnMut(&GenericPath, &dyn ClusterType),
+        T: FnMut(&GenericPath, &dyn ClusterType) -> Result<(), IMStatusCode>,
     {
         self.for_each_endpoint(path, |p, e| {
             let mut current_path = *p;
-            let clusters = e.get_wildcard_clusters(p.cluster);
+            let (clusters, wildcard) = e.get_wildcard_clusters(p.cluster)?;
             for c in clusters.iter() {
                 current_path.cluster = Some(c.base().id);
-                f(&current_path, c.as_ref());
+                f(&current_path, c.as_ref())
+                    .or_else(|e| if !wildcard { Err(e) } else { Ok(()) })?;
             }
-        });
+            Ok(())
+        })
     }
 
-    pub fn for_each_cluster_mut<T>(&mut self, path: &GenericPath, mut f: T)
+    /// Run a closure for all clusters (mutable) as specified in the path
+    ///
+    /// Note that the path is a GenericPath and hence can be a wildcard path. The behaviour
+    /// of this function is to only capture the successful invocations and ignore the erroneous
+    /// ones. This is inline with the expected behaviour for wildcard, where it implies that
+    /// 'please run this operation on this wildcard path "wherever possible"'
+    ///
+    /// It is expected that if the closure that you pass here returns an error it may not reach
+    /// out to the caller, in case there was a wildcard path specified
+    pub fn for_each_cluster_mut<T>(
+        &mut self,
+        path: &GenericPath,
+        mut f: T,
+    ) -> Result<(), IMStatusCode>
     where
-        T: FnMut(&GenericPath, &mut dyn ClusterType),
+        T: FnMut(&GenericPath, &mut dyn ClusterType) -> Result<(), IMStatusCode>,
     {
         self.for_each_endpoint_mut(path, |p, e| {
             let mut current_path = *p;
-            let clusters = e.get_wildcard_clusters_mut(p.cluster);
+            let (clusters, wildcard) = e.get_wildcard_clusters_mut(p.cluster)?;
 
             for c in clusters.iter_mut() {
                 current_path.cluster = Some(c.base().id);
-                f(&current_path, c.as_mut());
+                f(&current_path, c.as_mut())
+                    .or_else(|e| if !wildcard { Err(e) } else { Ok(()) })?;
             }
-        });
+            Ok(())
+        })
     }
 
-    pub fn for_each_attribute<T>(&self, path: &GenericPath, mut f: T)
+    /// Run a closure for all attributes as specified in the path
+    ///
+    /// Note that the path is a GenericPath and hence can be a wildcard path. The behaviour
+    /// of this function is to only capture the successful invocations and ignore the erroneous
+    /// ones. This is inline with the expected behaviour for wildcard, where it implies that
+    /// 'please run this operation on this wildcard path "wherever possible"'
+    ///
+    /// It is expected that if the closure that you pass here returns an error it may not reach
+    /// out to the caller, in case there was a wildcard path specified
+    pub fn for_each_attribute<T>(&self, path: &GenericPath, mut f: T) -> Result<(), IMStatusCode>
     where
-        T: FnMut(&GenericPath, &dyn ClusterType),
+        T: FnMut(&GenericPath, &dyn ClusterType) -> Result<(), IMStatusCode>,
     {
         self.for_each_cluster(path, |current_path, c| {
             let mut current_path = *current_path;
-            let attributes = c
+            let (attributes, wildcard) = c
                 .base()
-                .get_wildcard_attribute(path.leaf.map(|at| at as u16));
+                .get_wildcard_attribute(path.leaf.map(|at| at as u16))?;
             for a in attributes.iter() {
                 current_path.leaf = Some(a.id as u32);
-                f(&current_path, c);
+                f(&current_path, c).or_else(|e| if !wildcard { Err(e) } else { Ok(()) })?;
             }
-        });
+            Ok(())
+        })
     }
 }

@@ -42,8 +42,9 @@ impl DescriptorCluster {
         };
         let _ = tw.start_array(tag);
         let dm = self.data_model.node.read().unwrap();
-        dm.for_each_cluster(&path, |_current_path, c| {
+        let _ = dm.for_each_cluster(&path, |_current_path, c| {
             let _ = tw.u32(TagType::Anonymous, c.base().id());
+            Ok(())
         });
         let _ = tw.end_container();
     }

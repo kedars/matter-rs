@@ -1,4 +1,4 @@
-use crate::{data_model::objects::ClusterType, error::*};
+use crate::{data_model::objects::ClusterType, error::*, interaction_model::core::IMStatusCode};
 
 use std::fmt;
 
@@ -43,16 +43,18 @@ impl Endpoint {
     }
 
     // Returns a slice of clusters, with either a single cluster or all (wildcard)
-    pub fn get_wildcard_clusters(&self, cluster: Option<u32>) -> &[Box<dyn ClusterType>] {
+    pub fn get_wildcard_clusters(
+        &self,
+        cluster: Option<u32>,
+    ) -> Result<(&[Box<dyn ClusterType>], bool), IMStatusCode> {
         if let Some(c) = cluster {
             if let Some(i) = self.get_cluster_index(c) {
-                &self.clusters[i..i + 1]
+                Ok((&self.clusters[i..i + 1], false))
             } else {
-                // empty slice
-                &[] as &[Box<dyn ClusterType>]
+                Err(IMStatusCode::UnsupportedCluster)
             }
         } else {
-            self.clusters.as_slice()
+            Ok((self.clusters.as_slice(), true))
         }
     }
 
@@ -60,16 +62,15 @@ impl Endpoint {
     pub fn get_wildcard_clusters_mut(
         &mut self,
         cluster: Option<u32>,
-    ) -> &mut [Box<dyn ClusterType>] {
+    ) -> Result<(&mut [Box<dyn ClusterType>], bool), IMStatusCode> {
         if let Some(c) = cluster {
             if let Some(i) = self.get_cluster_index(c) {
-                &mut self.clusters[i..i + 1]
+                Ok((&mut self.clusters[i..i + 1], false))
             } else {
-                // empty slice
-                &mut [] as &mut [Box<dyn ClusterType>]
+                Err(IMStatusCode::UnsupportedCluster)
             }
         } else {
-            &mut self.clusters[..]
+            Ok((&mut self.clusters[..], true))
         }
     }
 }

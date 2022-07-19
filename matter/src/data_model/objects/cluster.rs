@@ -123,16 +123,18 @@ impl Cluster {
     }
 
     // Returns a slice of attribute, with either a single attribute or all (wildcard)
-    pub fn get_wildcard_attribute(&self, attribute: Option<u16>) -> &[Attribute] {
+    pub fn get_wildcard_attribute(
+        &self,
+        attribute: Option<u16>,
+    ) -> Result<(&[Attribute], bool), IMStatusCode> {
         if let Some(a) = attribute {
             if let Some(i) = self.get_attribute_index(a) {
-                &self.attributes[i..i + 1]
+                Ok((&self.attributes[i..i + 1], false))
             } else {
-                // empty slice
-                &[] as &[Attribute]
+                Err(IMStatusCode::UnsupportedAttribute)
             }
         } else {
-            &self.attributes[..]
+            Ok((&self.attributes[..], true))
         }
     }
 

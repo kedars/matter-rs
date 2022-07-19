@@ -126,9 +126,10 @@ impl DataModel {
             }
 
             // The wildcard path
-            node.for_each_cluster_mut(&gen_path, |path, c| {
+            let _ = node.for_each_cluster_mut(&gen_path, |path, c| {
                 let attr_id = if let Some(a) = path.leaf { a } else { 0 } as u16;
                 DataModel::handle_write_attr_data(c, tw, path, &attr_data.data, attr_id, true);
+                Ok(())
             });
         }
     }
@@ -140,18 +141,26 @@ impl DataModel {
         tw: &mut TLVWriter,
     ) {
         let gen_path = attr_path.to_gp();
-        let mut attr_encoder = AttributeEncoder::new(tw, TagType::Anonymous);
+        let mut attr_encoder = AttrReadEncoder::new(tw, TagType::Anonymous);
         if gen_path.not_wildcard().is_err() {
             // This is a wildcard path, skip error
+            //    This is required because there could be access control errors too that need
+            // to be take care of.
             attr_encoder.skip_error();
         }
+        attr_encoder.set_path(gen_path);
 
-        node.for_each_attribute(&gen_path, |path, c| {
+        let result = node.for_each_attribute(&gen_path, |path, c| {
             let attr_id = if let Some(a) = path.leaf { a } else { 0 } as u16;
             attr_encoder.set_path(*path);
 
             Cluster::read_attribute(c, &mut attr_encoder, attr_id);
+            Ok(())
         });
+        if let Err(e) = result {
+            // We hit this only if this is a non-wildcard path
+            attr_encoder.encode_status(e, 0);
+        }
     }
 
     // Handle command from a path that may or may not be wildcard
@@ -172,7 +181,7 @@ impl DataModel {
         } else {
             // The wildcard path
             let path = cmd_req.cmd.path;
-            node.for_each_cluster_mut(&path, |path, c| {
+            let _ = node.for_each_cluster_mut(&path, |path, c| {
                 cmd_req.cmd.path = *path;
                 let result = c.handle_command(cmd_req);
                 if let Err(e) = result {
@@ -185,6 +194,7 @@ impl DataModel {
                         let _ = invoke_resp.to_tlv(cmd_req.resp, TagType::Anonymous);
                     }
                 }
+                Ok(())
             });
         }
     }
@@ -262,7 +272,7 @@ impl InteractionConsumer for DataModel {
     }
 }
 
-pub struct AttributeEncoder<'a, 'b, 'c> {
+pub struct AttrReadEncoder<'a, 'b, 'c> {
     tw: &'a mut TLVWriter<'b, 'c>,
     tag: TagType,
     data_ver: u32,
@@ -270,7 +280,16 @@ pub struct AttributeEncoder<'a, 'b, 'c> {
     skip_error: bool,
 }
 
-impl<'a, 'b, 'c> AttributeEncoder<'a, 'b, 'c> {
+impl<'a, 'b, 'c> std::fmt::Display for AttrReadEncoder<'a, 'b, 'c> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "tagtype {:?}", self.tag)?;
+        write!(f, "data_ver {:?}", self.data_ver)?;
+        write!(f, "path {:?}", self.path)?;
+        write!(f, "skip_error {:?}", self.skip_error)
+    }
+}
+
+impl<'a, 'b, 'c> AttrReadEncoder<'a, 'b, 'c> {
     pub fn new(tw: &'a mut TLVWriter<'b, 'c>, tag: TagType) -> Self {
         Self {
             tw,
@@ -294,7 +313,7 @@ impl<'a, 'b, 'c> AttributeEncoder<'a, 'b, 'c> {
     }
 }
 
-impl<'a, 'b, 'c> Encoder for AttributeEncoder<'a, 'b, 'c> {
+impl<'a, 'b, 'c> Encoder for AttrReadEncoder<'a, 'b, 'c> {
     fn encode(&mut self, value: EncodeValue) {
         let resp = ib::AttrResp::Data(ib::AttrData::new(
             Some(self.data_ver),
