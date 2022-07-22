@@ -35,6 +35,9 @@
   - Convert the SessionHandle to &Session? Why maintain a separate object for this?
 * Exchange:
   - What should happen when an exchange is closed by the higher layer, our tx-retrans is pending, and we got a retrans for that exchange?
-
+* ACL:
+  - Device-Type support needs to be added
+* DataModel:
+  - Shall we use a CmdEncoder as a parameter for all the handle_commands()?
 	
  
