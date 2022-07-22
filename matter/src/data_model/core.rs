@@ -77,6 +77,7 @@ impl DataModel {
             return;
         }
 
+        // Get the data
         let write_data = match &attr_data.data {
             EncodeValue::Closure(_) | EncodeValue::Value(_) => {
                 error!("Not supported");
@@ -85,7 +86,7 @@ impl DataModel {
             EncodeValue::Tlv(t) => t,
         };
 
-        if gen_path.not_wildcard().is_err() {
+        if gen_path.is_wildcard() {
             // This is a wildcard path, skip error
             //    This is required because there could be access control errors too that need
             // to be take care of.
@@ -116,14 +117,7 @@ impl DataModel {
         tw: &mut TLVWriter,
     ) {
         let gen_path = attr_path.to_gp();
-        let mut attr_encoder = AttrReadEncoder::new(tw, TagType::Anonymous);
-        if gen_path.not_wildcard().is_err() {
-            // This is a wildcard path, skip error
-            //    This is required because there could be access control errors too that need
-            // to be take care of.
-            attr_encoder.skip_error();
-        }
-        attr_encoder.set_path(gen_path);
+        let mut attr_encoder = AttrReadEncoder::new(tw, TagType::Anonymous, gen_path);
 
         let result = node.for_each_attribute(&gen_path, |path, c| {
             let attr_id = if let Some(a) = path.leaf { a } else { 0 } as u16;
@@ -139,38 +133,32 @@ impl DataModel {
     }
 
     // Handle command from a path that may or may not be wildcard
-    fn handle_command_path(node: &mut RwLockWriteGuard<Box<Node>>, cmd_req: &mut CommandReq) {
-        if let Ok((e, c, _cmd)) = cmd_req.cmd.path.not_wildcard() {
-            // The non-wildcard path
-            let cluster = node.get_cluster_mut(e, c);
-            let result: Result<(), IMStatusCode> = match cluster {
-                Ok(cluster) => cluster.handle_command(cmd_req),
-                Err(e) => Err(e.into()),
-            };
+    fn handle_command_path(node: &mut Node, cmd_req: &mut CommandReq) {
+        let wildcard = cmd_req.cmd.path.is_wildcard();
+        let path = cmd_req.cmd.path;
 
+        let result = node.for_each_cluster_mut(&path, |path, c| {
+            cmd_req.cmd.path = *path;
+            let result = c.handle_command(cmd_req);
             if let Err(e) = result {
+                // It is likely that we might have to do an 'Access' aware traversal
+                // if there are other conditions in the wildcard scenario that shouldn't be
+                // encoded as CmdStatus
+                if !(wildcard && e == IMStatusCode::UnsupportedCommand) {
+                    let status = ib::Status::new(e, 0);
+                    let invoke_resp = ib::InvResp::Status(cmd_req.cmd, status);
+                    let _ = invoke_resp.to_tlv(cmd_req.resp, TagType::Anonymous);
+                }
+            }
+            Ok(())
+        });
+        if !wildcard {
+            if let Err(e) = result {
+                // We hit this only if this is a non-wildcard path
                 let status = ib::Status::new(e, 0);
                 let invoke_resp = ib::InvResp::Status(cmd_req.cmd, status);
                 let _ = invoke_resp.to_tlv(cmd_req.resp, TagType::Anonymous);
             }
-        } else {
-            // The wildcard path
-            let path = cmd_req.cmd.path;
-            let _ = node.for_each_cluster_mut(&path, |path, c| {
-                cmd_req.cmd.path = *path;
-                let result = c.handle_command(cmd_req);
-                if let Err(e) = result {
-                    // It is likely that we might have to do an 'Access' aware traversal
-                    // if there are other conditions in the wildcard scenario that shouldn't be
-                    // encoded as CmdStatus
-                    if e != IMStatusCode::UnsupportedCommand {
-                        let status = ib::Status::new(e, 0);
-                        let invoke_resp = ib::InvResp::Status(cmd_req.cmd, status);
-                        let _ = invoke_resp.to_tlv(cmd_req.resp, TagType::Anonymous);
-                    }
-                }
-                Ok(())
-            });
         }
     }
 }
@@ -257,14 +245,19 @@ pub struct AttrReadEncoder<'a, 'b, 'c> {
 }
 
 impl<'a, 'b, 'c> AttrReadEncoder<'a, 'b, 'c> {
-    pub fn new(tw: &'a mut TLVWriter<'b, 'c>, tag: TagType) -> Self {
-        Self {
+    pub fn new(tw: &'a mut TLVWriter<'b, 'c>, tag: TagType, path: GenericPath) -> Self {
+        let mut a = Self {
             tw,
             tag,
             data_ver: 0,
-            path: Default::default(),
+            path,
             skip_error: false,
+        };
+        if a.path.is_wildcard() {
+            // This is a wild card path, skip error reporting
+            a.skip_error();
         }
+        a
     }
 
     pub fn skip_error(&mut self) {

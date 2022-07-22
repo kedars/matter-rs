@@ -33,6 +33,17 @@ impl GenericPath {
             _ => Err(Error::Invalid),
         }
     }
+    /// Returns true, if the path is wildcard
+    pub fn is_wildcard(&self) -> bool {
+        match *self {
+            GenericPath {
+                endpoint: Some(_),
+                cluster: Some(_),
+                leaf: Some(_),
+            } => false,
+            _ => true,
+        }
+    }
 }
 
 pub mod msg {
