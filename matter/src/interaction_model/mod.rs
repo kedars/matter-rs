@@ -1,15 +1,8 @@
 use std::any::Any;
 
-use crate::{
-    error::Error,
-    tlv::{TLVElement, TLVWriter},
-    transport::session::Session,
-};
+use crate::{error::Error, tlv::TLVWriter, transport::session::Session};
 
-use self::messages::{
-    ib,
-    msg::{ReadReq, WriteReq},
-};
+use self::messages::msg::{InvReq, ReadReq, WriteReq};
 
 #[derive(PartialEq)]
 pub enum TransactionState {
@@ -25,15 +18,24 @@ pub struct Transaction<'a> {
 pub trait InteractionConsumer {
     fn consume_invoke_cmd(
         &self,
-        cmd_path_ib: &ib::CmdPath,
-        data: TLVElement,
+        req: &InvReq,
         trans: &mut Transaction,
-        tlvwriter: &mut TLVWriter,
+        tw: &mut TLVWriter,
     ) -> Result<(), Error>;
 
-    fn consume_read_attr(&self, req: &ReadReq, tlvwriter: &mut TLVWriter) -> Result<(), Error>;
+    fn consume_read_attr(
+        &self,
+        req: &ReadReq,
+        trans: &mut Transaction,
+        tw: &mut TLVWriter,
+    ) -> Result<(), Error>;
 
-    fn consume_write_attr(&self, req: &WriteReq, tlvwriter: &mut TLVWriter) -> Result<(), Error>;
+    fn consume_write_attr(
+        &self,
+        req: &WriteReq,
+        trans: &mut Transaction,
+        tw: &mut TLVWriter,
+    ) -> Result<(), Error>;
 }
 
 pub struct InteractionModel {

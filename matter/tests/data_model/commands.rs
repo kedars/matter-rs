@@ -2,7 +2,7 @@ use matter::{
     data_model::cluster_on_off,
     interaction_model::{
         core::{IMStatusCode, OpCode},
-        messages::ib::{CmdDataType, CmdPath, InvResp},
+        messages::ib::{CmdDataType, CmdPath, CmdStatus, InvResp},
         messages::msg,
     },
     tlv,
@@ -16,7 +16,7 @@ use crate::common::{
 
 enum ExpectedInvResp {
     Cmd(CmdPath, u8),
-    Status(CmdPath, u16),
+    Status(CmdStatus),
 }
 
 // Helper for handling Invoke Command sequences
@@ -61,10 +61,9 @@ fn handle_commands(input: &[(CmdPath, Option<u8>)], expected: &[ExpectedInvResp]
                     panic!("Invalid response, expected InvResponse::Cmd");
                 }
             },
-            ExpectedInvResp::Status(e_c, e_status) => match inv_response {
-                InvResp::Status(c, status) => {
-                    assert_eq!(e_c, c);
-                    assert_eq!(e_status, status.status as u16);
+            ExpectedInvResp::Status(e_status) => match inv_response {
+                InvResp::Status(status) => {
+                    assert_eq!(e_status, status);
                 }
                 _ => {
                     panic!("Invalid response, expected InvResponse::Status");
@@ -151,9 +150,21 @@ fn test_invoke_cmds_unsupported_fields() {
     ];
 
     let expected = &[
-        ExpectedInvResp::Status(invalid_endpoint, IMStatusCode::UnsupportedEndpoint as u16),
-        ExpectedInvResp::Status(invalid_cluster, IMStatusCode::UnsupportedCluster as u16),
-        ExpectedInvResp::Status(invalid_command, IMStatusCode::UnsupportedCommand as u16),
+        ExpectedInvResp::Status(CmdStatus::new(
+            invalid_endpoint,
+            IMStatusCode::UnsupportedEndpoint,
+            0,
+        )),
+        ExpectedInvResp::Status(CmdStatus::new(
+            invalid_cluster,
+            IMStatusCode::UnsupportedCluster,
+            0,
+        )),
+        ExpectedInvResp::Status(CmdStatus::new(
+            invalid_command,
+            IMStatusCode::UnsupportedCommand,
+            0,
+        )),
     ];
     handle_commands(input, expected);
 }
@@ -193,6 +204,10 @@ fn test_invoke_cmd_wc_endpoint_only_1_has_cluster() {
         Some(cluster_on_off::Commands::On as u16),
     );
     let input = &[(target, Some(1))];
-    let expected = &[ExpectedInvResp::Status(expected_path, 0)];
+    let expected = &[ExpectedInvResp::Status(CmdStatus::new(
+        expected_path,
+        IMStatusCode::Sucess,
+        0,
+    ))];
     handle_commands(input, expected);
 }

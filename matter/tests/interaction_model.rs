@@ -1,13 +1,13 @@
 use boxslab::Slab;
 use matter::error::Error;
 use matter::interaction_model::core::OpCode;
-use matter::interaction_model::messages::ib;
+use matter::interaction_model::messages::msg::InvReq;
 use matter::interaction_model::messages::msg::ReadReq;
 use matter::interaction_model::messages::msg::WriteReq;
 use matter::interaction_model::InteractionConsumer;
 use matter::interaction_model::InteractionModel;
 use matter::interaction_model::Transaction;
-use matter::tlv::{TLVElement, TLVWriter};
+use matter::tlv::TLVWriter;
 use matter::transport::exchange::Exchange;
 use matter::transport::exchange::ExchangeCtx;
 use matter::transport::network::Address;
@@ -50,25 +50,45 @@ impl Clone for DataModel {
 impl InteractionConsumer for DataModel {
     fn consume_invoke_cmd(
         &self,
-        cmd_path_ib: &ib::CmdPath,
-        data: TLVElement,
+        inv_req_msg: &InvReq,
         _trans: &mut Transaction,
         _tlvwriter: &mut TLVWriter,
     ) -> Result<(), Error> {
-        let mut common_data = self.node.lock().unwrap();
-        common_data.endpoint = cmd_path_ib.path.endpoint.unwrap_or(1);
-        common_data.cluster = cmd_path_ib.path.cluster.unwrap_or(0);
-        common_data.command = cmd_path_ib.path.leaf.unwrap_or(0) as u16;
-        data.confirm_struct().unwrap();
-        common_data.variable = data.find_tag(0).unwrap().u8().unwrap();
+        if let Some(inv_requests) = &inv_req_msg.inv_requests {
+            for i in inv_requests.iter() {
+                let data = if let Some(data) = i.data.get_tlv_ref() {
+                    *data
+                } else {
+                    continue;
+                };
+                let cmd_path_ib = i.path;
+                let mut common_data = self.node.lock().unwrap();
+                common_data.endpoint = cmd_path_ib.path.endpoint.unwrap_or(1);
+                common_data.cluster = cmd_path_ib.path.cluster.unwrap_or(0);
+                common_data.command = cmd_path_ib.path.leaf.unwrap_or(0) as u16;
+                data.confirm_struct().unwrap();
+                common_data.variable = data.find_tag(0).unwrap().u8().unwrap();
+            }
+        }
+
         Ok(())
     }
 
-    fn consume_read_attr(&self, _req: &ReadReq, _tlvwriter: &mut TLVWriter) -> Result<(), Error> {
+    fn consume_read_attr(
+        &self,
+        _req: &ReadReq,
+        _trans: &mut Transaction,
+        _tlvwriter: &mut TLVWriter,
+    ) -> Result<(), Error> {
         Ok(())
     }
 
-    fn consume_write_attr(&self, _req: &WriteReq, _tlvwriter: &mut TLVWriter) -> Result<(), Error> {
+    fn consume_write_attr(
+        &self,
+        _req: &WriteReq,
+        _trans: &mut Transaction,
+        _tlvwriter: &mut TLVWriter,
+    ) -> Result<(), Error> {
         Ok(())
     }
 }

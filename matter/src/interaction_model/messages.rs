@@ -53,7 +53,15 @@ pub mod msg {
         tlv::{FromTLV, TLVArray, TLVElement, TLVWriter, TagType, ToTLV},
     };
 
-    use super::ib::{AttrData, AttrPath};
+    use super::ib::{AttrData, AttrPath, CmdData};
+
+    #[derive(FromTLV)]
+    #[tlvargs(lifetime = "'a")]
+    pub struct InvReq<'a> {
+        pub suppress_response: Option<bool>,
+        pub timed_request: Option<bool>,
+        pub inv_requests: Option<TLVArray<'a, CmdData<'a>>>,
+    }
 
     pub enum InvRespTag {
         SupressResponse = 0,
@@ -64,14 +72,6 @@ pub mod msg {
         SupressResponse = 0,
         TimedReq = 1,
         InvokeRequests = 2,
-    }
-
-    pub enum ReadReqTag {
-        AttrRequests = 0,
-        DataVerFilters = 1,
-        _EventRequests = 2,
-        _EventFilters = 3,
-        FabricFiltered = 4,
     }
 
     #[derive(Default, ToTLV, FromTLV)]
@@ -96,13 +96,6 @@ pub mod msg {
             self.attr_requests = Some(TLVArray::new(requests));
             self
         }
-    }
-
-    pub enum WriteReqTag {
-        SuppressResponse = 0,
-        _TimedRequest = 1,
-        WriteRequests = 2,
-        _MoreChunkedMsgs = 3,
     }
 
     #[derive(ToTLV, FromTLV)]
@@ -163,17 +156,12 @@ pub mod ib {
     #[derive(Clone, Copy)]
     pub enum InvResp<'a> {
         Cmd(CmdData<'a>),
-        Status(CmdPath, Status),
+        Status(CmdStatus),
     }
 
     #[derive(FromPrimitive)]
     enum InvRespTag {
         Cmd = 0,
-        Status = 1,
-    }
-
-    enum CmdStatusTag {
-        Path = 0,
         Status = 1,
     }
 
@@ -186,7 +174,10 @@ pub mod ib {
         }
 
         pub fn status_new(cmd_path: CmdPath, status: IMStatusCode, cluster_status: u16) -> Self {
-            Self::Status(cmd_path, Status::new(status, cluster_status))
+            Self::Status(CmdStatus {
+                path: cmd_path,
+                status: Status::new(status, cluster_status),
+            })
         }
 
         pub fn from_tlv(resp: &TLVElement<'a>) -> Result<Self, Error> {
@@ -204,22 +195,8 @@ pub mod ib {
             };
 
             match num::FromPrimitive::from_u8(tag).ok_or(Error::Invalid)? {
-                InvRespTag::Cmd => {
-                    let cmd_path = resp.find_tag(CmdDataTag::Path as u32)?;
-                    let data = resp.find_tag(CmdDataTag::Data as u32)?;
-                    Ok(Self::Cmd(CmdData {
-                        path: CmdPath::from_tlv(&cmd_path)?,
-                        data: CmdDataType::Tlv(data),
-                    }))
-                }
-                InvRespTag::Status => {
-                    let cmd_path = resp.find_tag(CmdStatusTag::Path as u32)?;
-                    let status = resp.find_tag(CmdStatusTag::Status as u32)?;
-                    Ok(Self::Status(
-                        CmdPath::from_tlv(&cmd_path)?,
-                        Status::from_tlv(&status)?,
-                    ))
-                }
+                InvRespTag::Cmd => Ok(Self::Cmd(CmdData::from_tlv(&resp)?)),
+                InvRespTag::Status => Ok(Self::Status(CmdStatus::from_tlv(&resp)?)),
             }
         }
     }
@@ -231,14 +208,29 @@ pub mod ib {
                 InvResp::Cmd(cmd_data) => {
                     cmd_data.to_tlv(tw, TagType::Context(InvRespTag::Cmd as u8))?;
                 }
-                InvResp::Status(cmd_path, status) => {
-                    tw.start_struct(TagType::Context(InvRespTag::Status as u8))?;
-                    cmd_path.to_tlv(tw, TagType::Context(CmdStatusTag::Path as u8))?;
-                    status.to_tlv(tw, TagType::Context(CmdStatusTag::Status as u8))?;
+                InvResp::Status(cmd_status) => {
+                    cmd_status.to_tlv(tw, TagType::Context(InvRespTag::Status as u8))?;
                 }
             }
-            tw.end_container()?;
             tw.end_container()
+        }
+    }
+
+    #[derive(FromTLV, ToTLV, Copy, Clone, PartialEq, Debug)]
+    pub struct CmdStatus {
+        path: CmdPath,
+        status: Status,
+    }
+
+    impl CmdStatus {
+        pub fn new(path: CmdPath, status: IMStatusCode, cluster_status: u16) -> Self {
+            Self {
+                path,
+                status: Status {
+                    status,
+                    cluster_status,
+                },
+            }
         }
     }
 
@@ -248,6 +240,15 @@ pub mod ib {
     pub enum CmdDataType<'a> {
         Closure(CmdDataGen<'a>),
         Tlv(TLVElement<'a>),
+    }
+
+    impl<'a> CmdDataType<'a> {
+        pub fn get_tlv_ref(&self) -> Option<&TLVElement<'a>> {
+            match self {
+                CmdDataType::Closure(_) => None,
+                CmdDataType::Tlv(t) => Some(&t),
+            }
+        }
     }
 
     impl<'a> Debug for CmdDataType<'a> {
@@ -260,15 +261,41 @@ pub mod ib {
         }
     }
 
-    #[derive(Debug, Clone, Copy)]
+    impl<'a> FromTLV<'a> for CmdDataType<'a> {
+        fn from_tlv(t: &TLVElement<'a>) -> Result<Self, Error>
+        where
+            Self: Sized,
+        {
+            Ok(Self::Tlv(*t))
+        }
+    }
+
+    impl<'a> ToTLV for CmdDataType<'a> {
+        fn to_tlv(
+            self: &CmdDataType<'a>,
+            tw: &mut TLVWriter,
+            tag_type: TagType,
+        ) -> Result<(), Error> {
+            // TODO: We are cheating here a little bit. This following 'Data' need
+            // not be a 'structure'. Somebody could directly embed u8 at the tag
+            // 'CmdDataTag::Data'. We will have to modify this (and all the callers)
+            // when we stumble across that scenario
+            tw.start_struct(tag_type)?;
+            match self {
+                CmdDataType::Closure(c) => {
+                    (c)(tw)?;
+                }
+                CmdDataType::Tlv(_) => (panic!("Not yet implemented")),
+            };
+            tw.end_container()
+        }
+    }
+
+    #[derive(Debug, Clone, Copy, FromTLV, ToTLV)]
+    #[tlvargs(lifetime = "'a")]
     pub struct CmdData<'a> {
         pub path: CmdPath,
         pub data: CmdDataType<'a>,
-    }
-
-    enum CmdDataTag {
-        Path = 0,
-        Data = 1,
     }
 
     impl<'a> CmdData<'a> {
@@ -277,26 +304,6 @@ pub mod ib {
                 path,
                 data: CmdDataType::Closure(data),
             }
-        }
-    }
-
-    impl<'a> ToTLV for CmdData<'a> {
-        fn to_tlv(self: &CmdData<'a>, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
-            tw.start_struct(tag_type)?;
-            self.path
-                .to_tlv(tw, TagType::Context(CmdDataTag::Path as u8))?;
-            // TODO: We are cheating here a little bit. This following 'Data' need
-            // not be a 'structure'. Somebody could directly embed u8 at the tag
-            // 'CmdDataTag::Data'. We will have to modify this (and all the callers)
-            // when we stumble across that scenario
-            tw.start_struct(TagType::Context(CmdDataTag::Data as u8))?;
-            match self.data {
-                CmdDataType::Closure(c) => {
-                    (c)(tw)?;
-                }
-                CmdDataType::Tlv(_) => (panic!("Not yet implemented")),
-            };
-            tw.end_container()
         }
     }
 

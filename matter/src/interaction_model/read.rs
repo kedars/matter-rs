@@ -24,7 +24,7 @@ impl InteractionModel {
         let read_req = ReadReq::from_tlv(&root)?;
 
         tw.start_struct(TagType::Anonymous)?;
-        self.consumer.consume_read_attr(&read_req, &mut tw)?;
+        self.consumer.consume_read_attr(&read_req, trans, &mut tw)?;
         // Supress response always true for read interaction
         tw.bool(
             TagType::Context(msg::ReportDataTag::SupressResponse as u8),

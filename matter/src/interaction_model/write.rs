@@ -25,7 +25,8 @@ impl InteractionModel {
         let supress_response = write_req.supress_response.is_some();
 
         tw.start_struct(TagType::Anonymous)?;
-        self.consumer.consume_write_attr(&write_req, &mut tw)?;
+        self.consumer
+            .consume_write_attr(&write_req, trans, &mut tw)?;
         tw.end_container()?;
 
         trans.complete();

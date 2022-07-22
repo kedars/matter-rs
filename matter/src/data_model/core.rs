@@ -14,12 +14,12 @@ use crate::{
         core::IMStatusCode,
         messages::{
             ib::{self, AttrData, AttrPath},
-            msg::{self, ReadReq, WriteReq},
+            msg::{self, InvReq, ReadReq, WriteReq},
             GenericPath,
         },
         InteractionConsumer, Transaction,
     },
-    tlv::{TLVElement, TLVWriter, TagType, ToTLV},
+    tlv::{TLVWriter, TagType, ToTLV},
 };
 use log::{error, info};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -145,8 +145,7 @@ impl DataModel {
                 // if there are other conditions in the wildcard scenario that shouldn't be
                 // encoded as CmdStatus
                 if !(wildcard && e == IMStatusCode::UnsupportedCommand) {
-                    let status = ib::Status::new(e, 0);
-                    let invoke_resp = ib::InvResp::Status(cmd_req.cmd, status);
+                    let invoke_resp = ib::InvResp::status_new(cmd_req.cmd, e, 0);
                     let _ = invoke_resp.to_tlv(cmd_req.resp, TagType::Anonymous);
                 }
             }
@@ -155,8 +154,7 @@ impl DataModel {
         if !wildcard {
             if let Err(e) = result {
                 // We hit this only if this is a non-wildcard path
-                let status = ib::Status::new(e, 0);
-                let invoke_resp = ib::InvResp::Status(cmd_req.cmd, status);
+                let invoke_resp = ib::InvResp::status_new(cmd_req.cmd, e, 0);
                 let _ = invoke_resp.to_tlv(cmd_req.resp, TagType::Anonymous);
             }
         }
@@ -179,7 +177,12 @@ impl objects::ChangeConsumer for DataModel {
 }
 
 impl InteractionConsumer for DataModel {
-    fn consume_write_attr(&self, write_req: &WriteReq, tw: &mut TLVWriter) -> Result<(), Error> {
+    fn consume_write_attr(
+        &self,
+        write_req: &WriteReq,
+        _trans: &mut Transaction,
+        tw: &mut TLVWriter,
+    ) -> Result<(), Error> {
         let mut node = self.node.write().unwrap();
 
         tw.start_array(TagType::Context(msg::WriteRespTag::WriteResponses as u8))?;
@@ -191,7 +194,12 @@ impl InteractionConsumer for DataModel {
         Ok(())
     }
 
-    fn consume_read_attr(&self, read_req: &ReadReq, tw: &mut TLVWriter) -> Result<(), Error> {
+    fn consume_read_attr(
+        &self,
+        read_req: &ReadReq,
+        _trans: &mut Transaction,
+        tw: &mut TLVWriter,
+    ) -> Result<(), Error> {
         if read_req.fabric_filtered {
             error!("Fabric scoped attribute read not yet supported");
         }
@@ -214,22 +222,31 @@ impl InteractionConsumer for DataModel {
 
     fn consume_invoke_cmd(
         &self,
-        cmd_path_ib: &ib::CmdPath,
-        data: TLVElement,
+        inv_req_msg: &InvReq,
         trans: &mut Transaction,
-        tlvwriter: &mut TLVWriter,
+        tw: &mut TLVWriter,
     ) -> Result<(), Error> {
-        info!("Invoke Commmand Handler executing: {:?}", cmd_path_ib);
-
-        let mut cmd_req = CommandReq {
-            cmd: *cmd_path_ib,
-            data,
-            trans,
-            resp: tlvwriter,
-        };
-
         let mut node = self.node.write().unwrap();
-        DataModel::handle_command_path(&mut node, &mut cmd_req);
+        if let Some(inv_requests) = &inv_req_msg.inv_requests {
+            // Array of InvokeResponse IBs
+            tw.start_array(TagType::Context(msg::InvRespTag::InvokeResponses as u8))?;
+            for i in inv_requests.iter() {
+                let data = if let Some(data) = i.data.get_tlv_ref() {
+                    *data
+                } else {
+                    continue;
+                };
+                info!("Invoke Commmand Handler executing: {:?}", i.path);
+                let mut cmd_req = CommandReq {
+                    cmd: i.path,
+                    data,
+                    trans,
+                    resp: tw,
+                };
+                DataModel::handle_command_path(&mut node, &mut cmd_req);
+            }
+            tw.end_container()?;
+        }
 
         Ok(())
     }
