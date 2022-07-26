@@ -106,7 +106,7 @@ impl<'a> AccessReq<'a> {
     }
 }
 
-#[derive(FromTLV, ToTLV, Copy, Clone)]
+#[derive(FromTLV, ToTLV, Copy, Clone, Debug)]
 pub struct Target {
     cluster: Option<u32>,
     endpoint: Option<u16>,
@@ -115,7 +115,7 @@ pub struct Target {
 
 type Subjects = [Option<u64>; SUBJECTS_PER_ENTRY];
 type Targets = [Option<Target>; TARGETS_PER_ENTRY];
-#[derive(ToTLV, FromTLV, Copy, Clone)]
+#[derive(ToTLV, FromTLV, Copy, Clone, Debug)]
 #[tlvargs(start = 1)]
 pub struct AclEntry {
     privilege: Privilege,
@@ -226,7 +226,7 @@ impl AclEntry {
 const MAX_ACL_ENTRIES: usize = ENTRIES_PER_FABRIC * fabric::MAX_SUPPORTED_FABRICS;
 type AclEntries = [Option<AclEntry>; MAX_ACL_ENTRIES];
 
-#[derive(ToTLV, FromTLV)]
+#[derive(ToTLV, FromTLV, Debug)]
 struct AclMgrInner {
     entries: AclEntries,
 }
@@ -331,6 +331,18 @@ impl AclMgr {
             "ACL Disallow for src id {} fab idx {}",
             req.accessor.id, req.accessor.fab_idx
         );
+        error!("{}", self);
         false
+    }
+}
+
+impl std::fmt::Display for AclMgr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let inner = self.inner.read().unwrap();
+        write!(f, "ACLS: [")?;
+        for i in inner.entries.iter().flatten() {
+            write!(f, "  {{ {:?} }}, ", i)?;
+        }
+        write!(f, "]")
     }
 }
