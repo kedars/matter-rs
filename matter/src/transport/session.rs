@@ -167,6 +167,10 @@ impl Session {
         }
     }
 
+    pub fn get_peer_node_id(&self) -> Option<u64> {
+        self.peer_nodeid
+    }
+
     pub fn get_local_fabric_idx(&self) -> Option<u8> {
         match self.mode {
             SessionMode::Case(a) => Some(a),
