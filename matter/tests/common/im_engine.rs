@@ -1,11 +1,12 @@
 use crate::common::echo_cluster;
 use boxslab::Slab;
 use matter::{
-    acl::AclMgr,
+    acl::{AclEntry, AclMgr, AuthMode},
     data_model::{
         cluster_basic_information::BasicInfoConfig,
         core::DataModel,
         device_types::device_type_add_on_off_light,
+        objects::Privilege,
         sdm::dev_att::{DataType, DevAttDataFetcher},
     },
     error::Error,
@@ -46,6 +47,8 @@ pub fn im_engine(action: OpCode, data_in: &[u8], data_out: &mut [u8]) -> (DataMo
     let dev_att = Box::new(DummyDevAtt {});
     let fabric_mgr = Arc::new(FabricMgr::new().unwrap());
     let acl_mgr = Arc::new(AclMgr::new().unwrap());
+    let default_acl = AclEntry::new(0, Privilege::ADMIN, AuthMode::Invalid);
+    acl_mgr.add(default_acl).unwrap();
     let data_model = DataModel::new(dev_det, dev_att, fabric_mgr.clone(), acl_mgr.clone()).unwrap();
 
     {
@@ -61,6 +64,7 @@ pub fn im_engine(action: OpCode, data_in: &[u8], data_out: &mut [u8]) -> (DataMo
     let mut exch = Exchange::new(1, 0, exchange::Role::Responder);
 
     let mut sess_mgr: SessionMgr = Default::default();
+
     let sess_idx = sess_mgr
         .get_or_add(
             0,

@@ -121,7 +121,6 @@ impl DataModel {
         attr_path: AttrPath,
         tw: &mut TLVWriter,
     ) {
-        println!("hoho");
         let gen_path = attr_path.to_gp();
         let mut attr_encoder = AttrReadEncoder::new(tw, TagType::Anonymous, gen_path);
 
