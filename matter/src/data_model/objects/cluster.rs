@@ -1,4 +1,5 @@
 use crate::{
+    acl::AccessReq,
     data_model::objects::{Access, AttrValue, Attribute, EncodeValue, Quality},
     error::*,
     interaction_model::{command::CommandReq, core::IMStatusCode},
@@ -138,7 +139,13 @@ impl Cluster {
         }
     }
 
-    pub fn read_attribute(c: &dyn ClusterType, encoder: &mut dyn Encoder, attr_id: u16) {
+    pub fn read_attribute(
+        c: &dyn ClusterType,
+        access_req: &mut AccessReq,
+        encoder: &mut dyn Encoder,
+        attr_id: u16,
+    ) {
+        let mut error = IMStatusCode::Sucess;
         let base = c.base();
         let a = if let Ok(a) = base.get_attribute(attr_id) {
             a
@@ -148,11 +155,17 @@ impl Cluster {
         };
 
         if !a.access.contains(Access::READ) {
-            encoder.encode_status(IMStatusCode::UnsupportedRead, 0);
-            return;
+            error = IMStatusCode::UnsupportedRead;
         }
 
-        if Attribute::is_system_attr(attr_id) {
+        access_req.set_target_perms(a.access);
+        if !access_req.allow() {
+            error = IMStatusCode::UnsupportedAccess;
+        }
+
+        if error != IMStatusCode::Sucess {
+            encoder.encode_status(error, 0);
+        } else if Attribute::is_system_attr(attr_id) {
             c.base().read_system_attribute(encoder, a)
         } else if a.value != AttrValue::Custom {
             encoder.encode(EncodeValue::Value(&a.value))

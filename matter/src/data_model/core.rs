@@ -6,7 +6,7 @@ use super::{
     system_model::descriptor::DescriptorCluster,
 };
 use crate::{
-    acl::AclMgr,
+    acl::{AccessReq, Accessor, AclMgr, AuthMode},
     error::*,
     fabric::FabricMgr,
     interaction_model::{
@@ -20,12 +20,15 @@ use crate::{
         InteractionConsumer, Transaction,
     },
     tlv::{TLVWriter, TagType, ToTLV},
+    transport::session::{Session, SessionMode},
 };
 use log::{error, info};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
+#[derive(Clone)]
 pub struct DataModel {
     pub node: Arc<RwLock<Box<Node>>>,
+    acl_mgr: Arc<AclMgr>,
 }
 
 impl DataModel {
@@ -37,6 +40,7 @@ impl DataModel {
     ) -> Result<Self, Error> {
         let dm = DataModel {
             node: Arc::new(RwLock::new(Node::new()?)),
+            acl_mgr: acl_mgr.clone(),
         };
         {
             let mut node = dm.node.write()?;
@@ -113,17 +117,19 @@ impl DataModel {
     // Encode a read attribute from a path that may or may not be wildcard
     fn handle_read_attr_path(
         node: &RwLockReadGuard<Box<Node>>,
+        accessor: &Accessor,
         attr_path: AttrPath,
         tw: &mut TLVWriter,
     ) {
+        println!("hoho");
         let gen_path = attr_path.to_gp();
         let mut attr_encoder = AttrReadEncoder::new(tw, TagType::Anonymous, gen_path);
 
         let result = node.for_each_attribute(&gen_path, |path, c| {
             let attr_id = if let Some(a) = path.leaf { a } else { 0 } as u16;
             attr_encoder.set_path(*path);
-
-            Cluster::read_attribute(c, &mut attr_encoder, attr_id);
+            let mut access_req = AccessReq::new(accessor, path, Access::READ);
+            Cluster::read_attribute(c, &mut access_req, &mut attr_encoder, attr_id);
             Ok(())
         });
         if let Err(e) = result {
@@ -159,12 +165,17 @@ impl DataModel {
             }
         }
     }
-}
 
-impl Clone for DataModel {
-    fn clone(&self) -> Self {
-        DataModel {
-            node: self.node.clone(),
+    fn sess_to_accessor(&self, sess: &Session) -> Accessor {
+        match sess.get_session_mode() {
+            SessionMode::Case(c) => Accessor::new(
+                c,
+                sess.get_peer_node_id().unwrap_or_default(),
+                AuthMode::Case,
+                self.acl_mgr.clone(),
+            ),
+            SessionMode::Pase => Accessor::new(0, 1, AuthMode::Pase, self.acl_mgr.clone()),
+            SessionMode::PlainText => Accessor::new(0, 1, AuthMode::Invalid, self.acl_mgr.clone()),
         }
     }
 }
@@ -197,7 +208,7 @@ impl InteractionConsumer for DataModel {
     fn consume_read_attr(
         &self,
         read_req: &ReadReq,
-        _trans: &mut Transaction,
+        trans: &mut Transaction,
         tw: &mut TLVWriter,
     ) -> Result<(), Error> {
         if read_req.fabric_filtered {
@@ -207,12 +218,13 @@ impl InteractionConsumer for DataModel {
             error!("Data Version Filter not yet supported");
         }
 
+        let accessor = self.sess_to_accessor(trans.session);
         let node = self.node.read().unwrap();
         if let Some(attr_requests) = &read_req.attr_requests {
             tw.start_array(TagType::Context(msg::ReportDataTag::AttributeReports as u8))?;
 
             for attr_path in attr_requests.iter() {
-                DataModel::handle_read_attr_path(&node, attr_path, tw);
+                DataModel::handle_read_attr_path(&node, &accessor, attr_path, tw);
             }
 
             tw.end_container()?;

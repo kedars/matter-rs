@@ -43,7 +43,7 @@ impl Access {
         };
 
         if required.is_empty() {
-            // There must some required privilege for any object
+            // There must be some required privilege for any object
             return false;
         }
 
