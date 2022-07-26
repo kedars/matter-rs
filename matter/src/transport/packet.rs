@@ -5,6 +5,7 @@ use boxslab::box_slab;
 
 use crate::{
     error::Error,
+    sys::MAX_PACKET_POOL_SIZE,
     utils::{parsebuf::ParseBuf, writebuf::WriteBuf},
 };
 
@@ -14,14 +15,12 @@ use super::{
     proto_hdr::{self, ProtoHdr},
 };
 
-const MAX_POOL_SIZE: usize = 4;
-
 pub const MAX_RX_BUF_SIZE: usize = 1583;
 type Buffer = [u8; MAX_RX_BUF_SIZE];
 
 // TODO: I am not very happy with this construction, need to find another way to do this
 pub struct BufferPool {
-    buffers: [Option<Buffer>; MAX_POOL_SIZE],
+    buffers: [Option<Buffer>; MAX_PACKET_POOL_SIZE],
 }
 
 impl BufferPool {
@@ -32,7 +31,7 @@ impl BufferPool {
         unsafe {
             ONCE.call_once(|| {
                 BUFFER_HOLDER = Some(Mutex::new(BufferPool {
-                    buffers: [BufferPool::INIT; MAX_POOL_SIZE],
+                    buffers: [BufferPool::INIT; MAX_PACKET_POOL_SIZE],
                 }));
             });
             BUFFER_HOLDER.as_ref().unwrap()
@@ -43,11 +42,11 @@ impl BufferPool {
         trace!("Buffer Alloc called\n");
 
         let mut pool = BufferPool::get().lock().unwrap();
-        for i in 0..MAX_POOL_SIZE {
+        for i in 0..MAX_PACKET_POOL_SIZE {
             trace!("{} ", pool.buffers[i].is_some());
         }
         trace!("");
-        for i in 0..MAX_POOL_SIZE {
+        for i in 0..MAX_PACKET_POOL_SIZE {
             if pool.buffers[i].is_none() {
                 pool.buffers[i] = Some([0; MAX_RX_BUF_SIZE]);
                 // Sigh! to by-pass the borrow-checker telling us we are stealing a mutable reference
@@ -224,4 +223,4 @@ impl<'a> Drop for Packet<'a> {
     }
 }
 
-box_slab!(PacketPool, Packet<'static>, MAX_POOL_SIZE);
+box_slab!(PacketPool, Packet<'static>, MAX_PACKET_POOL_SIZE);
