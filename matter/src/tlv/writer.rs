@@ -195,6 +195,10 @@ impl<'a, 'b> TLVWriter<'a, 'b> {
         self.no_val(TagType::Anonymous, WriteElementType::EndCnt)
     }
 
+    pub fn null(&mut self, tag_type: TagType) -> Result<(), Error> {
+        self.no_val(tag_type, WriteElementType::Null)
+    }
+
     pub fn bool(&mut self, tag_type: TagType, val: bool) -> Result<(), Error> {
         if val {
             self.no_val(tag_type, WriteElementType::True)
