@@ -9,7 +9,7 @@ use crate::error::Error;
 
 // The Packet Pool that is allocated from. POSIX systems can use
 // higher values unlike embedded systems
-pub const MAX_PACKET_POOL_SIZE: usize = 10;
+pub const MAX_PACKET_POOL_SIZE: usize = 25;
 
 pub struct Psm {}
 
