@@ -258,27 +258,56 @@ impl AclMgrInner {
 
 pub struct AclMgr {
     inner: RwLock<AclMgrInner>,
-    psm: Arc<Mutex<Psm>>,
+    // The Option<> is solely because test execution is faster
+    // Doing this here adds the least overhead during ACL verification
+    psm: Option<Arc<Mutex<Psm>>>,
 }
 
 impl AclMgr {
     pub fn new() -> Result<Self, Error> {
-        let psm = Psm::get()?;
-        let inner = {
-            let psm_lock = psm.lock().unwrap();
-            if let Ok(inner) = AclMgrInner::load(&psm_lock) {
-                inner
-            } else {
-                const INIT: Option<AclEntry> = None;
+        AclMgr::new_with(true)
+    }
+
+    pub fn new_with(psm_support: bool) -> Result<Self, Error> {
+        const INIT: Option<AclEntry> = None;
+        let mut psm = None;
+
+        let inner = if !psm_support {
+            AclMgrInner {
+                entries: [INIT; MAX_ACL_ENTRIES],
+            }
+        } else {
+            let psm_handle = Psm::get()?;
+            let inner = {
+                let psm_lock = psm_handle.lock().unwrap();
+                AclMgrInner::load(&psm_lock)
+            };
+
+            psm = Some(psm_handle);
+            inner.unwrap_or_else(|_| {
+                // Error loading from PSM
                 AclMgrInner {
                     entries: [INIT; MAX_ACL_ENTRIES],
                 }
-            }
+            })
         };
         Ok(Self {
             inner: RwLock::new(inner),
             psm,
         })
+    }
+
+    pub fn erase_all(&self) {
+        let mut inner = self.inner.write().unwrap();
+        for i in 0..MAX_ACL_ENTRIES {
+            inner.entries[i] = None;
+        }
+        if let Some(psm) = self.psm.as_ref() {
+            let psm = psm.lock().unwrap();
+            let _ = inner.store(&psm).map_err(|e| {
+                error!("Error in storing ACLs {}", e);
+            });
+        }
     }
 
     pub fn add(&self, entry: AclEntry) -> Result<(), Error> {
@@ -299,8 +328,12 @@ impl AclMgr {
             .ok_or(Error::NoSpace)?;
         inner.entries[index] = Some(entry);
 
-        let psm = self.psm.lock().unwrap();
-        inner.store(&psm)
+        if let Some(psm) = self.psm.as_ref() {
+            let psm = psm.lock().unwrap();
+            inner.store(&psm)
+        } else {
+            Ok(())
+        }
     }
 
     pub fn for_each_acl<T>(&self, mut f: T) -> Result<(), Error>
@@ -344,5 +377,167 @@ impl std::fmt::Display for AclMgr {
             write!(f, "  {{ {:?} }}, ", i)?;
         }
         write!(f, "]")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        data_model::objects::{Access, Privilege},
+        interaction_model::messages::GenericPath,
+    };
+    use std::sync::Arc;
+
+    use super::{AccessReq, Accessor, AclEntry, AclMgr, AuthMode, Target};
+
+    #[test]
+    fn test_basic_empty_subject_target() {
+        let am = Arc::new(AclMgr::new_with(false).unwrap());
+        am.erase_all();
+        let accessor = Accessor::new(2, 112233, AuthMode::Case, am.clone());
+        let path = GenericPath::new(Some(1), Some(1234), None);
+        let mut req = AccessReq::new(&accessor, &path, Access::READ);
+        req.set_target_perms(Access::RWVA);
+
+        // Default deny
+        assert_eq!(req.allow(), false);
+
+        // Deny for session mode mismatch
+        let new = AclEntry::new(1, Privilege::VIEW, AuthMode::Pase);
+        am.add(new).unwrap();
+        assert_eq!(req.allow(), false);
+
+        // Deny for fab idx mismatch
+        let new = AclEntry::new(1, Privilege::VIEW, AuthMode::Case);
+        am.add(new).unwrap();
+        assert_eq!(req.allow(), false);
+
+        // Allow
+        let new = AclEntry::new(2, Privilege::VIEW, AuthMode::Case);
+        am.add(new).unwrap();
+        assert_eq!(req.allow(), true);
+    }
+
+    #[test]
+    fn test_subject() {
+        let am = Arc::new(AclMgr::new_with(false).unwrap());
+        am.erase_all();
+        let accessor = Accessor::new(2, 112233, AuthMode::Case, am.clone());
+        let path = GenericPath::new(Some(1), Some(1234), None);
+        let mut req = AccessReq::new(&accessor, &path, Access::READ);
+        req.set_target_perms(Access::RWVA);
+
+        // Deny for subject mismatch
+        let mut new = AclEntry::new(2, Privilege::VIEW, AuthMode::Case);
+        new.add_subject(112232).unwrap();
+        am.add(new).unwrap();
+        assert_eq!(req.allow(), false);
+
+        // Allow for subject match - target is wildcard
+        let mut new = AclEntry::new(2, Privilege::VIEW, AuthMode::Case);
+        new.add_subject(112233).unwrap();
+        am.add(new).unwrap();
+        assert_eq!(req.allow(), true);
+    }
+
+    #[test]
+    fn test_target() {
+        let am = Arc::new(AclMgr::new_with(false).unwrap());
+        am.erase_all();
+        let accessor = Accessor::new(2, 112233, AuthMode::Case, am.clone());
+        let path = GenericPath::new(Some(1), Some(1234), None);
+        let mut req = AccessReq::new(&accessor, &path, Access::READ);
+        req.set_target_perms(Access::RWVA);
+
+        // Deny for target mismatch
+        let mut new = AclEntry::new(2, Privilege::VIEW, AuthMode::Case);
+        new.add_target(Target {
+            cluster: Some(2),
+            endpoint: Some(4567),
+            device_type: None,
+        })
+        .unwrap();
+        am.add(new).unwrap();
+        assert_eq!(req.allow(), false);
+
+        // Allow for cluster match - subject wildcard
+        let mut new = AclEntry::new(2, Privilege::VIEW, AuthMode::Case);
+        new.add_target(Target {
+            cluster: Some(1234),
+            endpoint: None,
+            device_type: None,
+        })
+        .unwrap();
+        am.add(new).unwrap();
+        assert_eq!(req.allow(), true);
+
+        // Clean Slate
+        am.erase_all();
+
+        // Allow for endpoint match - subject wildcard
+        let mut new = AclEntry::new(2, Privilege::VIEW, AuthMode::Case);
+        new.add_target(Target {
+            cluster: None,
+            endpoint: Some(1),
+            device_type: None,
+        })
+        .unwrap();
+        am.add(new).unwrap();
+        assert_eq!(req.allow(), true);
+
+        // Clean Slate
+        am.erase_all();
+
+        // Allow for exact match
+        let mut new = AclEntry::new(2, Privilege::VIEW, AuthMode::Case);
+        new.add_target(Target {
+            cluster: Some(1234),
+            endpoint: Some(1),
+            device_type: None,
+        })
+        .unwrap();
+        new.add_subject(112233).unwrap();
+        am.add(new).unwrap();
+        assert_eq!(req.allow(), true);
+    }
+
+    #[test]
+    fn test_privilege() {
+        let am = Arc::new(AclMgr::new_with(false).unwrap());
+        am.erase_all();
+        let accessor = Accessor::new(2, 112233, AuthMode::Case, am.clone());
+        let path = GenericPath::new(Some(1), Some(1234), None);
+
+        // Create an Exact Match ACL with View privilege
+        let mut new = AclEntry::new(2, Privilege::VIEW, AuthMode::Case);
+        new.add_target(Target {
+            cluster: Some(1234),
+            endpoint: Some(1),
+            device_type: None,
+        })
+        .unwrap();
+        new.add_subject(112233).unwrap();
+        am.add(new).unwrap();
+
+        // Write on an RWVA without admin access - deny
+        let mut req = AccessReq::new(&accessor, &path, Access::WRITE);
+        req.set_target_perms(Access::RWVA);
+        assert_eq!(req.allow(), false);
+
+        // Create an Exact Match ACL with Admin privilege
+        let mut new = AclEntry::new(2, Privilege::ADMIN, AuthMode::Case);
+        new.add_target(Target {
+            cluster: Some(1234),
+            endpoint: Some(1),
+            device_type: None,
+        })
+        .unwrap();
+        new.add_subject(112233).unwrap();
+        am.add(new).unwrap();
+
+        // Write on an RWVA with admin access - allow
+        let mut req = AccessReq::new(&accessor, &path, Access::WRITE);
+        req.set_target_perms(Access::RWVA);
+        assert_eq!(req.allow(), true);
     }
 }
