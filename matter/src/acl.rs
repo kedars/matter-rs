@@ -50,12 +50,15 @@ impl ToTLV for AuthMode {
     }
 }
 
+/// The Accessor Object
 pub struct Accessor {
+    /// The fabric index of the accessor
     fab_idx: u8,
-    // Could be node-id, NoC CAT, group id
+    /// Accessor's identified: could be node-id, NoC CAT, group id
     id: u64,
+    /// The Authmode of this session
     auth_mode: AuthMode,
-    // Is this the right place for this though, or should we just use a global-acl-handle-get
+    // TODO: Is this the right place for this though, or should we just use a global-acl-handle-get
     acl_mgr: Arc<AclMgr>,
 }
 
@@ -72,20 +75,26 @@ impl Accessor {
 
 #[derive(Debug)]
 pub struct AccessDesc<'a> {
-    // The object to be acted upon
+    /// The object to be acted upon
     path: &'a GenericPath,
+    /// The target permissions
     target_perms: Option<Access>,
     // The operation being done
     // TODO: Currently this is Access, but we need a way to represent the 'invoke' somehow too
     operation: Access,
 }
 
+/// Access Request Object
 pub struct AccessReq<'a> {
     accessor: &'a Accessor,
     object: AccessDesc<'a>,
 }
 
 impl<'a> AccessReq<'a> {
+    /// Creates an access request object
+    ///
+    /// An access request specifies the _accessor_ attempting to access _path_
+    /// with _operation_
     pub fn new(accessor: &'a Accessor, path: &'a GenericPath, operation: Access) -> Self {
         AccessReq {
             accessor,
@@ -97,10 +106,19 @@ impl<'a> AccessReq<'a> {
         }
     }
 
+    /// Add target's permissions to the request
+    ///
+    /// The permissions that are associated with the target (identified by the
+    /// path in the AccessReq) are added to the request
     pub fn set_target_perms(&mut self, perms: Access) {
         self.object.target_perms = Some(perms);
     }
 
+    /// Checks if access is allowed
+    ///
+    /// This checks all the ACL list to identify if any of the ACLs provides the
+    /// _accessor_ the necessary privileges to access the target as per its
+    /// permissions
     pub fn allow(&self) -> bool {
         self.accessor.acl_mgr.allow(self)
     }
