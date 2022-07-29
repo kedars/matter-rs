@@ -36,8 +36,11 @@
 * Exchange:
   - What should happen when an exchange is closed by the higher layer, our tx-retrans is pending, and we got a retrans for that exchange?
 * ACL:
-  - Device-Type support needs to be added
+  - Device-Type based ACLs
+  - NOC CAT
+  - Applying ACLs to commands (requires some restructuring of the commands)
+  - I think we can the encoder to AccessReq Object making it a complete object for access within the DM
 * DataModel:
   - Shall we use a CmdEncoder as a parameter for all the handle_commands()?
-	
+  - Need to define common data types for cluster_id_t, endpoint_id_t so their sizes are constantly defined somewhere
  
