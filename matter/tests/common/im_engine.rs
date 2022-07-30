@@ -43,6 +43,23 @@ pub struct ImEngine {
     pub im: Box<InteractionModel>,
 }
 
+pub struct ImInput<'a> {
+    action: OpCode,
+    data_in: &'a [u8],
+    peer_id: u64,
+}
+
+pub const IM_ENGINE_PEER_ID: u64 = 445566;
+impl<'a> ImInput<'a> {
+    pub fn new(action: OpCode, data_in: &'a [u8]) -> Self {
+        Self {
+            action,
+            data_in,
+            peer_id: IM_ENGINE_PEER_ID,
+        }
+    }
+}
+
 impl ImEngine {
     /// Create the interaction model engine
     pub fn new() -> Self {
@@ -75,14 +92,14 @@ impl ImEngine {
     }
 
     /// Run a transaction through the interaction model engine
-    pub fn process(&mut self, action: OpCode, data_in: &[u8], data_out: &mut [u8]) -> usize {
+    pub fn process(&mut self, input: &ImInput, data_out: &mut [u8]) -> usize {
         let mut exch = Exchange::new(1, 0, exchange::Role::Responder);
 
         let mut sess_mgr: SessionMgr = Default::default();
 
         let clone_data = CloneData::new(
             123456,
-            445566,
+            input.peer_id,
             10,
             30,
             Address::Udp(SocketAddr::new(
@@ -101,11 +118,11 @@ impl ImEngine {
         let tx = Slab::<PacketPool>::new(Packet::new_tx().unwrap()).unwrap();
         // Create fake rx packet
         rx.set_proto_id(0x01);
-        rx.set_proto_opcode(action as u8);
+        rx.set_proto_opcode(input.action as u8);
         rx.peer = Address::default();
-        let in_data_len = data_in.len();
+        let in_data_len = input.data_in.len();
         let rx_buf = rx.as_borrow_slice();
-        rx_buf[..in_data_len].copy_from_slice(data_in);
+        rx_buf[..in_data_len].copy_from_slice(input.data_in);
         rx.get_parsebuf().unwrap().set_len(in_data_len);
 
         let mut ctx = ProtoCtx::new(exch_ctx, rx, tx);
@@ -119,7 +136,8 @@ impl ImEngine {
 // Create an Interaction Model, Data Model and run a rx/tx transaction through it
 pub fn im_engine(action: OpCode, data_in: &[u8], data_out: &mut [u8]) -> (DataModel, usize) {
     let mut engine = ImEngine::new();
-    let output_len = engine.process(action, data_in, data_out);
+    let input = ImInput::new(action, data_in);
+    let output_len = engine.process(&input, data_out);
     (engine.dm, output_len)
 }
 
