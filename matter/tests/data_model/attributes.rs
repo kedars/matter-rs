@@ -16,7 +16,10 @@ use matter::{
     utils::writebuf::WriteBuf,
 };
 
-use crate::common::{attributes::*, echo_cluster, im_engine::im_engine};
+use crate::{
+    attr_data, attr_status,
+    common::{attributes::*, echo_cluster, im_engine::im_engine},
+};
 
 // Helper for handling Read Req sequences
 fn handle_read_reqs(input: &[AttrPath], expected: &[AttrResp]) {
@@ -69,30 +72,6 @@ fn handle_write_reqs(input: &[AttrData], expected: &[AttrStatus]) -> DataModel {
     }
     assert_eq!(index, expected.len());
     dm
-}
-
-macro_rules! attr_data {
-    ($path:expr, $data:expr) => {
-        AttrResp::Data(AttrData {
-            data_ver: None,
-            path: AttrPath {
-                endpoint: $path.endpoint,
-                cluster: $path.cluster,
-                attr: $path.leaf.map(|x| x as u16),
-                ..Default::default()
-            },
-            data: EncodeValue::Tlv(TLVElement::new(
-                TagType::Context(AttrDataTag::Data as u8),
-                $data,
-            )),
-        })
-    };
-}
-
-macro_rules! attr_status {
-    ($path:expr, $status:expr) => {
-        AttrResp::Status(AttrStatus::new($path, $status, 0))
-    };
 }
 
 #[test]

@@ -43,3 +43,29 @@ pub fn assert_attr_report(out_buf: &[u8], expected: &[AttrResp]) {
     }
     assert_eq!(index, expected.len());
 }
+
+#[macro_export]
+macro_rules! attr_data {
+    ($path:expr, $data:expr) => {
+        AttrResp::Data(AttrData {
+            data_ver: None,
+            path: AttrPath {
+                endpoint: $path.endpoint,
+                cluster: $path.cluster,
+                attr: $path.leaf.map(|x| x as u16),
+                ..Default::default()
+            },
+            data: EncodeValue::Tlv(TLVElement::new(
+                TagType::Context(AttrDataTag::Data as u8),
+                $data,
+            )),
+        })
+    };
+}
+
+#[macro_export]
+macro_rules! attr_status {
+    ($path:expr, $status:expr) => {
+        AttrResp::Status(AttrStatus::new($path, $status, 0))
+    };
+}
