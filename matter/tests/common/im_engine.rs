@@ -20,7 +20,7 @@ use matter::{
         network::Address,
         packet::PacketPool,
         proto_demux::ProtoCtx,
-        session::SessionMgr,
+        session::{CloneData, SessionMgr, SessionMode},
     },
     utils::writebuf::WriteBuf,
 };
@@ -54,8 +54,9 @@ impl ImEngine {
         };
         let dev_att = Box::new(DummyDevAtt {});
         let fabric_mgr = Arc::new(FabricMgr::new().unwrap());
-        let acl_mgr = Arc::new(AclMgr::new().unwrap());
-        let default_acl = AclEntry::new(0, Privilege::ADMIN, AuthMode::Invalid);
+        let acl_mgr = Arc::new(AclMgr::new_with(false).unwrap());
+        acl_mgr.erase_all();
+        let default_acl = AclEntry::new(1, Privilege::ADMIN, AuthMode::Case);
         acl_mgr.add(default_acl).unwrap();
         let dm = DataModel::new(dev_det, dev_att, fabric_mgr.clone(), acl_mgr.clone()).unwrap();
 
@@ -79,17 +80,18 @@ impl ImEngine {
 
         let mut sess_mgr: SessionMgr = Default::default();
 
-        let sess_idx = sess_mgr
-            .get_or_add(
-                0,
-                Address::Udp(SocketAddr::new(
-                    std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-                    5542,
-                )),
-                None,
-                false,
-            )
-            .unwrap();
+        let clone_data = CloneData::new(
+            123456,
+            445566,
+            10,
+            30,
+            Address::Udp(SocketAddr::new(
+                std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+                5542,
+            )),
+            SessionMode::Case(1),
+        );
+        let sess_idx = sess_mgr.clone_session(&clone_data).unwrap();
         let sess = sess_mgr.get_session_handle(sess_idx);
         let exch_ctx = ExchangeCtx {
             exch: &mut exch,
