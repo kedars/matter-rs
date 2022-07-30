@@ -4,6 +4,7 @@ use crate::{
     interaction_model::core::IMStatusCode,
     tlv::{TLVElement, TLVWriter, TagType, ToTLV},
 };
+use log::error;
 
 // TODO: Should this return an IMStatusCode Error? But if yes, the higher layer
 // may have already started encoding the 'success' headers, we might not to manage
@@ -25,7 +26,10 @@ pub trait Encoder {
 impl<'a> PartialEq for EncodeValue<'a> {
     fn eq(&self, other: &Self) -> bool {
         match *self {
-            EncodeValue::Closure(_) => false,
+            EncodeValue::Closure(_) => {
+                error!("PartialEq not yet supported");
+                false
+            }
             EncodeValue::Tlv(a) => {
                 if let EncodeValue::Tlv(b) = *other {
                     a == b
@@ -34,7 +38,10 @@ impl<'a> PartialEq for EncodeValue<'a> {
                 }
             }
             // Just claim false for now
-            EncodeValue::Value(_) => false,
+            EncodeValue::Value(_) => {
+                error!("PartialEq not yet supported");
+                false
+            }
         }
     }
 }
@@ -44,7 +51,7 @@ impl<'a> Debug for EncodeValue<'a> {
         match *self {
             EncodeValue::Closure(_) => write!(f, "Contains closure"),
             EncodeValue::Tlv(t) => write!(f, "{:?}", t),
-            EncodeValue::Value(_) => write!(f, "EncodeValue"),
+            EncodeValue::Value(_) => write!(f, "Contains EncodeValue"),
         }?;
         Ok(())
     }
