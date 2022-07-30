@@ -58,6 +58,10 @@ impl<'a> ImInput<'a> {
             peer_id: IM_ENGINE_PEER_ID,
         }
     }
+
+    pub fn set_peer_node_id(&mut self, peer: u64) {
+        self.peer_id = peer;
+    }
 }
 
 impl ImEngine {
@@ -73,7 +77,9 @@ impl ImEngine {
         let fabric_mgr = Arc::new(FabricMgr::new().unwrap());
         let acl_mgr = Arc::new(AclMgr::new_with(false).unwrap());
         acl_mgr.erase_all();
-        let default_acl = AclEntry::new(1, Privilege::ADMIN, AuthMode::Case);
+        let mut default_acl = AclEntry::new(1, Privilege::ADMIN, AuthMode::Case);
+        // Only allow the standard peer node id of the IM Engine
+        default_acl.add_subject(IM_ENGINE_PEER_ID).unwrap();
         acl_mgr.add(default_acl).unwrap();
         let dm = DataModel::new(dev_det, dev_att, fabric_mgr.clone(), acl_mgr.clone()).unwrap();
 
