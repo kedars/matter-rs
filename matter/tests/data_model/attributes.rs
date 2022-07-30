@@ -16,15 +16,10 @@ use matter::{
     utils::writebuf::WriteBuf,
 };
 
-use crate::common::{echo_cluster, im_engine::im_engine};
-
-enum ExpectedReportData<'a> {
-    Data(AttrData<'a>),
-    Status(AttrStatus),
-}
+use crate::common::{attributes::*, echo_cluster, im_engine::im_engine};
 
 // Helper for handling Read Req sequences
-fn handle_read_reqs(input: &[AttrPath], expected: &[ExpectedReportData]) {
+fn handle_read_reqs(input: &[AttrPath], expected: &[AttrResp]) {
     let mut buf = [0u8; 400];
 
     let buf_len = buf.len();
@@ -37,43 +32,7 @@ fn handle_read_reqs(input: &[AttrPath], expected: &[ExpectedReportData]) {
 
     let (_, out_buf_len) = im_engine(OpCode::ReadRequest, wb.as_borrow_slice(), &mut out_buf);
     let out_buf = &out_buf[..out_buf_len];
-    tlv::print_tlv_list(out_buf);
-    let root = tlv::get_root_node_struct(out_buf).unwrap();
-
-    let mut index = 0;
-    let response_iter = root
-        .find_tag(msg::ReportDataTag::AttributeReports as u32)
-        .unwrap()
-        .confirm_array()
-        .unwrap()
-        .iter()
-        .unwrap();
-    for response in response_iter {
-        println!("Validating index {}", index);
-        let inv_response = AttrResp::from_tlv(&response).unwrap();
-        match expected[index] {
-            ExpectedReportData::Data(e_d) => match inv_response {
-                AttrResp::Data(d) => {
-                    assert_eq!(e_d.path, d.path);
-                    assert_eq!(e_d.data, d.data);
-                }
-                _ => {
-                    panic!("Invalid response, expected AttrRespIn::Data");
-                }
-            },
-            ExpectedReportData::Status(e_s) => match inv_response {
-                AttrResp::Status(s) => {
-                    assert_eq!(e_s, s);
-                }
-                _ => {
-                    panic!("Invalid response, expected AttrRespIn::Status");
-                }
-            },
-        }
-        println!("Index {} success", index);
-        index += 1;
-    }
-    assert_eq!(index, expected.len());
+    assert_attr_report(out_buf, expected)
 }
 
 // Helper for handling Invoke Command sequences
@@ -114,7 +73,7 @@ fn handle_write_reqs(input: &[AttrData], expected: &[AttrStatus]) -> DataModel {
 
 macro_rules! attr_data {
     ($path:expr, $data:expr) => {
-        ExpectedReportData::Data(AttrData {
+        AttrResp::Data(AttrData {
             data_ver: None,
             path: AttrPath {
                 endpoint: $path.endpoint,
@@ -132,7 +91,7 @@ macro_rules! attr_data {
 
 macro_rules! attr_status {
     ($path:expr, $status:expr) => {
-        ExpectedReportData::Status(AttrStatus::new($path, $status, 0))
+        AttrResp::Status(AttrStatus::new($path, $status, 0))
     };
 }
 

@@ -1,0 +1,45 @@
+use matter::{
+    interaction_model::{messages::ib::AttrResp, messages::msg},
+    tlv,
+};
+
+/// Assert that the data received in the outbuf matches our expectations
+pub fn assert_attr_report(out_buf: &[u8], expected: &[AttrResp]) {
+    tlv::print_tlv_list(out_buf);
+    let root = tlv::get_root_node_struct(out_buf).unwrap();
+
+    let mut index = 0;
+    let response_iter = root
+        .find_tag(msg::ReportDataTag::AttributeReports as u32)
+        .unwrap()
+        .confirm_array()
+        .unwrap()
+        .iter()
+        .unwrap();
+    for response in response_iter {
+        println!("Validating index {}", index);
+        let inv_response = AttrResp::from_tlv(&response).unwrap();
+        match expected[index] {
+            AttrResp::Data(e_d) => match inv_response {
+                AttrResp::Data(d) => {
+                    assert_eq!(e_d.path, d.path);
+                    assert_eq!(e_d.data, d.data);
+                }
+                _ => {
+                    panic!("Invalid response, expected AttrRespIn::Data");
+                }
+            },
+            AttrResp::Status(e_s) => match inv_response {
+                AttrResp::Status(s) => {
+                    assert_eq!(e_s, s);
+                }
+                _ => {
+                    panic!("Invalid response, expected AttrRespIn::Status");
+                }
+            },
+        }
+        println!("Index {} success", index);
+        index += 1;
+    }
+    assert_eq!(index, expected.len());
+}
