@@ -36,67 +36,89 @@ impl DevAttDataFetcher for DummyDevAtt {
     }
 }
 
-// Create an Interaction Model, Data Model and run a rx/tx transaction through it
-pub fn im_engine(action: OpCode, data_in: &[u8], data_out: &mut [u8]) -> (DataModel, usize) {
-    let dev_det = BasicInfoConfig {
-        vid: 10,
-        pid: 11,
-        hw_ver: 12,
-        sw_ver: 13,
-    };
-    let dev_att = Box::new(DummyDevAtt {});
-    let fabric_mgr = Arc::new(FabricMgr::new().unwrap());
-    let acl_mgr = Arc::new(AclMgr::new().unwrap());
-    let default_acl = AclEntry::new(0, Privilege::ADMIN, AuthMode::Invalid);
-    acl_mgr.add(default_acl).unwrap();
-    let data_model = DataModel::new(dev_det, dev_att, fabric_mgr.clone(), acl_mgr.clone()).unwrap();
+/// An Interaction Model Engine to facilitate easy testing
+pub struct ImEngine {
+    pub dm: DataModel,
+    pub acl_mgr: Arc<AclMgr>,
+    pub im: Box<InteractionModel>,
+}
 
-    {
-        let mut d = data_model.node.write().unwrap();
-        let light_endpoint = device_type_add_on_off_light(&mut d).unwrap();
-        d.add_cluster(0, echo_cluster::EchoCluster::new(2).unwrap())
-            .unwrap();
-        d.add_cluster(light_endpoint, echo_cluster::EchoCluster::new(3).unwrap())
-            .unwrap();
+impl ImEngine {
+    /// Create the interaction model engine
+    pub fn new() -> Self {
+        let dev_det = BasicInfoConfig {
+            vid: 10,
+            pid: 11,
+            hw_ver: 12,
+            sw_ver: 13,
+        };
+        let dev_att = Box::new(DummyDevAtt {});
+        let fabric_mgr = Arc::new(FabricMgr::new().unwrap());
+        let acl_mgr = Arc::new(AclMgr::new().unwrap());
+        let default_acl = AclEntry::new(0, Privilege::ADMIN, AuthMode::Invalid);
+        acl_mgr.add(default_acl).unwrap();
+        let dm = DataModel::new(dev_det, dev_att, fabric_mgr.clone(), acl_mgr.clone()).unwrap();
+
+        {
+            let mut d = dm.node.write().unwrap();
+            let light_endpoint = device_type_add_on_off_light(&mut d).unwrap();
+            d.add_cluster(0, echo_cluster::EchoCluster::new(2).unwrap())
+                .unwrap();
+            d.add_cluster(light_endpoint, echo_cluster::EchoCluster::new(3).unwrap())
+                .unwrap();
+        }
+
+        let im = Box::new(InteractionModel::new(Box::new(dm.clone())));
+
+        Self { dm, acl_mgr, im }
     }
 
-    let mut interaction_model = Box::new(InteractionModel::new(Box::new(data_model.clone())));
-    let mut exch = Exchange::new(1, 0, exchange::Role::Responder);
+    /// Run a transaction through the interaction model engine
+    pub fn process(&mut self, action: OpCode, data_in: &[u8], data_out: &mut [u8]) -> usize {
+        let mut exch = Exchange::new(1, 0, exchange::Role::Responder);
 
-    let mut sess_mgr: SessionMgr = Default::default();
+        let mut sess_mgr: SessionMgr = Default::default();
 
-    let sess_idx = sess_mgr
-        .get_or_add(
-            0,
-            Address::Udp(SocketAddr::new(
-                std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-                5542,
-            )),
-            None,
-            false,
-        )
-        .unwrap();
-    let sess = sess_mgr.get_session_handle(sess_idx);
-    let exch_ctx = ExchangeCtx {
-        exch: &mut exch,
-        sess,
-    };
-    let mut rx = Slab::<PacketPool>::new(Packet::new_rx().unwrap()).unwrap();
-    let tx = Slab::<PacketPool>::new(Packet::new_tx().unwrap()).unwrap();
-    // Create fake rx packet
-    rx.set_proto_id(0x01);
-    rx.set_proto_opcode(action as u8);
-    rx.peer = Address::default();
-    let in_data_len = data_in.len();
-    let rx_buf = rx.as_borrow_slice();
-    rx_buf[..in_data_len].copy_from_slice(data_in);
-    rx.get_parsebuf().unwrap().set_len(in_data_len);
+        let sess_idx = sess_mgr
+            .get_or_add(
+                0,
+                Address::Udp(SocketAddr::new(
+                    std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+                    5542,
+                )),
+                None,
+                false,
+            )
+            .unwrap();
+        let sess = sess_mgr.get_session_handle(sess_idx);
+        let exch_ctx = ExchangeCtx {
+            exch: &mut exch,
+            sess,
+        };
+        let mut rx = Slab::<PacketPool>::new(Packet::new_rx().unwrap()).unwrap();
+        let tx = Slab::<PacketPool>::new(Packet::new_tx().unwrap()).unwrap();
+        // Create fake rx packet
+        rx.set_proto_id(0x01);
+        rx.set_proto_opcode(action as u8);
+        rx.peer = Address::default();
+        let in_data_len = data_in.len();
+        let rx_buf = rx.as_borrow_slice();
+        rx_buf[..in_data_len].copy_from_slice(data_in);
+        rx.get_parsebuf().unwrap().set_len(in_data_len);
 
-    let mut ctx = ProtoCtx::new(exch_ctx, rx, tx);
-    interaction_model.handle_proto_id(&mut ctx).unwrap();
-    let out_data_len = ctx.tx.as_borrow_slice().len();
-    data_out[..out_data_len].copy_from_slice(ctx.tx.as_borrow_slice());
-    (data_model, out_data_len)
+        let mut ctx = ProtoCtx::new(exch_ctx, rx, tx);
+        self.im.handle_proto_id(&mut ctx).unwrap();
+        let out_data_len = ctx.tx.as_borrow_slice().len();
+        data_out[..out_data_len].copy_from_slice(ctx.tx.as_borrow_slice());
+        out_data_len
+    }
+}
+
+// Create an Interaction Model, Data Model and run a rx/tx transaction through it
+pub fn im_engine(action: OpCode, data_in: &[u8], data_out: &mut [u8]) -> (DataModel, usize) {
+    let mut engine = ImEngine::new();
+    let output_len = engine.process(action, data_in, data_out);
+    (engine.dm, output_len)
 }
 
 pub struct TestData<'a, 'b> {
