@@ -39,8 +39,8 @@ pub trait ClusterType {
         Err(IMStatusCode::UnsupportedCommand)
     }
 
-    fn write_attribute(&mut self, data: &TLVElement, attr_id: u16) -> Result<(), IMStatusCode> {
-        self.base_mut().write_attribute(data, attr_id)
+    fn write_attribute(&mut self, attr_id: u16, data: &TLVElement) -> Result<(), IMStatusCode> {
+        self.base_mut().write_attribute_from_tlv(attr_id, data)
     }
 }
 
@@ -212,13 +212,37 @@ impl Cluster {
         Ok(&a.value)
     }
 
-    pub fn write_attribute(&mut self, data: &TLVElement, attr_id: u16) -> Result<(), IMStatusCode> {
-        let a = self
-            .get_attribute_mut(attr_id)
-            .map_err(|_| IMStatusCode::UnsupportedAttribute)?;
+    pub fn write_attribute(
+        c: &mut dyn ClusterType,
+        access_req: &mut AccessReq,
+        data: &TLVElement,
+        attr_id: u16,
+    ) -> Result<(), IMStatusCode> {
+        let base = c.base_mut();
+        let a = if let Ok(a) = base.get_attribute_mut(attr_id) {
+            a
+        } else {
+            return Err(IMStatusCode::UnsupportedAttribute);
+        };
+
         if !a.access.contains(Access::WRITE) {
             return Err(IMStatusCode::UnsupportedWrite);
         }
+
+        access_req.set_target_perms(a.access);
+        if !access_req.allow() {
+            return Err(IMStatusCode::UnsupportedAccess);
+        }
+
+        c.write_attribute(attr_id, data)
+    }
+
+    pub fn write_attribute_from_tlv(
+        &mut self,
+        attr_id: u16,
+        data: &TLVElement,
+    ) -> Result<(), IMStatusCode> {
+        let a = self.get_attribute_mut(attr_id)?;
         if a.value != AttrValue::Custom {
             let mut value = a.value;
             value

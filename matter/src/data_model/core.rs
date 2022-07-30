@@ -64,6 +64,7 @@ impl DataModel {
     // Encode a write attribute from a path that may or may not be wildcard
     fn handle_write_attr_path(
         node: &mut RwLockWriteGuard<Box<Node>>,
+        accessor: &Accessor,
         attr_data: &AttrData,
         tw: &mut TLVWriter,
     ) {
@@ -93,15 +94,15 @@ impl DataModel {
         if gen_path.is_wildcard() {
             // This is a wildcard path, skip error
             //    This is required because there could be access control errors too that need
-            // to be take care of.
+            //    to be taken care of.
             encoder.skip_error();
         }
 
         let result = node.for_each_cluster_mut(&gen_path, |path, c| {
             let attr_id = if let Some(a) = path.leaf { a } else { 0 } as u16;
             encoder.set_path(*path);
-
-            let r = match c.write_attribute(write_data, attr_id) {
+            let mut access_req = AccessReq::new(accessor, path, Access::WRITE);
+            let r = match Cluster::write_attribute(c, &mut access_req, write_data, attr_id) {
                 Ok(_) => IMStatusCode::Sucess,
                 Err(e) => e,
             };
@@ -190,14 +191,15 @@ impl InteractionConsumer for DataModel {
     fn consume_write_attr(
         &self,
         write_req: &WriteReq,
-        _trans: &mut Transaction,
+        trans: &mut Transaction,
         tw: &mut TLVWriter,
     ) -> Result<(), Error> {
-        let mut node = self.node.write().unwrap();
+        let accessor = self.sess_to_accessor(trans.session);
 
         tw.start_array(TagType::Context(msg::WriteRespTag::WriteResponses as u8))?;
+        let mut node = self.node.write().unwrap();
         for attr_data in write_req.write_requests.iter() {
-            DataModel::handle_write_attr_path(&mut node, &attr_data, tw);
+            DataModel::handle_write_attr_path(&mut node, &accessor, &attr_data, tw);
         }
         tw.end_container()?;
 
@@ -217,15 +219,13 @@ impl InteractionConsumer for DataModel {
             error!("Data Version Filter not yet supported");
         }
 
-        let accessor = self.sess_to_accessor(trans.session);
-        let node = self.node.read().unwrap();
         if let Some(attr_requests) = &read_req.attr_requests {
+            let accessor = self.sess_to_accessor(trans.session);
+            let node = self.node.read().unwrap();
             tw.start_array(TagType::Context(msg::ReportDataTag::AttributeReports as u8))?;
-
             for attr_path in attr_requests.iter() {
                 DataModel::handle_read_attr_path(&node, &accessor, attr_path, tw);
             }
-
             tw.end_container()?;
         }
         Ok(())
