@@ -20,8 +20,6 @@ impl InteractionModel {
         let mut tw = TLVWriter::new(proto_tx.get_writebuf()?);
         let root = get_root_node_struct(rx_buf)?;
         let write_req = WriteReq::from_tlv(&root)?;
-        // TODO: This is found in the spec, but not in the C++ implementation
-        let _fab_scoped = false;
         let supress_response = write_req.supress_response.is_some();
 
         tw.start_struct(TagType::Anonymous)?;

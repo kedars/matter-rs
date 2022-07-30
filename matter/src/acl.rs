@@ -131,6 +131,16 @@ pub struct Target {
     device_type: Option<u32>,
 }
 
+impl Target {
+    pub fn new(endpoint: Option<u16>, cluster: Option<u32>, device_type: Option<u32>) -> Self {
+        Self {
+            cluster,
+            endpoint,
+            device_type,
+        }
+    }
+}
+
 type Subjects = [Option<u64>; SUBJECTS_PER_ENTRY];
 type Targets = [Option<Target>; TARGETS_PER_ENTRY];
 #[derive(ToTLV, FromTLV, Copy, Clone, Debug)]
