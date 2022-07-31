@@ -104,7 +104,7 @@ impl EchoCluster {
         c.base.add_attribute(Attribute::new(
             Attributes::AttWrite as u16,
             AttrValue::Uint16(ATTR_WRITE_DEFAULT_VALUE),
-            Access::WRITE | Access::NEED_OPERATE,
+            Access::WRITE | Access::NEED_ADMIN,
             Quality::NONE,
         )?)?;
         c.base.add_attribute(Attribute::new(

@@ -341,3 +341,48 @@ fn exact_write_attribute() {
     handle_write_reqs(&mut im, peer, input, expected_success);
     assert_eq!(AttrValue::Uint16(val0), read_cluster_id_write_attr(&im, 0));
 }
+
+#[test]
+/// Ensure that a write attribute with insufficient permissions is rejected
+fn insufficient_perms_write() {
+    let _ = env_logger::try_init();
+    let val0 = 10;
+    let attr_data0 = |tag, t: &mut TLVWriter| {
+        let _ = t.u16(tag, val0);
+    };
+    let ep0_att = GenericPath::new(
+        Some(0),
+        Some(echo_cluster::ID),
+        Some(echo_cluster::Attributes::AttWrite as u32),
+    );
+    let input0 = &[AttrData::new(
+        None,
+        AttrPath::new(&ep0_att),
+        EncodeValue::Closure(&attr_data0),
+    )];
+
+    let peer = 98765;
+    let mut im = ImEngine::new();
+
+    // Add ACL to allow our peer with only OPERATE permission
+    let mut acl = AclEntry::new(1, Privilege::OPERATE, AuthMode::Case);
+    acl.add_subject(peer).unwrap();
+    acl.add_target(Target::new(Some(0), None, None)).unwrap();
+    im.acl_mgr.add(acl).unwrap();
+
+    // Test: Not enough permission should return error
+    handle_write_reqs(
+        &mut im,
+        peer,
+        input0,
+        &[AttrStatus::new(
+            &ep0_att,
+            IMStatusCode::UnsupportedAccess,
+            0,
+        )],
+    );
+    assert_eq!(
+        AttrValue::Uint16(ATTR_WRITE_DEFAULT_VALUE),
+        read_cluster_id_write_attr(&im, 0)
+    );
+}
