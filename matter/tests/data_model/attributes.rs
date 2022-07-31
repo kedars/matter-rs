@@ -7,7 +7,7 @@ use matter::{
     interaction_model::{
         core::{IMStatusCode, OpCode},
         messages::{
-            ib::{AttrData, AttrDataTag, AttrPath, AttrResp, AttrStatus},
+            ib::{AttrData, AttrPath, AttrResp, AttrStatus},
             msg::{ReadReq, WriteReq},
         },
         messages::{msg, GenericPath},
@@ -38,7 +38,7 @@ fn handle_read_reqs(input: &[AttrPath], expected: &[AttrResp]) {
     assert_attr_report(out_buf, expected)
 }
 
-// Helper for handling Invoke Command sequences
+// Helper for handling Write Attribute sequences
 fn handle_write_reqs(input: &[AttrData], expected: &[AttrStatus]) -> DataModel {
     let mut buf = [0u8; 400];
     let mut out_buf = [0u8; 400];

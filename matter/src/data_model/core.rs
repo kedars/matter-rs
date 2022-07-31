@@ -68,6 +68,10 @@ impl DataModel {
         attr_data: &AttrData,
         tw: &mut TLVWriter,
     ) {
+        if attr_data.data_ver.is_some() {
+            error!("Data ver handling not yet supported");
+        }
+
         let gen_path = attr_data.path.to_gp();
         let mut encoder = AttrWriteEncoder::new(tw, TagType::Anonymous);
         encoder.set_path(gen_path);

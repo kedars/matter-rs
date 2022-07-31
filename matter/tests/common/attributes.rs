@@ -44,6 +44,10 @@ pub fn assert_attr_report(out_buf: &[u8], expected: &[AttrResp]) {
     assert_eq!(index, expected.len());
 }
 
+// We have to hard-code this here, and it should match the tag
+// of the 'data' part in AttrData
+pub const ATTR_DATA_TAG_DATA: u8 = 2;
+
 #[macro_export]
 macro_rules! attr_data {
     ($path:expr, $data:expr) => {
@@ -55,10 +59,7 @@ macro_rules! attr_data {
                 attr: $path.leaf.map(|x| x as u16),
                 ..Default::default()
             },
-            data: EncodeValue::Tlv(TLVElement::new(
-                TagType::Context(AttrDataTag::Data as u8),
-                $data,
-            )),
+            data: EncodeValue::Tlv(TLVElement::new(TagType::Context(ATTR_DATA_TAG_DATA), $data)),
         })
     };
 }

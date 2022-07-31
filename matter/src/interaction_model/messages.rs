@@ -123,7 +123,6 @@ pub mod msg {
     }
 
     // Report Data
-    // TODO: Differs from spec
     pub enum ReportDataTag {
         _SubscriptionId = 0,
         AttributeReports = 1,
@@ -347,7 +346,7 @@ pub mod ib {
                 AttrResp::Data(data) => {
                     // In this case, we'll have to add the AttributeDataIb
                     // The only possible return here is if the AttrData read returns an error
-                    data.write_tlv(tw, TagType::Context(AttrRespTag::Data as u8))?;
+                    data.to_tlv(tw, TagType::Context(AttrRespTag::Data as u8))?;
                 }
                 AttrResp::Status(status) => {
                     // In this case, we'll have to add the AttributeStatusIb
@@ -386,17 +385,12 @@ pub mod ib {
     }
 
     // Attribute Data
-    #[derive(Clone, Copy, PartialEq)]
+    #[derive(Clone, Copy, PartialEq, FromTLV, ToTLV)]
+    #[tlvargs(lifetime = "'a")]
     pub struct AttrData<'a> {
         pub data_ver: Option<u32>,
         pub path: AttrPath,
         pub data: EncodeValue<'a>,
-    }
-
-    pub enum AttrDataTag {
-        DataVersion = 0,
-        Path = 1,
-        Data = 2,
     }
 
     impl<'a> AttrData<'a> {
@@ -407,58 +401,6 @@ pub mod ib {
                 data,
             }
         }
-
-        fn write_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), IMStatusCode> {
-            let _ = tw.start_struct(tag_type);
-            if let Some(data_ver) = self.data_ver {
-                let _ = tw.u32(TagType::Context(AttrDataTag::DataVersion as u8), data_ver);
-            }
-            let _ = self
-                .path
-                .to_tlv(tw, TagType::Context(AttrDataTag::Path as u8));
-            match self.data {
-                EncodeValue::Closure(f) => {
-                    let _ = (f)(TagType::Context(AttrDataTag::Data as u8), tw);
-                }
-                EncodeValue::Tlv(_) => (panic!("Not yet implemented")),
-                EncodeValue::Value(v) => v.to_tlv(tw, TagType::Context(AttrDataTag::Data as u8))?,
-            }
-            let _ = tw.end_container();
-            Ok(())
-        }
-    }
-
-    impl<'a> FromTLV<'a> for AttrData<'a> {
-        fn from_tlv(attr_data: &TLVElement<'a>) -> Result<Self, Error> {
-            let data_ver_tag = attr_data.find_tag(AttrDataTag::DataVersion as u32);
-            let data_ver = if data_ver_tag.is_ok() {
-                error!("Data Version handling not yet supported");
-                Some(data_ver_tag?.u32()?)
-            } else {
-                None
-            };
-
-            let path = attr_data.find_tag(AttrDataTag::Path as u32)?;
-            let path = AttrPath::from_tlv(&path)?;
-            let data = attr_data.find_tag(AttrDataTag::Data as u32)?;
-            Ok(Self {
-                data_ver,
-                path,
-                data: EncodeValue::Tlv(data),
-            })
-        }
-    }
-
-    impl<'a> ToTLV for AttrData<'a> {
-        fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
-            self.write_tlv(tw, tag_type).map_err(|_| Error::Invalid)
-        }
-    }
-
-    // Attribute Status
-    pub enum AttrStatusTag {
-        Path = 0,
-        Status = 1,
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, FromTLV, ToTLV)]

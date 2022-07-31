@@ -1,8 +1,9 @@
 use std::fmt::{Debug, Formatter};
 
 use crate::{
+    error::Error,
     interaction_model::core::IMStatusCode,
-    tlv::{TLVElement, TLVWriter, TagType, ToTLV},
+    tlv::{FromTLV, TLVElement, TLVWriter, TagType, ToTLV},
 };
 use log::error;
 
@@ -12,14 +13,27 @@ use log::error;
 type ValueGen<'a> = &'a dyn Fn(TagType, &mut TLVWriter);
 
 #[derive(Copy, Clone)]
+/// A structure for encoding various types of values
 pub enum EncodeValue<'a> {
+    /// This indicates a value that is dynamically generated. This variant
+    /// is typically used in the transmit/to-tlv path where we want to encode a value at
+    /// run time
     Closure(ValueGen<'a>),
+    /// This indicates a value that is in the TLVElement form. this variant is
+    /// typically used in the receive/from-tlv path where we don't want to decode the
+    /// full value but it can be done at the time of its usage
     Tlv(TLVElement<'a>),
+    /// This indicates a static value. This variant is typically used in the transmit/
+    /// to-tlv path
     Value(&'a (dyn ToTLV)),
 }
 
+/// An object that can encode EncodeValue into the necessary hierarchical structure
+/// as expected by the Interaction Model
 pub trait Encoder {
+    /// Encode a given value
     fn encode(&mut self, value: EncodeValue);
+    /// Encode a status report
     fn encode_status(&mut self, status: IMStatusCode, cluster_status: u16);
 }
 
@@ -54,5 +68,24 @@ impl<'a> Debug for EncodeValue<'a> {
             EncodeValue::Value(_) => write!(f, "Contains EncodeValue"),
         }?;
         Ok(())
+    }
+}
+
+impl<'a> ToTLV for EncodeValue<'a> {
+    fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
+        match self {
+            EncodeValue::Closure(f) => {
+                (f)(tag_type, tw);
+                Ok(())
+            }
+            EncodeValue::Tlv(_) => (panic!("This looks invalid")),
+            EncodeValue::Value(v) => v.to_tlv(tw, tag_type),
+        }
+    }
+}
+
+impl<'a> FromTLV<'a> for EncodeValue<'a> {
+    fn from_tlv(data: &TLVElement<'a>) -> Result<Self, Error> {
+        Ok(EncodeValue::Tlv(*data))
     }
 }

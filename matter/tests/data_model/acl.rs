@@ -4,7 +4,7 @@ use matter::{
     interaction_model::{
         core::{IMStatusCode, OpCode},
         messages::{
-            ib::{AttrData, AttrDataTag, AttrPath, AttrResp, AttrStatus},
+            ib::{AttrData, AttrPath, AttrResp, AttrStatus},
             msg::{ReadReq, WriteReq},
         },
         messages::{msg, GenericPath},
