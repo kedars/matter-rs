@@ -240,7 +240,7 @@ pub fn derive_fromtlv(item: TokenStream) -> TokenStream {
         if let Type::Path(path) = type_name {
             types.push(&path.path.segments[0].ident);
         } else {
-            panic!("Don't know what to do");
+            panic!("Don't know what to do {:?}", type_name);
         }
     }
 

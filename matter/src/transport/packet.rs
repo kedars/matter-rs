@@ -43,10 +43,6 @@ impl BufferPool {
 
         let mut pool = BufferPool::get().lock().unwrap();
         for i in 0..MAX_PACKET_POOL_SIZE {
-            trace!("{} ", pool.buffers[i].is_some());
-        }
-        trace!("");
-        for i in 0..MAX_PACKET_POOL_SIZE {
             if pool.buffers[i].is_none() {
                 pool.buffers[i] = Some([0; MAX_RX_BUF_SIZE]);
                 // Sigh! to by-pass the borrow-checker telling us we are stealing a mutable reference
