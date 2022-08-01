@@ -87,8 +87,8 @@ totlv_for!(i8 u8 u16 u32 u64 bool);
 //
 // - UtfStr, OctetStr: These are versions that map to utfstr and ostr in the TLV spec
 //     - These only have references into the original list
-// - Vec<u8>, String: Is the owned version of utfstr and ostr, data is cloned into this
-//     - String is yet to be implemented
+// - String, Vec<u8>: Is the owned version of utfstr and ostr, data is cloned into this
+//     - String is only partially implemented
 //
 // - TLVArray: Is an array of entries, with reference within the original list
 // - TLVArrayOwned: Is the owned version of this, data is cloned into this
@@ -96,6 +96,12 @@ totlv_for!(i8 u8 u16 u32 u64 bool);
 /// Implements UTFString from the spec
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct UtfStr<'a>(pub &'a [u8]);
+
+impl<'a> UtfStr<'a> {
+    pub fn new(str: &'a [u8]) -> Self {
+        Self(str)
+    }
+}
 
 impl<'a> ToTLV for UtfStr<'a> {
     fn to_tlv(&self, tw: &mut TLVWriter, tag: TagType) -> Result<(), Error> {
@@ -106,6 +112,12 @@ impl<'a> ToTLV for UtfStr<'a> {
 /// Implements OctetString from the spec
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct OctetStr<'a>(pub &'a [u8]);
+
+impl<'a> OctetStr<'a> {
+    pub fn new(str: &'a [u8]) -> Self {
+        Self(str)
+    }
+}
 
 impl<'a> FromTLV<'a> for OctetStr<'a> {
     fn from_tlv(t: &TLVElement<'a>) -> Result<OctetStr<'a>, Error> {
@@ -129,6 +141,28 @@ impl FromTLV<'_> for Vec<u8> {
 impl ToTLV for Vec<u8> {
     fn to_tlv(&self, tw: &mut TLVWriter, tag: TagType) -> Result<(), Error> {
         tw.str16(tag, self.as_slice())
+    }
+}
+
+/// Implements the Owned version of UTF String
+impl FromTLV<'_> for String {
+    fn from_tlv(t: &TLVElement) -> Result<String, Error> {
+        match t.slice() {
+            Ok(x) => {
+                if let Ok(s) = String::from_utf8(x.to_vec()) {
+                    Ok(s)
+                } else {
+                    Err(Error::Invalid)
+                }
+            }
+            Err(e) => Err(e),
+        }
+    }
+}
+
+impl ToTLV for String {
+    fn to_tlv(&self, tw: &mut TLVWriter, tag: TagType) -> Result<(), Error> {
+        tw.utf16(tag, self.as_bytes())
     }
 }
 
