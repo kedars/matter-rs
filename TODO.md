@@ -40,6 +40,10 @@
   - NOC CAT
   - Applying ACLs to commands (requires some restructuring of the commands)
   - I think we can the encoder to AccessReq Object making it a complete object for access within the DM
+  - Write Attribute to 'acl' of ACL Cluster is pending
+  - List processing of attribute write is missing in IM
+* Interaction Model
+  - List processing of write attributes is different (delete, modify, edit), needs to be handled
 * DataModel:
   - Shall we use a CmdEncoder as a parameter for all the handle_commands()?
   - Need to define common data types for cluster_id_t, endpoint_id_t so their sizes are constantly defined somewhere

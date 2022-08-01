@@ -47,3 +47,10 @@ $ chip-tool onoff on 12344321 1
   - General Commissioning Cluster
   - Operational Certificates Cluster
 - Some [TODO](TODO.md) are captured here
+
+## Attribution
+
+This project is a Rust implementation of the project at https://github.com/project-chip/connectedhomeip
+
+The matter-rs project is a work-in-progress and does NOT yet fully implement Matter.
+
