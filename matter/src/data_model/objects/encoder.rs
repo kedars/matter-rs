@@ -10,7 +10,7 @@ use log::error;
 // TODO: Should this return an IMStatusCode Error? But if yes, the higher layer
 // may have already started encoding the 'success' headers, we might not to manage
 // the tw.rewind() in that case, if we add this support
-type ValueGen<'a> = &'a dyn Fn(TagType, &mut TLVWriter);
+pub type EncodeValueGen<'a> = &'a dyn Fn(TagType, &mut TLVWriter);
 
 #[derive(Copy, Clone)]
 /// A structure for encoding various types of values
@@ -18,7 +18,7 @@ pub enum EncodeValue<'a> {
     /// This indicates a value that is dynamically generated. This variant
     /// is typically used in the transmit/to-tlv path where we want to encode a value at
     /// run time
-    Closure(ValueGen<'a>),
+    Closure(EncodeValueGen<'a>),
     /// This indicates a value that is in the TLVElement form. this variant is
     /// typically used in the receive/from-tlv path where we don't want to decode the
     /// full value but it can be done at the time of its usage
@@ -28,13 +28,13 @@ pub enum EncodeValue<'a> {
     Value(&'a (dyn ToTLV)),
 }
 
-/// An object that can encode EncodeValue into the necessary hierarchical structure
-/// as expected by the Interaction Model
-pub trait Encoder {
-    /// Encode a given value
-    fn encode(&mut self, value: EncodeValue);
-    /// Encode a status report
-    fn encode_status(&mut self, status: IMStatusCode, cluster_status: u16);
+impl<'a> EncodeValue<'a> {
+    pub fn unwrap_tlv(self) -> Option<TLVElement<'a>> {
+        match self {
+            EncodeValue::Tlv(t) => Some(t),
+            _ => None,
+        }
+    }
 }
 
 impl<'a> PartialEq for EncodeValue<'a> {
@@ -88,4 +88,13 @@ impl<'a> FromTLV<'a> for EncodeValue<'a> {
     fn from_tlv(data: &TLVElement<'a>) -> Result<Self, Error> {
         Ok(EncodeValue::Tlv(*data))
     }
+}
+
+/// An object that can encode EncodeValue into the necessary hierarchical structure
+/// as expected by the Interaction Model
+pub trait Encoder {
+    /// Encode a given value
+    fn encode(&mut self, value: EncodeValue);
+    /// Encode a status report
+    fn encode_status(&mut self, status: IMStatusCode, cluster_status: u16);
 }
