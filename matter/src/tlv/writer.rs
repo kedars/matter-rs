@@ -167,7 +167,7 @@ impl<'a, 'b> TLVWriter<'a, 'b> {
 
     pub fn utf16(&mut self, tag_type: TagType, data: &[u8]) -> Result<(), Error> {
         if data.len() <= 0xff {
-            self.str8(tag_type, data)
+            self.utf8(tag_type, data)
         } else {
             self.put_control_tag(tag_type, WriteElementType::Utf16l)?;
             self.buf.le_u16(data.len() as u16)?;
