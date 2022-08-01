@@ -138,7 +138,7 @@ pub mod msg {
 }
 
 pub mod ib {
-    use std::fmt::{Debug, Formatter};
+    use std::fmt::Debug;
 
     use crate::{
         data_model::objects::EncodeValue,
@@ -165,7 +165,7 @@ pub mod ib {
     }
 
     impl<'a> InvResp<'a> {
-        pub fn cmd_new(endpoint: u16, cluster: u32, cmd: u16, data: CmdDataGen<'a>) -> Self {
+        pub fn cmd_new(endpoint: u16, cluster: u32, cmd: u16, data: EncodeValue<'a>) -> Self {
             Self::Cmd(CmdData::new(
                 CmdPath::new(Some(endpoint), Some(cluster), Some(cmd)),
                 data,
@@ -233,76 +233,16 @@ pub mod ib {
         }
     }
 
-    type CmdDataGen<'a> = &'a dyn Fn(&mut TLVWriter) -> Result<(), Error>;
-
-    #[derive(Clone, Copy)]
-    pub enum CmdDataType<'a> {
-        Closure(CmdDataGen<'a>),
-        Tlv(TLVElement<'a>),
-    }
-
-    impl<'a> CmdDataType<'a> {
-        pub fn get_tlv_ref(&self) -> Option<&TLVElement<'a>> {
-            match self {
-                CmdDataType::Closure(_) => None,
-                CmdDataType::Tlv(t) => Some(&t),
-            }
-        }
-    }
-
-    impl<'a> Debug for CmdDataType<'a> {
-        fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-            match *self {
-                Self::Closure(_) => write!(f, "Contains closure"),
-                Self::Tlv(t) => write!(f, "{:?}", t),
-            }?;
-            Ok(())
-        }
-    }
-
-    impl<'a> FromTLV<'a> for CmdDataType<'a> {
-        fn from_tlv(t: &TLVElement<'a>) -> Result<Self, Error>
-        where
-            Self: Sized,
-        {
-            Ok(Self::Tlv(*t))
-        }
-    }
-
-    impl<'a> ToTLV for CmdDataType<'a> {
-        fn to_tlv(
-            self: &CmdDataType<'a>,
-            tw: &mut TLVWriter,
-            tag_type: TagType,
-        ) -> Result<(), Error> {
-            // TODO: We are cheating here a little bit. This following 'Data' need
-            // not be a 'structure'. Somebody could directly embed u8 at the tag
-            // 'CmdDataTag::Data'. We will have to modify this (and all the callers)
-            // when we stumble across that scenario
-            tw.start_struct(tag_type)?;
-            match self {
-                CmdDataType::Closure(c) => {
-                    (c)(tw)?;
-                }
-                CmdDataType::Tlv(_) => (panic!("Not yet implemented")),
-            };
-            tw.end_container()
-        }
-    }
-
     #[derive(Debug, Clone, Copy, FromTLV, ToTLV)]
     #[tlvargs(lifetime = "'a")]
     pub struct CmdData<'a> {
         pub path: CmdPath,
-        pub data: CmdDataType<'a>,
+        pub data: EncodeValue<'a>,
     }
 
     impl<'a> CmdData<'a> {
-        pub fn new(path: CmdPath, data: CmdDataGen<'a>) -> Self {
-            Self {
-                path,
-                data: CmdDataType::Closure(data),
-            }
+        pub fn new(path: CmdPath, data: EncodeValue<'a>) -> Self {
+            Self { path, data }
         }
     }
 

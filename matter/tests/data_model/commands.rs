@@ -1,8 +1,8 @@
 use matter::{
-    data_model::cluster_on_off,
+    data_model::{cluster_on_off, objects::EncodeValue},
     interaction_model::{
         core::{IMStatusCode, OpCode},
-        messages::ib::{CmdDataType, CmdPath, CmdStatus, InvResp},
+        messages::ib::{CmdPath, CmdStatus, InvResp},
         messages::msg,
     },
     tlv,
@@ -51,7 +51,7 @@ fn handle_commands(input: &[(CmdPath, Option<u8>)], expected: &[ExpectedInvResp]
                 InvResp::Cmd(c) => {
                     assert_eq!(e_c, c.path);
                     match c.data {
-                        CmdDataType::Tlv(t) => {
+                        EncodeValue::Tlv(t) => {
                             assert_eq!(e_d, t.find_tag(0).unwrap().u8().unwrap())
                         }
                         _ => panic!("Incorrect CmdDataType"),

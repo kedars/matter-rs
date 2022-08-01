@@ -66,12 +66,17 @@ impl ClusterType for EchoCluster {
                 let mut echo_response = cmd_req.cmd;
                 echo_response.path.leaf = Some(Commands::EchoResp as u32);
 
-                let cmd_data = |t: &mut TLVWriter| {
+                let cmd_data = |tag: TagType, t: &mut TLVWriter| {
+                    let _ = t.start_struct(tag);
                     // Echo = input * self.multiplier
-                    t.u8(TagType::Context(0), a * self.multiplier)
+                    let _ = t.u8(TagType::Context(0), a * self.multiplier);
+                    let _ = t.end_container();
                 };
 
-                let invoke_resp = ib::InvResp::Cmd(ib::CmdData::new(echo_response, &cmd_data));
+                let invoke_resp = ib::InvResp::Cmd(ib::CmdData::new(
+                    echo_response,
+                    EncodeValue::Closure(&cmd_data),
+                ));
                 let _ = invoke_resp.to_tlv(cmd_req.resp, TagType::Anonymous);
                 cmd_req.trans.complete();
             }

@@ -56,8 +56,8 @@ impl InteractionConsumer for DataModel {
     ) -> Result<(), Error> {
         if let Some(inv_requests) = &inv_req_msg.inv_requests {
             for i in inv_requests.iter() {
-                let data = if let Some(data) = i.data.get_tlv_ref() {
-                    *data
+                let data = if let Some(data) = i.data.unwrap_tlv() {
+                    data
                 } else {
                     continue;
                 };

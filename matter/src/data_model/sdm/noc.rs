@@ -148,15 +148,17 @@ impl NocCluster {
             error!("Failed to record NoC in the FailSafe, what to do?");
         }
 
-        let cmd_data = |t: &mut TLVWriter| {
-            // Status
-            t.u8(TagType::Context(0), 0)?;
-            // Fabric Index  - hard-coded for now
-            t.u8(TagType::Context(1), fab_idx)?;
-            // Debug string
-            t.utf8(TagType::Context(2), b"")
+        let cmd_data = NocResp {
+            status_code: NocStatus::Ok as u8,
+            fab_idx,
+            debug_txt: "".to_owned(),
         };
-        let resp = ib::InvResp::cmd_new(0, ID, Commands::NOCResp as u16, &cmd_data);
+        let resp = ib::InvResp::cmd_new(
+            0,
+            ID,
+            Commands::NOCResp as u16,
+            EncodeValue::Value(&cmd_data),
+        );
         let _ = resp.to_tlv(cmd_req.resp, TagType::Anonymous);
         cmd_req.trans.complete();
         Ok(())
@@ -165,11 +167,17 @@ impl NocCluster {
     fn handle_command_addnoc(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
         cmd_enter!("AddNOC");
         if let Err(e) = self._handle_command_addnoc(cmd_req) {
-            let cmd_data = |t: &mut TLVWriter| {
-                // Status
-                t.u8(TagType::Context(0), e as u8)
+            let cmd_data = NocResp {
+                status_code: e as u8,
+                fab_idx: 0,
+                debug_txt: "".to_owned(),
             };
-            let invoke_resp = ib::InvResp::cmd_new(0, ID, Commands::NOCResp as u16, &cmd_data);
+            let invoke_resp = ib::InvResp::cmd_new(
+                0,
+                ID,
+                Commands::NOCResp as u16,
+                EncodeValue::Value(&cmd_data),
+            );
             let _ = invoke_resp.to_tlv(cmd_req.resp, TagType::Anonymous);
             cmd_req.trans.complete();
         }
@@ -185,19 +193,26 @@ impl NocCluster {
         let mut attest_challenge = [0u8; crypto::SYMM_KEY_LEN_BYTES];
         attest_challenge.copy_from_slice(cmd_req.trans.session.get_att_challenge());
 
-        let cmd_data = |t: &mut TLVWriter| {
+        let cmd_data = |tag: TagType, t: &mut TLVWriter| {
             let mut buf: [u8; RESP_MAX] = [0; RESP_MAX];
             let mut attest_element = WriteBuf::new(&mut buf, RESP_MAX);
-
-            add_attestation_element(self.dev_att.as_ref(), req.str.0, &mut attest_element, t)?;
-            add_attestation_signature(
+            let _ = t.start_struct(tag);
+            let _ =
+                add_attestation_element(self.dev_att.as_ref(), req.str.0, &mut attest_element, t);
+            let _ = add_attestation_signature(
                 self.dev_att.as_ref(),
                 &mut attest_element,
                 &attest_challenge,
                 t,
-            )
+            );
+            let _ = t.end_container();
         };
-        let resp = ib::InvResp::cmd_new(0, ID, Commands::AttReqResp as u16, &cmd_data);
+        let resp = ib::InvResp::cmd_new(
+            0,
+            ID,
+            Commands::AttReqResp as u16,
+            EncodeValue::Closure(&cmd_data),
+        );
         let _ = resp.to_tlv(cmd_req.resp, TagType::Anonymous);
         cmd_req.trans.complete();
         Ok(())
@@ -220,8 +235,15 @@ impl NocCluster {
             .map_err(|_| IMStatusCode::Failure)?;
         let buf = &buf[0..len];
 
-        let cmd_data = |t: &mut TLVWriter| t.str16(TagType::Context(0), buf);
-        let resp = ib::InvResp::cmd_new(0, ID, Commands::CertChainResp as u16, &cmd_data);
+        let cmd_data = CertChainResp {
+            cert: OctetStr::new(buf),
+        };
+        let resp = ib::InvResp::cmd_new(
+            0,
+            ID,
+            Commands::CertChainResp as u16,
+            EncodeValue::Value(&cmd_data),
+        );
         let _ = resp.to_tlv(cmd_req.resp, TagType::Anonymous);
         cmd_req.trans.complete();
         Ok(())
@@ -241,19 +263,25 @@ impl NocCluster {
         let mut attest_challenge = [0u8; crypto::SYMM_KEY_LEN_BYTES];
         attest_challenge.copy_from_slice(cmd_req.trans.session.get_att_challenge());
 
-        let cmd_data = |t: &mut TLVWriter| {
+        let cmd_data = |tag: TagType, t: &mut TLVWriter| {
             let mut buf: [u8; RESP_MAX] = [0; RESP_MAX];
             let mut nocsr_element = WriteBuf::new(&mut buf, RESP_MAX);
-
-            add_nocsrelement(&noc_keypair, req.str.0, &mut nocsr_element, t)?;
-            add_attestation_signature(
+            let _ = t.start_struct(tag);
+            let _ = add_nocsrelement(&noc_keypair, req.str.0, &mut nocsr_element, t);
+            let _ = add_attestation_signature(
                 self.dev_att.as_ref(),
                 &mut nocsr_element,
                 &attest_challenge,
                 t,
-            )
+            );
+            let _ = t.end_container();
         };
-        let resp = ib::InvResp::cmd_new(0, ID, Commands::CSRResp as u16, &cmd_data);
+        let resp = ib::InvResp::cmd_new(
+            0,
+            ID,
+            Commands::CSRResp as u16,
+            EncodeValue::Closure(&cmd_data),
+        );
 
         let _ = resp.to_tlv(cmd_req.resp, TagType::Anonymous);
         let noc_data = Box::new(NocData::new(noc_keypair));
@@ -381,6 +409,18 @@ fn add_nocsrelement(
 
     resp.str8(TagType::Context(0), write_buf.as_borrow_slice())?;
     Ok(())
+}
+
+#[derive(ToTLV)]
+struct CertChainResp<'a> {
+    cert: OctetStr<'a>,
+}
+
+#[derive(ToTLV)]
+struct NocResp {
+    status_code: u8,
+    fab_idx: u8,
+    debug_txt: String,
 }
 
 #[derive(FromTLV)]

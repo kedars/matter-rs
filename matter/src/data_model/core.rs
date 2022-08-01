@@ -246,8 +246,8 @@ impl InteractionConsumer for DataModel {
             // Array of InvokeResponse IBs
             tw.start_array(TagType::Context(msg::InvRespTag::InvokeResponses as u8))?;
             for i in inv_requests.iter() {
-                let data = if let Some(data) = i.data.get_tlv_ref() {
-                    *data
+                let data = if let Some(data) = i.data.unwrap_tlv() {
+                    data
                 } else {
                     continue;
                 };

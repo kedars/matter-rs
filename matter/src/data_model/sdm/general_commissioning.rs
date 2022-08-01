@@ -172,11 +172,16 @@ impl GenCommCluster {
             return Err(IMStatusCode::Busy);
         }
 
-        let cmd_data = |t: &mut TLVWriter| {
-            t.u8(TagType::Context(0), CommissioningError::Ok as u8)?;
-            t.utf8(TagType::Context(1), b"")
+        let cmd_data = CommonResponse {
+            error_code: CommissioningError::Ok as u8,
+            debug_txt: "".to_owned(),
         };
-        let resp = ib::InvResp::cmd_new(0, ID, Commands::ArmFailsafeResp as u16, &cmd_data);
+        let resp = ib::InvResp::cmd_new(
+            0,
+            ID,
+            Commands::ArmFailsafeResp as u16,
+            EncodeValue::Value(&cmd_data),
+        );
         let _ = resp.to_tlv(cmd_req.resp, TagType::Anonymous);
         cmd_req.trans.complete();
         Ok(())
@@ -187,7 +192,6 @@ impl GenCommCluster {
         cmd_req: &mut CommandReq,
     ) -> Result<(), IMStatusCode> {
         cmd_enter!("Set Regulatory Config");
-        // These data types don't match the spec
         let country_code = cmd_req
             .data
             .find_tag(1)
@@ -196,11 +200,16 @@ impl GenCommCluster {
             .map_err(|_| IMStatusCode::InvalidCommand)?;
         info!("Received country code: {:?}", country_code);
 
-        let cmd_data = |t: &mut TLVWriter| {
-            t.u8(TagType::Context(0), 0)?;
-            t.utf8(TagType::Context(1), b"")
+        let cmd_data = CommonResponse {
+            error_code: 0,
+            debug_txt: "".to_owned(),
         };
-        let resp = ib::InvResp::cmd_new(0, ID, Commands::SetRegulatoryConfigResp as u16, &cmd_data);
+        let resp = ib::InvResp::cmd_new(
+            0,
+            ID,
+            Commands::SetRegulatoryConfigResp as u16,
+            EncodeValue::Value(&cmd_data),
+        );
         let _ = resp.to_tlv(cmd_req.resp, TagType::Anonymous);
         cmd_req.trans.complete();
         Ok(())
@@ -228,15 +237,24 @@ impl GenCommCluster {
             status = CommissioningError::ErrInvalidAuth as u8;
         }
 
-        let cmd_data = |t: &mut TLVWriter| {
-            t.u8(TagType::Context(0), status)?;
-            t.utf8(TagType::Context(1), b"")
+        let cmd_data = CommonResponse {
+            error_code: status,
+            debug_txt: "".to_owned(),
         };
-
-        let resp =
-            ib::InvResp::cmd_new(0, ID, Commands::CommissioningCompleteResp as u16, &cmd_data);
+        let resp = ib::InvResp::cmd_new(
+            0,
+            ID,
+            Commands::CommissioningCompleteResp as u16,
+            EncodeValue::Value(&cmd_data),
+        );
         let _ = resp.to_tlv(cmd_req.resp, TagType::Anonymous);
         cmd_req.trans.complete();
         Ok(())
     }
+}
+
+#[derive(FromTLV, ToTLV)]
+struct CommonResponse {
+    error_code: u8,
+    debug_txt: String,
 }
