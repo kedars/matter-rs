@@ -207,11 +207,8 @@ impl AclEntry {
             allow = true;
         }
 
-        if allow && self.fab_idx == accessor.fab_idx {
-            true
-        } else {
-            false
-        }
+        // true if both are true
+        allow && self.fab_idx == accessor.fab_idx
     }
 
     fn match_access_desc(&self, object: &AccessDesc) -> bool {
@@ -243,11 +240,7 @@ impl AclEntry {
     }
 
     pub fn allow(&self, req: &AccessReq) -> bool {
-        if self.match_accessor(req.accessor) && self.match_access_desc(&req.object) {
-            true
-        } else {
-            false
-        }
+        self.match_accessor(req.accessor) && self.match_access_desc(&req.object)
     }
 }
 
@@ -312,7 +305,7 @@ impl AclMgr {
             };
 
             psm = Some(psm_handle);
-            inner.unwrap_or_else(|_| {
+            inner.unwrap_or({
                 // Error loading from PSM
                 AclMgrInner {
                     entries: [INIT; MAX_ACL_ENTRIES],
@@ -369,10 +362,8 @@ impl AclMgr {
         T: FnMut(&AclEntry),
     {
         let inner = self.inner.read().unwrap();
-        for entry in &inner.entries {
-            if let Some(entry) = entry {
-                f(entry)
-            }
+        for entry in inner.entries.iter().flatten() {
+            f(entry)
         }
         Ok(())
     }

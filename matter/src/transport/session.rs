@@ -376,7 +376,7 @@ impl SessionMgr {
     }
 
     pub fn clone_session(&mut self, clone_data: &CloneData) -> Result<usize, Error> {
-        let session = Session::clone(&clone_data);
+        let session = Session::clone(clone_data);
         self.add_session(session)
     }
 

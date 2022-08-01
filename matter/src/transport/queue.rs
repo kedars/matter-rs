@@ -37,7 +37,7 @@ impl WorkQ {
     }
 
     pub fn get() -> Result<WorkQ, Error> {
-        unsafe { G_WQ.as_ref().map(|t| t.clone()).ok_or(Error::Invalid) }
+        unsafe { G_WQ.as_ref().cloned().ok_or(Error::Invalid) }
     }
 
     pub fn sync_send(&self, msg: Msg) -> Result<(), Error> {

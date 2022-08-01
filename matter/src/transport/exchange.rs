@@ -313,11 +313,7 @@ impl ExchangeMgr {
             None,
         )?;
 
-        if let Some((_, exchange)) =
-            self.exchanges
-                .iter_mut()
-                .find(|(_, e)| if e.sess_idx == index { true } else { false })
-        {
+        if let Some((_, exchange)) = self.exchanges.iter_mut().find(|(_, e)| e.sess_idx == index) {
             // Send Close_session on this exchange, and then close the session
             // Should this be done for all exchanges?
             error!("Sending Close Session");

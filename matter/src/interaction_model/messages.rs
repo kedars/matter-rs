@@ -35,14 +35,14 @@ impl GenericPath {
     }
     /// Returns true, if the path is wildcard
     pub fn is_wildcard(&self) -> bool {
-        match *self {
+        !matches!(
+            *self,
             GenericPath {
                 endpoint: Some(_),
                 cluster: Some(_),
                 leaf: Some(_),
-            } => false,
-            _ => true,
-        }
+            }
+        )
     }
 }
 
