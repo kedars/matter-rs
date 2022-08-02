@@ -2,7 +2,7 @@ use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::{format_ident, quote};
 use syn::Lit::{Int, Str};
-use syn::NestedMeta::{Meta, Lit};
+use syn::NestedMeta::{Lit, Meta};
 use syn::{parse_macro_input, DeriveInput, Lifetime};
 use syn::{
     Meta::{List, NameValue},
@@ -87,53 +87,17 @@ fn parse_tag_val(field: &syn::Field) -> Option<u8> {
         }
     }
     None
-
-
 }
 
-/// Derive ToTLV Macro
-///
-/// This macro works for structures. It will create an implementation
-/// of the ToTLV trait for that structure.  All the members of the
-/// structure, sequentially, will get Context tags starting from 0
-/// Some configurations are possible through the 'tlvargs' attributes.
-/// For example:
-///  #[tlvargs(start = 1, datatype = "list")]
-///
-/// start: This can be used to override the default tag from which the
-///        encoding starts (Default: 0)
-/// datatype: This can be used to define whether this data structure is
-///        to be encoded as a structure or list. Possible values: list
-///        (Default: struct)
-///
-/// Additionally, structure members can use the tagval attribute to
-/// define a specific tag to be used
-/// For example:
-///  #[argval(22)]
-///  name: u8,
-/// In the above case, the 'name' attribute will be encoded/decoded with
-/// the tag 22
-
-#[proc_macro_derive(ToTLV, attributes(tlvargs, tagval))]
-pub fn derive_totlv(item: TokenStream) -> TokenStream {
-    let ast = parse_macro_input!(item as DeriveInput);
-    let struct_name = &ast.ident;
-
-    let tlvargs = parse_tlvargs(&ast);
+/// Generate a ToTlv implementation for a structure
+fn gen_totlv_for_struct(
+    fields: &syn::FieldsNamed,
+    struct_name: &proc_macro2::Ident,
+    tlvargs: TlvArgs,
+    generics: syn::Generics,
+) -> TokenStream {
     let mut tag_start = tlvargs.start;
     let datatype = format_ident!("start_{}", tlvargs.datatype);
-
-    let generics = ast.generics;
-
-    let fields = if let syn::Data::Struct(syn::DataStruct {
-        fields: syn::Fields::Named(ref fields),
-        ..
-    }) = ast.data
-    {
-        fields
-    } else {
-        panic!("Derive ToTLV - Only supported Struct for now")
-    };
 
     let mut idents = Vec::new();
     let mut tags = Vec::new();
@@ -169,25 +133,66 @@ pub fn derive_totlv(item: TokenStream) -> TokenStream {
     expanded.into()
 }
 
-/// Derive FromTLV Macro
+/// Generate a ToTlv implementation for an enum
+fn gen_totlv_for_enum(
+    data_enum: syn::DataEnum,
+    enum_name: &proc_macro2::Ident,
+    tlvargs: TlvArgs,
+    generics: syn::Generics,
+) -> TokenStream {
+    let mut tag_start = tlvargs.start;
+
+    let mut variant_names = Vec::new();
+    let mut types = Vec::new();
+    let mut tags = Vec::new();
+
+    for v in data_enum.variants.iter() {
+        variant_names.push(&v.ident);
+        if let syn::Fields::Unnamed(fields) = &v.fields {
+            if let Type::Path(path) = &fields.unnamed[0].ty {
+                types.push(&path.path.segments[0].ident);
+            } else {
+                panic!("Path not found {:?}", v.fields);
+            }
+        } else {
+            panic!("Unnamed field not found {:?}", v.fields);
+        }
+        tags.push(tag_start);
+        tag_start += 1;
+    }
+
+    let expanded = quote! {
+           impl #generics ToTLV for #enum_name #generics {
+           fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
+                   tw.start_struct(tag_type)?;
+                   match self {
+                       #(
+                           Self::#variant_names(c) => { c.to_tlv(tw, TagType::Context(#tags))?; },
+                       )*
+                   }
+                   tw.end_container()
+               }
+           }
+    };
+
+    //    panic!("Expanded to {}", expanded);
+    expanded.into()
+}
+
+/// Derive ToTLV Macro
 ///
 /// This macro works for structures. It will create an implementation
-/// of the FromTLV trait for that structure.  All the members of the
+/// of the ToTLV trait for that structure.  All the members of the
 /// structure, sequentially, will get Context tags starting from 0
 /// Some configurations are possible through the 'tlvargs' attributes.
 /// For example:
-///  #[tlvargs(lifetime = "'a", start = 1, datatype = "list", unordered)]
+///  #[tlvargs(start = 1, datatype = "list")]
 ///
 /// start: This can be used to override the default tag from which the
-///        decoding starts (Default: 0)
+///        encoding starts (Default: 0)
 /// datatype: This can be used to define whether this data structure is
-///        to be decoded as a structure or list. Possible values: list
+///        to be encoded as a structure or list. Possible values: list
 ///        (Default: struct)
-/// lifetime: If the structure has a lifetime annotation, use this variable
-///        to indicate that. The 'impl' will then use that lifetime
-///        indicator.
-/// unordered: By default, the decoder expects that the tags are in
-///        sequentially increasing order. Set this if that is not the case.
 ///
 /// Additionally, structure members can use the tagval attribute to
 /// define a specific tag to be used
@@ -197,27 +202,40 @@ pub fn derive_totlv(item: TokenStream) -> TokenStream {
 /// In the above case, the 'name' attribute will be encoded/decoded with
 /// the tag 22
 
-#[proc_macro_derive(FromTLV, attributes(tlvargs, tagval))]
-pub fn derive_fromtlv(item: TokenStream) -> TokenStream {
+#[proc_macro_derive(ToTLV, attributes(tlvargs, tagval))]
+pub fn derive_totlv(item: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(item as DeriveInput);
-    let struct_name = &ast.ident;
+    let name = &ast.ident;
 
     let tlvargs = parse_tlvargs(&ast);
-    let mut tag_start = tlvargs.start;
-    let lifetime = tlvargs.lifetime;
-    let datatype = format_ident!("confirm_{}", tlvargs.datatype);
-
     let generics = ast.generics;
 
-    let fields = if let syn::Data::Struct(syn::DataStruct {
+    if let syn::Data::Struct(syn::DataStruct {
         fields: syn::Fields::Named(ref fields),
         ..
     }) = ast.data
     {
-        fields
+        gen_totlv_for_struct(fields, name, tlvargs, generics)
+    } else if let syn::Data::Enum(data_enum) = ast.data {
+        gen_totlv_for_enum(data_enum, name, tlvargs, generics)
     } else {
-        panic!("Derive FromTLV - Only supported Struct for now")
-    };
+        panic!(
+            "Derive ToTLV - Only supported Struct for now {:?}",
+            ast.data
+        );
+    }
+}
+
+/// Generate a FromTlv implementation for a structure
+fn gen_fromtlv_for_struct(
+    fields: &syn::FieldsNamed,
+    struct_name: &proc_macro2::Ident,
+    tlvargs: TlvArgs,
+    generics: syn::Generics,
+) -> TokenStream {
+    let mut tag_start = tlvargs.start;
+    let lifetime = tlvargs.lifetime;
+    let datatype = format_ident!("confirm_{}", tlvargs.datatype);
 
     let mut idents = Vec::new();
     let mut types = Vec::new();
@@ -243,7 +261,6 @@ pub fn derive_fromtlv(item: TokenStream) -> TokenStream {
             panic!("Don't know what to do {:?}", type_name);
         }
     }
-
 
     // Currently we don't use find_tag() because the tags come in sequential
     // order. If ever the tags start coming out of order, we can use find_tag()
@@ -292,4 +309,109 @@ pub fn derive_fromtlv(item: TokenStream) -> TokenStream {
     };
     //        panic!("The generated code is {}", expanded);
     expanded.into()
+}
+
+/// Generate a FromTlv implementation for an enum
+fn gen_fromtlv_for_enum(
+    data_enum: syn::DataEnum,
+    enum_name: &proc_macro2::Ident,
+    tlvargs: TlvArgs,
+    generics: syn::Generics,
+) -> TokenStream {
+    let mut tag_start = tlvargs.start;
+    let lifetime = tlvargs.lifetime;
+
+    let mut variant_names = Vec::new();
+    let mut types = Vec::new();
+    let mut tags = Vec::new();
+
+    for v in data_enum.variants.iter() {
+        variant_names.push(&v.ident);
+        if let syn::Fields::Unnamed(fields) = &v.fields {
+            if let Type::Path(path) = &fields.unnamed[0].ty {
+                types.push(&path.path.segments[0].ident);
+            } else {
+                panic!("Path not found {:?}", v.fields);
+            }
+        } else {
+            panic!("Unnamed field not found {:?}", v.fields);
+        }
+        tags.push(tag_start);
+        tag_start += 1;
+    }
+
+    let expanded = quote! {
+           impl #generics FromTLV <#lifetime> for #enum_name #generics {
+               fn from_tlv(t: &TLVElement<#lifetime>) -> Result<Self, Error> {
+                   let mut t_iter = t.confirm_struct()?.iter().ok_or(Error::Invalid)?;
+                   let mut item = t_iter.next().ok_or(Error::Invalid)?;
+                   if let TagType::Context(tag) = item.get_tag() {
+                       match tag {
+                           #(
+                               #tags => Ok(Self::#variant_names(#types::from_tlv(&item)?)),
+                           )*
+                           _ => Err(Error::Invalid),
+                       }
+                   } else {
+                       Err(Error::TLVTypeMismatch)
+                   }
+               }
+           }
+    };
+
+    //        panic!("Expanded to {}", expanded);
+    expanded.into()
+}
+
+/// Derive FromTLV Macro
+///
+/// This macro works for structures. It will create an implementation
+/// of the FromTLV trait for that structure.  All the members of the
+/// structure, sequentially, will get Context tags starting from 0
+/// Some configurations are possible through the 'tlvargs' attributes.
+/// For example:
+///  #[tlvargs(lifetime = "'a", start = 1, datatype = "list", unordered)]
+///
+/// start: This can be used to override the default tag from which the
+///        decoding starts (Default: 0)
+/// datatype: This can be used to define whether this data structure is
+///        to be decoded as a structure or list. Possible values: list
+///        (Default: struct)
+/// lifetime: If the structure has a lifetime annotation, use this variable
+///        to indicate that. The 'impl' will then use that lifetime
+///        indicator.
+/// unordered: By default, the decoder expects that the tags are in
+///        sequentially increasing order. Set this if that is not the case.
+///
+/// Additionally, structure members can use the tagval attribute to
+/// define a specific tag to be used
+/// For example:
+///  #[argval(22)]
+///  name: u8,
+/// In the above case, the 'name' attribute will be encoded/decoded with
+/// the tag 22
+
+#[proc_macro_derive(FromTLV, attributes(tlvargs, tagval))]
+pub fn derive_fromtlv(item: TokenStream) -> TokenStream {
+    let ast = parse_macro_input!(item as DeriveInput);
+    let name = &ast.ident;
+
+    let tlvargs = parse_tlvargs(&ast);
+
+    let generics = ast.generics;
+
+    if let syn::Data::Struct(syn::DataStruct {
+        fields: syn::Fields::Named(ref fields),
+        ..
+    }) = ast.data
+    {
+        gen_fromtlv_for_struct(fields, name, tlvargs, generics)
+    } else if let syn::Data::Enum(data_enum) = ast.data {
+        gen_fromtlv_for_enum(data_enum, name, tlvargs, generics)
+    } else {
+        panic!(
+            "Derive FromTLV - Only supported Struct for now {:?}",
+            ast.data
+        )
+    }
 }

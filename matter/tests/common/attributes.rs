@@ -1,6 +1,6 @@
 use matter::{
     interaction_model::{messages::ib::AttrResp, messages::msg},
-    tlv,
+    tlv::{self, FromTLV},
 };
 
 /// Assert that the data received in the outbuf matches our expectations

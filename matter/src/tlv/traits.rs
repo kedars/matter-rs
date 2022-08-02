@@ -398,4 +398,34 @@ mod tests {
             [21, 36, 0, 20, 36, 0xFE, 3, 24, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         );
     }
+
+    #[derive(ToTLV, FromTLV, PartialEq, Debug)]
+    enum TestDeriveEnum {
+        ValueA(u32),
+        ValueB(u32),
+    }
+
+    #[test]
+    fn test_derive_from_to_tlv_enum() {
+        // Test FromTLV
+        let b = [21, 36, 0, 100, 24, 0];
+        let root = TLVList::new(&b).iter().next().unwrap();
+        let mut enum_val = TestDeriveEnum::from_tlv(&root).unwrap();
+        assert_eq!(enum_val, TestDeriveEnum::ValueA(100));
+
+        // Modify the value and test ToTLV
+        enum_val = TestDeriveEnum::ValueB(10);
+
+        // Test ToTLV
+        let mut buf: [u8; 20] = [0; 20];
+        let buf_len = buf.len();
+        let mut writebuf = WriteBuf::new(&mut buf, buf_len);
+        let mut tw = TLVWriter::new(&mut writebuf);
+
+        enum_val.to_tlv(&mut tw, TagType::Anonymous).unwrap();
+        assert_eq!(
+            buf,
+            [21, 36, 1, 10, 24, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        );
+    }
 }

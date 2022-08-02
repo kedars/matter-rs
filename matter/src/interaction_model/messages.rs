@@ -147,21 +147,15 @@ pub mod ib {
         tlv::{FromTLV, TLVElement, TLVWriter, TagType, ToTLV},
     };
     use log::error;
-    use num_derive::FromPrimitive;
 
     use super::GenericPath;
 
     // Command Response
-    #[derive(Clone, Copy)]
+    #[derive(Clone, Copy, FromTLV, ToTLV)]
+    #[tlvargs(lifetime = "'a")]
     pub enum InvResp<'a> {
         Cmd(CmdData<'a>),
         Status(CmdStatus),
-    }
-
-    #[derive(FromPrimitive)]
-    enum InvRespTag {
-        Cmd = 0,
-        Status = 1,
     }
 
     impl<'a> InvResp<'a> {
@@ -177,41 +171,6 @@ pub mod ib {
                 path: cmd_path,
                 status: Status::new(status, cluster_status),
             })
-        }
-
-        pub fn from_tlv(resp: &TLVElement<'a>) -> Result<Self, Error> {
-            let resp = resp
-                .confirm_struct()?
-                .iter()
-                .ok_or(Error::Invalid)?
-                .next()
-                .ok_or(Error::Invalid)?;
-            let tag = match resp.get_tag() {
-                TagType::Context(a) => a,
-                _ => {
-                    return Err(Error::TLVTypeMismatch);
-                }
-            };
-
-            match num::FromPrimitive::from_u8(tag).ok_or(Error::Invalid)? {
-                InvRespTag::Cmd => Ok(Self::Cmd(CmdData::from_tlv(&resp)?)),
-                InvRespTag::Status => Ok(Self::Status(CmdStatus::from_tlv(&resp)?)),
-            }
-        }
-    }
-
-    impl<'a> ToTLV for InvResp<'a> {
-        fn to_tlv(self: &InvResp<'a>, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
-            tw.start_struct(tag_type)?;
-            match self {
-                InvResp::Cmd(cmd_data) => {
-                    cmd_data.to_tlv(tw, TagType::Context(InvRespTag::Cmd as u8))?;
-                }
-                InvResp::Status(cmd_status) => {
-                    cmd_status.to_tlv(tw, TagType::Context(InvRespTag::Status as u8))?;
-                }
-            }
-            tw.end_container()
         }
     }
 
@@ -263,64 +222,16 @@ pub mod ib {
     }
 
     // Attribute Response
-    #[derive(Clone, Copy)]
+    #[derive(Clone, Copy, FromTLV, ToTLV)]
+    #[tlvargs(lifetime = "'a")]
     pub enum AttrResp<'a> {
-        Data(AttrData<'a>),
         Status(AttrStatus),
-    }
-
-    #[derive(FromPrimitive)]
-    enum AttrRespTag {
-        Status = 0,
-        Data = 1,
+        Data(AttrData<'a>),
     }
 
     impl<'a> AttrResp<'a> {
         pub fn new(data_ver: u32, path: &AttrPath, data: EncodeValue<'a>) -> Self {
             AttrResp::Data(AttrData::new(Some(data_ver), *path, data))
-        }
-
-        pub fn write_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), IMStatusCode> {
-            let _ = tw.start_struct(tag_type);
-            match self {
-                AttrResp::Data(data) => {
-                    // In this case, we'll have to add the AttributeDataIb
-                    // The only possible return here is if the AttrData read returns an error
-                    data.to_tlv(tw, TagType::Context(AttrRespTag::Data as u8))?;
-                }
-                AttrResp::Status(status) => {
-                    // In this case, we'll have to add the AttributeStatusIb
-                    let _ = status.to_tlv(tw, TagType::Context(AttrRespTag::Status as u8));
-                }
-            }
-            let _ = tw.end_container();
-            Ok(())
-        }
-
-        pub fn from_tlv(resp: &TLVElement<'a>) -> Result<Self, Error> {
-            let resp = resp
-                .confirm_struct()?
-                .iter()
-                .ok_or(Error::Invalid)?
-                .next()
-                .ok_or(Error::Invalid)?;
-            let tag = match resp.get_tag() {
-                TagType::Context(a) => a,
-                _ => {
-                    return Err(Error::TLVTypeMismatch);
-                }
-            };
-
-            match num::FromPrimitive::from_u8(tag).ok_or(Error::Invalid)? {
-                AttrRespTag::Data => Ok(AttrResp::Data(AttrData::from_tlv(&resp)?)),
-                AttrRespTag::Status => Ok(AttrResp::Status(AttrStatus::from_tlv(&resp)?)),
-            }
-        }
-    }
-
-    impl<'a> ToTLV for AttrResp<'a> {
-        fn to_tlv(self: &AttrResp<'a>, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
-            self.write_tlv(tw, tag_type).map_err(|_| Error::Invalid)
         }
     }
 

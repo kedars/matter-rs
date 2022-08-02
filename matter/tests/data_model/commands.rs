@@ -5,7 +5,7 @@ use matter::{
         messages::ib::{CmdPath, CmdStatus, InvResp},
         messages::msg,
     },
-    tlv,
+    tlv::{self, FromTLV},
     utils::writebuf::WriteBuf,
 };
 
