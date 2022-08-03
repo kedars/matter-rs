@@ -40,8 +40,7 @@
   - NOC CAT
   - Applying ACLs to commands (requires some restructuring of the commands)
   - I think we can the encoder to AccessReq Object making it a complete object for access within the DM
-  - Write Attribute to 'acl' of ACL Cluster is pending
-  - List processing of attribute write is missing in IM
+  - List processing of attribute write is missing in IM. List behaviour is add/edit/delete. Currently we only do 'add'
 * Interaction Model
   - List processing of write attributes is different (delete, modify, edit), needs to be handled
 * DataModel:

@@ -2,16 +2,17 @@ use std::sync::Arc;
 
 use num_derive::FromPrimitive;
 
-use crate::acl::{self, AclMgr};
+use crate::acl::{self, AclEntry, AclMgr};
 use crate::data_model::objects::*;
 use crate::error::*;
-use crate::tlv::{TagType, ToTLV};
-use log::error;
+use crate::interaction_model::core::IMStatusCode;
+use crate::tlv::{FromTLV, TLVElement, TagType, ToTLV};
+use log::{error, info};
 
 pub const ID: u32 = 0x001F;
 
 #[derive(FromPrimitive)]
-enum Attributes {
+pub enum Attributes {
     Acl = 0,
     Extension = 1,
     SubjectsPerEntry = 2,
@@ -64,6 +65,28 @@ impl ClusterType for AccessControlCluster {
             })),
             _ => {
                 error!("Attribute not yet supported: this shouldn't happen");
+            }
+        }
+    }
+
+    fn write_attribute(&mut self, attr_id: u16, data: &TLVElement) -> Result<(), IMStatusCode> {
+        match num::FromPrimitive::from_u16(attr_id) {
+            Some(Attributes::Acl) => {
+                // TODO: Need to support all modes of 'List'
+                let acl_entry =
+                    AclEntry::from_tlv(data).map_err(|_| IMStatusCode::ConstraintError)?;
+                match self.acl_mgr.add(acl_entry) {
+                    Ok(_) => {
+                        info!("New ACL Added {:?}", acl_entry);
+                        Ok(())
+                    }
+                    Err(Error::NoSpace) => Err(IMStatusCode::ResourceExhausted),
+                    _ => Err(IMStatusCode::ConstraintError),
+                }
+            }
+            _ => {
+                error!("Attribute not yet supported: this shouldn't happen");
+                Err(IMStatusCode::NotFound)
             }
         }
     }

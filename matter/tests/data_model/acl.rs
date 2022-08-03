@@ -1,6 +1,9 @@
 use matter::{
     acl::{AclEntry, AuthMode, Target},
-    data_model::objects::{AttrValue, EncodeValue, Privilege},
+    data_model::{
+        objects::{AttrValue, EncodeValue, Privilege},
+        system_model::access_control,
+    },
     interaction_model::{
         core::{IMStatusCode, OpCode},
         messages::{
@@ -385,4 +388,68 @@ fn insufficient_perms_write() {
         AttrValue::Uint16(ATTR_WRITE_DEFAULT_VALUE),
         read_cluster_id_write_attr(&im, 0)
     );
+}
+
+#[test]
+/// Ensure that a write to the ACL attribute instantaneously grants permission
+/// Here we have 2 ACLs, the first (basic_acl) allows access only to the ACL cluster
+/// Then we execute a write attribute with 3 writes
+///    - Write Attr to Echo Cluster (permission denied)
+///    - Write Attr to ACL Cluster (allowed, this ACL also grants universal access)
+///    - Write Attr to Echo Cluster again (successful this time)
+fn write_with_runtime_acl_add() {
+    let _ = env_logger::try_init();
+    let peer = 98765;
+    let mut im = ImEngine::new();
+
+    let val0 = 10;
+    let attr_data0 = |tag, t: &mut TLVWriter| {
+        let _ = t.u16(tag, val0);
+    };
+    let ep0_att = GenericPath::new(
+        Some(0),
+        Some(echo_cluster::ID),
+        Some(echo_cluster::Attributes::AttWrite as u32),
+    );
+    let input0 = AttrData::new(
+        None,
+        AttrPath::new(&ep0_att),
+        EncodeValue::Closure(&attr_data0),
+    );
+
+    // Create ACL to allow our peer ADMIN on everything
+    let mut allow_acl = AclEntry::new(1, Privilege::ADMIN, AuthMode::Case);
+    allow_acl.add_subject(peer).unwrap();
+
+    let acl_att = GenericPath::new(
+        Some(0),
+        Some(access_control::ID),
+        Some(access_control::Attributes::Acl as u32),
+    );
+    let acl_input = AttrData::new(
+        None,
+        AttrPath::new(&acl_att),
+        EncodeValue::Value(&allow_acl),
+    );
+
+    // Create ACL that only allows write to the ACL Cluster
+    let mut basic_acl = AclEntry::new(1, Privilege::ADMIN, AuthMode::Case);
+    basic_acl.add_subject(peer).unwrap();
+    basic_acl
+        .add_target(Target::new(Some(0), Some(access_control::ID), None))
+        .unwrap();
+    im.acl_mgr.add(basic_acl).unwrap();
+
+    // Test: deny write (with error), then ACL is added, then allow write
+    handle_write_reqs(
+        &mut im,
+        peer,
+        &[input0, acl_input, input0],
+        &[
+            AttrStatus::new(&ep0_att, IMStatusCode::UnsupportedAccess, 0),
+            AttrStatus::new(&acl_att, IMStatusCode::Sucess, 0),
+            AttrStatus::new(&ep0_att, IMStatusCode::Sucess, 0),
+        ],
+    );
+    assert_eq!(AttrValue::Uint16(val0), read_cluster_id_write_attr(&im, 0));
 }
