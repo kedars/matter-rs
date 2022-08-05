@@ -20,9 +20,9 @@ pub struct SecureChannel {
 }
 
 impl SecureChannel {
-    pub fn new(fabric_mgr: Arc<FabricMgr>) -> SecureChannel {
+    pub fn new(fabric_mgr: Arc<FabricMgr>, salt: &[u8; 16], passwd: u32) -> SecureChannel {
         SecureChannel {
-            pake: PAKE::new(),
+            pake: PAKE::new(salt, passwd),
             case: Case::new(fabric_mgr),
         }
     }

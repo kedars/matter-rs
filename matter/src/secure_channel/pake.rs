@@ -7,6 +7,7 @@ use super::{
 use crate::{
     crypto,
     error::Error,
+    sys::SPAKE2_ITERATION_COUNT,
     tlv::{self, get_root_node_struct, FromTLV, OctetStr, TLVElement, TLVWriter, TagType, ToTLV},
     transport::{
         exchange::ExchangeCtx,
@@ -23,12 +24,6 @@ use rand::prelude::*;
 // TLV extraction and encoding is done in this file.
 // We create a Spake2p object and set it up in the exchange-data. This object then
 // handles Spake2+ specific stuff.
-
-// As per the spec the iteration count should be between 1000 and 100000
-const ITERATION_COUNT: u32 = 2000;
-
-// TODO: Password should be passed inside
-const SPAKE2_PASSWORD: u32 = 123456;
 
 const PASE_DISCARD_TIMEOUT_SECS: Duration = Duration::from_secs(60);
 
@@ -110,14 +105,13 @@ pub struct PAKE {
 }
 
 impl PAKE {
-    pub fn new() -> Self {
+    pub fn new(salt: &[u8; 16], passwd: u32) -> Self {
         // TODO: Can any PBKDF2 calculation be pre-computed here
-        let mut pake = PAKE {
-            passwd: SPAKE2_PASSWORD,
+        PAKE {
+            passwd,
+            salt: *salt,
             ..Default::default()
-        };
-        rand::thread_rng().fill_bytes(&mut pake.salt);
-        pake
+        }
     }
 
     pub fn enable(&mut self) {
@@ -181,7 +175,7 @@ impl PAKE {
         let mut pB: [u8; 65] = [0; 65];
         let mut cB: [u8; 32] = [0; 32];
         sd.spake2p
-            .start_verifier(self.passwd, ITERATION_COUNT, &self.salt)?;
+            .start_verifier(self.passwd, SPAKE2_ITERATION_COUNT, &self.salt)?;
         sd.spake2p.handle_pA(pA, &mut pB, &mut cB)?;
 
         let mut tw = TLVWriter::new(ctx.tx.get_writebuf()?);
@@ -241,7 +235,7 @@ impl PAKE {
         };
         if !a.has_params {
             let params_resp = PBKDFParamRespParams {
-                count: ITERATION_COUNT,
+                count: SPAKE2_ITERATION_COUNT,
                 salt: OctetStr(&self.salt),
             };
             resp.params = Some(params_resp);

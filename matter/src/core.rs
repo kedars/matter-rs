@@ -12,6 +12,18 @@ use crate::{
 };
 use std::sync::Arc;
 
+#[derive(Default)]
+/// Device Commissioning Data
+pub struct CommissioningData {
+    /// The commissioning salt
+    pub salt: [u8; 16],
+    /// The password for commissioning the device
+    // TODO: We should replace this with verifier instead of password
+    pub passwd: u32,
+    /// The 12-bit discriminator used to differentiate between multiple devices
+    pub discriminator: u16,
+}
+
 /// The primary Matter Object
 pub struct Matter {
     transport_mgr: transport::mgr::Mgr,
@@ -29,6 +41,7 @@ impl Matter {
     pub fn new(
         dev_det: BasicInfoConfig,
         dev_att: Box<dyn DevAttDataFetcher>,
+        dev_comm: CommissioningData,
     ) -> Result<Box<Matter>, Error> {
         let fabric_mgr = Arc::new(FabricMgr::new()?);
         let acl_mgr = Arc::new(AclMgr::new()?);
@@ -42,7 +55,11 @@ impl Matter {
         let interaction_model =
             Box::new(InteractionModel::new(Box::new(matter.data_model.clone())));
         matter.transport_mgr.register_protocol(interaction_model)?;
-        let mut secure_channel = Box::new(SecureChannel::new(matter.fabric_mgr.clone()));
+        let mut secure_channel = Box::new(SecureChannel::new(
+            matter.fabric_mgr.clone(),
+            &dev_comm.salt,
+            dev_comm.passwd,
+        ));
         if open_comm_window {
             secure_channel.open_comm_window();
         }
