@@ -7,6 +7,7 @@ use crate::{
     error::*,
     fabric::FabricMgr,
     interaction_model::InteractionModel,
+    mdns::Mdns,
     secure_channel::core::SecureChannel,
     transport,
 };
@@ -43,6 +44,12 @@ impl Matter {
         dev_att: Box<dyn DevAttDataFetcher>,
         dev_comm: CommissioningData,
     ) -> Result<Box<Matter>, Error> {
+        {
+            let mdns = Mdns::get()?;
+            let mut m = mdns.lock().unwrap();
+            m.set_values(dev_det.vid, dev_det.pid, dev_comm.discriminator);
+        }
+
         let fabric_mgr = Arc::new(FabricMgr::new()?);
         let acl_mgr = Arc::new(AclMgr::new()?);
         let open_comm_window = fabric_mgr.is_empty();
@@ -63,6 +70,7 @@ impl Matter {
         if open_comm_window {
             secure_channel.open_comm_window();
         }
+
         matter.transport_mgr.register_protocol(secure_channel)?;
         Ok(matter)
     }

@@ -7,9 +7,10 @@
 //!
 //! # Examples
 //! ```
-//! use matter::Matter;
+//! use matter::{Matter, CommissioningData};
 //! use matter::data_model::device_types::device_type_add_on_off_light;
 //! use matter::data_model::cluster_basic_information::BasicInfoConfig;
+//! use rand::prelude::*;
 //!
 //! # use matter::data_model::sdm::dev_att::{DataType, DevAttDataFetcher};
 //! # use matter::error::Error;
@@ -18,6 +19,14 @@
 //! # fn get_devatt_data(&self, data_type: DataType, data: &mut [u8]) -> Result<usize, Error> { Ok(0) }
 //! # }
 //! # let dev_att = Box::new(DevAtt{});
+//!
+//! /// The commissioning data for this device
+//! let mut comm_data = CommissioningData {
+//!     passwd: 123456,
+//!     discriminator: 250,
+//!     ..Default::default()
+//! };
+//! rand::thread_rng().fill_bytes(&mut comm_data.salt);
 //!
 //! /// The basic information about this device
 //! let dev_info = BasicInfoConfig {
@@ -29,7 +38,7 @@
 //!
 //! /// Get the Matter Object
 //! /// The dev_att is an object that implements the DevAttDataFetcher trait.
-//! let mut matter = Matter::new(dev_info, dev_att).unwrap();
+//! let mut matter = Matter::new(dev_info, dev_att, comm_data).unwrap();
 //! let dm = matter.get_data_model();
 //! {
 //!     let mut node = dm.node.write().unwrap();
@@ -50,6 +59,7 @@ pub mod error;
 pub mod fabric;
 pub mod group_keys;
 pub mod interaction_model;
+pub mod mdns;
 pub mod secure_channel;
 pub mod sys;
 pub mod tlv;

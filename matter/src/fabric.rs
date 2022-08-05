@@ -9,7 +9,8 @@ use crate::{
     crypto::{self, crypto_dummy::KeyPairDummy, hkdf_sha256, CryptoKeyPair, HmacSha256, KeyPair},
     error::Error,
     group_keys::KeySet,
-    sys::{Mdns, MdnsService, Psm},
+    mdns::{self, Mdns},
+    sys::{Psm, SysMdnsService},
 };
 
 const MAX_CERT_TLV_LEN: usize = 300;
@@ -38,7 +39,7 @@ pub struct Fabric {
     pub noc: Cert,
     pub ipk: KeySet,
     compressed_id: [u8; COMPRESSED_FABRIC_ID_LEN],
-    mdns_service: Option<MdnsService>,
+    mdns_service: Option<SysMdnsService>,
 }
 
 impl Fabric {
@@ -77,7 +78,10 @@ impl Fabric {
             mdns_service_name.push_str(&format!("{:02X}", c));
         }
         info!("MDNS Service Name: {}", mdns_service_name);
-        f.mdns_service = Some(Mdns::publish_service(&mdns_service_name)?);
+        f.mdns_service = Some(Mdns::publish_service(
+            &mdns_service_name,
+            mdns::ServiceMode::Commissioned,
+        )?);
         Ok(f)
     }
 

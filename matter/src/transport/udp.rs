@@ -13,7 +13,7 @@ pub struct UdpListener {
 pub const MAX_RX_BUF_SIZE: usize = 1583;
 
 /* The Matter Port */
-const MATTER_PORT: u16 = 5540;
+pub const MATTER_PORT: u16 = 5540;
 
 impl UdpListener {
     pub fn new() -> Result<UdpListener, Error> {
