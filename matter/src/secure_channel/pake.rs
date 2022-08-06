@@ -96,11 +96,8 @@ impl Default for PakeState {
 
 #[derive(Default)]
 pub struct PAKE {
-    // As per the spec the salt should be between 16 to 32 bytes
     salt: [u8; 16],
     passwd: u32,
-    // Whether commissioning window/PASE session is enabled or not
-    enabled: bool,
     state: PakeState,
 }
 
@@ -112,14 +109,6 @@ impl PAKE {
             salt: *salt,
             ..Default::default()
         }
-    }
-
-    pub fn enable(&mut self) {
-        self.enabled = true;
-    }
-
-    pub fn disable(&mut self) {
-        self.enabled = false;
     }
 
     #[allow(non_snake_case)]
@@ -160,10 +149,6 @@ impl PAKE {
 
         create_sc_status_report(&mut ctx.tx, status_code, None)?;
         ctx.exch_ctx.exch.close();
-        // Disable PASE for subsequent sessions
-        self.state = PakeState::Idle;
-        self.disable();
-
         Ok(())
     }
 
@@ -191,12 +176,6 @@ impl PAKE {
     }
 
     pub fn handle_pbkdfparamrequest(&mut self, ctx: &mut ProtoCtx) -> Result<(), Error> {
-        if !self.enabled {
-            error!("PASE Not enabled");
-            create_sc_status_report(&mut ctx.tx, SCStatusCodes::InvalidParameter, None)?;
-            return Ok(());
-        }
-
         if !self.state.is_idle() {
             let sd = self.state.take()?;
             if sd.is_sess_expired()? {

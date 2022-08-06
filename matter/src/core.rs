@@ -44,11 +44,8 @@ impl Matter {
         dev_att: Box<dyn DevAttDataFetcher>,
         dev_comm: CommissioningData,
     ) -> Result<Box<Matter>, Error> {
-        {
-            let mdns = Mdns::get()?;
-            let mut m = mdns.lock().unwrap();
-            m.set_values(dev_det.vid, dev_det.pid, dev_comm.discriminator);
-        }
+        let mdns = Mdns::get()?;
+        mdns.set_values(dev_det.vid, dev_det.pid, dev_comm.discriminator);
 
         let fabric_mgr = Arc::new(FabricMgr::new()?);
         let acl_mgr = Arc::new(AclMgr::new()?);
@@ -62,13 +59,9 @@ impl Matter {
         let interaction_model =
             Box::new(InteractionModel::new(Box::new(matter.data_model.clone())));
         matter.transport_mgr.register_protocol(interaction_model)?;
-        let mut secure_channel = Box::new(SecureChannel::new(
-            matter.fabric_mgr.clone(),
-            &dev_comm.salt,
-            dev_comm.passwd,
-        ));
+        let mut secure_channel = Box::new(SecureChannel::new(matter.fabric_mgr.clone()));
         if open_comm_window {
-            secure_channel.open_comm_window();
+            secure_channel.open_comm_window(&dev_comm.salt, dev_comm.passwd)?;
         }
 
         matter.transport_mgr.register_protocol(secure_channel)?;

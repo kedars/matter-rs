@@ -3,11 +3,14 @@ use std::sync::Arc;
 use crate::{
     error::*,
     fabric::FabricMgr,
+    mdns::{self, Mdns},
     secure_channel::{common::*, pake::PAKE},
+    sys::SysMdnsService,
     transport::proto_demux::{self, ProtoCtx, ResponseRequired},
 };
 use log::{error, info};
 use num;
+use rand::prelude::*;
 
 use super::case::Case;
 
@@ -16,23 +19,27 @@ use super::case::Case;
 
 pub struct SecureChannel {
     case: Case,
-    pake: PAKE,
+    pake: Option<(PAKE, SysMdnsService)>,
 }
 
 impl SecureChannel {
-    pub fn new(fabric_mgr: Arc<FabricMgr>, salt: &[u8; 16], passwd: u32) -> SecureChannel {
+    pub fn new(fabric_mgr: Arc<FabricMgr>) -> SecureChannel {
         SecureChannel {
-            pake: PAKE::new(salt, passwd),
+            pake: None,
             case: Case::new(fabric_mgr),
         }
     }
 
-    pub fn open_comm_window(&mut self) {
-        self.pake.enable();
+    pub fn open_comm_window(&mut self, salt: &[u8; 16], passwd: u32) -> Result<(), Error> {
+        let name: u64 = rand::thread_rng().gen_range(0..0xFFFFFFFFFFFFFFFF);
+        let name = format!("{:016X}", name);
+        let mdns = Mdns::get()?.publish_service(&name, mdns::ServiceMode::Commissionable)?;
+        self.pake = Some((PAKE::new(salt, passwd), mdns));
+        Ok(())
     }
 
     pub fn close_comm_window(&mut self) {
-        self.pake.disable();
+        self.pake = None;
     }
 
     fn mrpstandaloneack_handler(&mut self, _ctx: &mut ProtoCtx) -> Result<ResponseRequired, Error> {
@@ -43,20 +50,37 @@ impl SecureChannel {
     fn pbkdfparamreq_handler(&mut self, ctx: &mut ProtoCtx) -> Result<ResponseRequired, Error> {
         info!("In PBKDF Param Request Handler");
         ctx.tx.set_proto_opcode(OpCode::PBKDFParamResponse as u8);
-        self.pake.handle_pbkdfparamrequest(ctx)?;
+        if let Some((pake, _)) = &mut self.pake {
+            pake.handle_pbkdfparamrequest(ctx)?;
+        } else {
+            error!("PASE Not enabled");
+            create_sc_status_report(&mut ctx.tx, SCStatusCodes::InvalidParameter, None)?;
+        }
         Ok(ResponseRequired::Yes)
     }
 
     fn pasepake1_handler(&mut self, ctx: &mut ProtoCtx) -> Result<ResponseRequired, Error> {
         info!("In PASE Pake1 Handler");
         ctx.tx.set_proto_opcode(OpCode::PASEPake2 as u8);
-        self.pake.handle_pasepake1(ctx)?;
+        if let Some((pake, _)) = &mut self.pake {
+            pake.handle_pasepake1(ctx)?;
+        } else {
+            error!("PASE Not enabled");
+            create_sc_status_report(&mut ctx.tx, SCStatusCodes::InvalidParameter, None)?;
+        }
         Ok(ResponseRequired::Yes)
     }
 
     fn pasepake3_handler(&mut self, ctx: &mut ProtoCtx) -> Result<ResponseRequired, Error> {
         info!("In PASE Pake3 Handler");
-        self.pake.handle_pasepake3(ctx)?;
+        if let Some((pake, _)) = &mut self.pake {
+            pake.handle_pasepake3(ctx)?;
+            // TODO: Currently we assume that PAKE is not successful and reset the PAKE object
+            self.pake = None;
+        } else {
+            error!("PASE Not enabled");
+            create_sc_status_report(&mut ctx.tx, SCStatusCodes::InvalidParameter, None)?;
+        }
         Ok(ResponseRequired::Yes)
     }
 

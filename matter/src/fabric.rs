@@ -78,10 +78,9 @@ impl Fabric {
             mdns_service_name.push_str(&format!("{:02X}", c));
         }
         info!("MDNS Service Name: {}", mdns_service_name);
-        f.mdns_service = Some(Mdns::publish_service(
-            &mdns_service_name,
-            mdns::ServiceMode::Commissioned,
-        )?);
+        f.mdns_service = Some(
+            Mdns::get()?.publish_service(&mdns_service_name, mdns::ServiceMode::Commissioned)?,
+        );
         Ok(f)
     }
 
