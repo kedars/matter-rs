@@ -100,8 +100,8 @@ impl ClusterType for GenCommCluster {
         &mut self.base
     }
 
-    fn read_custom_attribute(&self, encoder: &mut dyn Encoder, attr_id: u16) {
-        match num::FromPrimitive::from_u16(attr_id) {
+    fn read_custom_attribute(&self, encoder: &mut dyn Encoder, attr: AttrDetails) {
+        match num::FromPrimitive::from_u16(attr.attr_id) {
             Some(Attributes::BasicCommissioningInfo) => {
                 encoder.encode(EncodeValue::Closure(&|tag, tw| {
                     let _ = tw.start_struct(tag);

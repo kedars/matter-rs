@@ -103,10 +103,13 @@ impl DataModel {
         }
 
         let result = node.for_each_cluster_mut(&gen_path, |path, c| {
-            let attr_id = if let Some(a) = path.leaf { a } else { 0 } as u16;
+            let attr = AttrDetails {
+                attr_id: path.leaf.unwrap_or_default() as u16,
+                list_index: attr_data.path.list_index,
+            };
             encoder.set_path(*path);
             let mut access_req = AccessReq::new(accessor, path, Access::WRITE);
-            let r = match Cluster::write_attribute(c, &mut access_req, write_data, attr_id) {
+            let r = match Cluster::write_attribute(c, &mut access_req, write_data, attr) {
                 Ok(_) => IMStatusCode::Sucess,
                 Err(e) => e,
             };
@@ -130,10 +133,13 @@ impl DataModel {
         let mut attr_encoder = AttrReadEncoder::new(tw, TagType::Anonymous, gen_path);
 
         let result = node.for_each_attribute(&gen_path, |path, c| {
-            let attr_id = if let Some(a) = path.leaf { a } else { 0 } as u16;
+            let attr = AttrDetails {
+                attr_id: path.leaf.unwrap_or_default() as u16,
+                list_index: attr_path.list_index,
+            };
             attr_encoder.set_path(*path);
             let mut access_req = AccessReq::new(accessor, path, Access::READ);
-            Cluster::read_attribute(c, &mut access_req, &mut attr_encoder, attr_id);
+            Cluster::read_attribute(c, &mut access_req, &mut attr_encoder, attr);
             Ok(())
         });
         if let Err(e) = result {

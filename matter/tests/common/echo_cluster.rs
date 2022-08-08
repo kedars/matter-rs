@@ -1,6 +1,7 @@
 use matter::{
     data_model::objects::{
-        Access, AttrValue, Attribute, Cluster, ClusterType, EncodeValue, Encoder, Quality,
+        Access, AttrDetails, AttrValue, Attribute, Cluster, ClusterType, EncodeValue, Encoder,
+        Quality,
     },
     error::Error,
     interaction_model::{command::CommandReq, core::IMStatusCode, messages::ib},
@@ -41,8 +42,8 @@ impl ClusterType for EchoCluster {
         &mut self.base
     }
 
-    fn read_custom_attribute(&self, encoder: &mut dyn Encoder, attr_id: u16) {
-        match num::FromPrimitive::from_u16(attr_id) {
+    fn read_custom_attribute(&self, encoder: &mut dyn Encoder, attr: AttrDetails) {
+        match num::FromPrimitive::from_u16(attr.attr_id) {
             Some(Attributes::AttCustom) => encoder.encode(EncodeValue::Closure(&|tag, tw| {
                 let _ = tw.u32(tag, ATTR_CUSTOM_VALUE);
             })),

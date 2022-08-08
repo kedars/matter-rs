@@ -27,10 +27,16 @@ pub enum GlobalElements {
     FabricIndex = 0xFE,
 }
 
+pub struct AttrDetails {
+    pub attr_id: u16,
+    pub list_index: Option<u16>,
+}
+
 pub trait ClusterType {
+    // TODO: 5 methods is going to be quite expensive for vtables of all the clusters
     fn base(&self) -> &Cluster;
     fn base_mut(&mut self) -> &mut Cluster;
-    fn read_custom_attribute(&self, _encoder: &mut dyn Encoder, _attr_id: u16) {}
+    fn read_custom_attribute(&self, _encoder: &mut dyn Encoder, _attr: AttrDetails) {}
 
     fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
         let cmd = cmd_req.cmd.path.leaf.map(|a| a as u16);
@@ -39,8 +45,12 @@ pub trait ClusterType {
         Err(IMStatusCode::UnsupportedCommand)
     }
 
-    fn write_attribute(&mut self, attr_id: u16, data: &TLVElement) -> Result<(), IMStatusCode> {
-        self.base_mut().write_attribute_from_tlv(attr_id, data)
+    fn write_attribute(
+        &mut self,
+        attr: AttrDetails,
+        data: &TLVElement,
+    ) -> Result<(), IMStatusCode> {
+        self.base_mut().write_attribute_from_tlv(attr.attr_id, data)
     }
 }
 
@@ -143,11 +153,11 @@ impl Cluster {
         c: &dyn ClusterType,
         access_req: &mut AccessReq,
         encoder: &mut dyn Encoder,
-        attr_id: u16,
+        attr: AttrDetails,
     ) {
         let mut error = IMStatusCode::Sucess;
         let base = c.base();
-        let a = if let Ok(a) = base.get_attribute(attr_id) {
+        let a = if let Ok(a) = base.get_attribute(attr.attr_id) {
             a
         } else {
             encoder.encode_status(IMStatusCode::UnsupportedAttribute, 0);
@@ -165,12 +175,12 @@ impl Cluster {
 
         if error != IMStatusCode::Sucess {
             encoder.encode_status(error, 0);
-        } else if Attribute::is_system_attr(attr_id) {
+        } else if Attribute::is_system_attr(attr.attr_id) {
             c.base().read_system_attribute(encoder, a)
         } else if a.value != AttrValue::Custom {
             encoder.encode(EncodeValue::Value(&a.value))
         } else {
-            c.read_custom_attribute(encoder, attr_id)
+            c.read_custom_attribute(encoder, attr)
         }
     }
 
@@ -216,10 +226,10 @@ impl Cluster {
         c: &mut dyn ClusterType,
         access_req: &mut AccessReq,
         data: &TLVElement,
-        attr_id: u16,
+        attr: AttrDetails,
     ) -> Result<(), IMStatusCode> {
         let base = c.base_mut();
-        let a = if let Ok(a) = base.get_attribute_mut(attr_id) {
+        let a = if let Ok(a) = base.get_attribute_mut(attr.attr_id) {
             a
         } else {
             return Err(IMStatusCode::UnsupportedAttribute);
@@ -234,7 +244,7 @@ impl Cluster {
             return Err(IMStatusCode::UnsupportedAccess);
         }
 
-        c.write_attribute(attr_id, data)
+        c.write_attribute(attr, data)
     }
 
     pub fn write_attribute_from_tlv(

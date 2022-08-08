@@ -48,8 +48,8 @@ impl ClusterType for AccessControlCluster {
         &mut self.base
     }
 
-    fn read_custom_attribute(&self, encoder: &mut dyn Encoder, attr_id: u16) {
-        match num::FromPrimitive::from_u16(attr_id) {
+    fn read_custom_attribute(&self, encoder: &mut dyn Encoder, attr: AttrDetails) {
+        match num::FromPrimitive::from_u16(attr.attr_id) {
             Some(Attributes::Acl) => encoder.encode(EncodeValue::Closure(&|tag, tw| {
                 // Empty for now
                 let _ = tw.start_array(tag);
@@ -69,8 +69,12 @@ impl ClusterType for AccessControlCluster {
         }
     }
 
-    fn write_attribute(&mut self, attr_id: u16, data: &TLVElement) -> Result<(), IMStatusCode> {
-        match num::FromPrimitive::from_u16(attr_id) {
+    fn write_attribute(
+        &mut self,
+        attr: AttrDetails,
+        data: &TLVElement,
+    ) -> Result<(), IMStatusCode> {
+        match num::FromPrimitive::from_u16(attr.attr_id) {
             Some(Attributes::Acl) => {
                 // TODO: Need to support all modes of 'List'
                 let acl_entry =
