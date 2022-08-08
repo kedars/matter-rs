@@ -433,6 +433,13 @@ impl<'a> TLVElement<'a> {
         }
     }
 
+    pub fn null(&self) -> Result<(), Error> {
+        match self.element_type {
+            ElementType::Null => Ok(()),
+            _ => Err(Error::TLVTypeMismatch),
+        }
+    }
+
     pub fn confirm_struct(&self) -> Result<TLVElement<'a>, Error> {
         match self.element_type {
             ElementType::Struct(_) => Ok(*self),
@@ -690,10 +697,7 @@ impl<'a> Iterator for TLVContainerIterator<'a> {
 }
 
 pub fn get_root_node(b: &[u8]) -> Result<TLVElement, Error> {
-    TLVList::new(b)
-        .iter()
-        .next()
-        .ok_or(Error::InvalidData)
+    TLVList::new(b).iter().next().ok_or(Error::InvalidData)
 }
 
 pub fn get_root_node_struct(b: &[u8]) -> Result<TLVElement, Error> {
