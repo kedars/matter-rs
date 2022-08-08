@@ -20,7 +20,7 @@ impl InteractionModel {
         let mut tw = TLVWriter::new(proto_tx.get_writebuf()?);
         let root = get_root_node_struct(rx_buf)?;
         let write_req = WriteReq::from_tlv(&root)?;
-        let supress_response = write_req.supress_response.is_some();
+        let supress_response = write_req.supress_response.unwrap_or_default();
 
         tw.start_struct(TagType::Anonymous)?;
         self.consumer
