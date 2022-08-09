@@ -1,11 +1,17 @@
+use std::sync::{Arc, Mutex, Once};
+
 use matter::{
     data_model::objects::{
         Access, AttrDetails, AttrValue, Attribute, Cluster, ClusterType, EncodeValue, Encoder,
         Quality,
     },
     error::Error,
-    interaction_model::{command::CommandReq, core::IMStatusCode, messages::ib},
-    tlv::{TLVWriter, TagType, ToTLV},
+    interaction_model::{
+        command::CommandReq,
+        core::IMStatusCode,
+        messages::ib::{self, attr_list_op, ListOperation},
+    },
+    tlv::{TLVElement, TLVWriter, TagType, ToTLV},
 };
 use num_derive::FromPrimitive;
 
@@ -17,9 +23,37 @@ pub enum Commands {
     EchoResp = 0x01,
 }
 
+/// This is used in the tests to validate any settings that may have happened
+/// to the custom data parts of the cluster
+pub struct TestChecker {
+    pub write_list: [Option<u16>; WRITE_LIST_MAX],
+}
+
+static mut G_TEST_CHECKER: Option<Arc<Mutex<TestChecker>>> = None;
+static INIT: Once = Once::new();
+
+impl TestChecker {
+    fn new() -> Self {
+        Self {
+            write_list: [None; WRITE_LIST_MAX],
+        }
+    }
+
+    /// Get a handle to the globally unique mDNS instance
+    pub fn get() -> Result<Arc<Mutex<Self>>, Error> {
+        unsafe {
+            INIT.call_once(|| {
+                G_TEST_CHECKER = Some(Arc::new(Mutex::new(Self::new())));
+            });
+            Ok(G_TEST_CHECKER.as_ref().ok_or(Error::Invalid)?.clone())
+        }
+    }
+}
+
+pub const WRITE_LIST_MAX: usize = 5;
 pub struct EchoCluster {
-    base: Cluster,
-    multiplier: u8,
+    pub base: Cluster,
+    pub multiplier: u8,
 }
 
 #[derive(FromPrimitive)]
@@ -28,6 +62,7 @@ pub enum Attributes {
     Att2 = 1,
     AttWrite = 2,
     AttCustom = 3,
+    AttWriteList = 4,
 }
 
 pub const ATTR_CUSTOM_VALUE: u32 = 0xcafebeef;
@@ -47,7 +82,31 @@ impl ClusterType for EchoCluster {
             Some(Attributes::AttCustom) => encoder.encode(EncodeValue::Closure(&|tag, tw| {
                 let _ = tw.u32(tag, ATTR_CUSTOM_VALUE);
             })),
+            Some(Attributes::AttWriteList) => {
+                let tc_handle = TestChecker::get().unwrap();
+                let tc = tc_handle.lock().unwrap();
+                encoder.encode(EncodeValue::Closure(&|tag, tw| {
+                    let _ = tw.start_array(tag);
+                    for i in tc.write_list.iter().flatten() {
+                        let _ = tw.u16(TagType::Anonymous, *i);
+                    }
+                    let _ = tw.end_container();
+                }))
+            }
             _ => (),
+        }
+    }
+
+    fn write_attribute(
+        &mut self,
+        attr: AttrDetails,
+        data: &TLVElement,
+    ) -> Result<(), IMStatusCode> {
+        match num::FromPrimitive::from_u16(attr.attr_id) {
+            Some(Attributes::AttWriteList) => {
+                attr_list_op(attr, data, |op, data| self.write_attr_list(op, data))
+            }
+            _ => self.base.write_attribute_from_tlv(attr.attr_id, data),
         }
     }
 
@@ -119,6 +178,56 @@ impl EchoCluster {
             Access::READ | Access::NEED_VIEW,
             Quality::NONE,
         )?)?;
+        c.base.add_attribute(Attribute::new(
+            Attributes::AttWriteList as u16,
+            AttrValue::Custom,
+            Access::WRITE | Access::NEED_ADMIN,
+            Quality::NONE,
+        )?)?;
         Ok(c)
+    }
+
+    fn write_attr_list(
+        &mut self,
+        op: ListOperation,
+        data: &TLVElement,
+    ) -> Result<(), IMStatusCode> {
+        let tc_handle = TestChecker::get().unwrap();
+        let mut tc = tc_handle.lock().unwrap();
+        match op {
+            ListOperation::AddItem => {
+                let data = data.u16().map_err(|_| IMStatusCode::Failure)?;
+                for i in 0..WRITE_LIST_MAX {
+                    if tc.write_list[i].is_none() {
+                        tc.write_list[i] = Some(data);
+                        return Ok(());
+                    }
+                }
+                Err(IMStatusCode::ResourceExhausted)
+            }
+            ListOperation::EditItem(index) => {
+                let data = data.u16().map_err(|_| IMStatusCode::Failure)?;
+                if tc.write_list[index as usize].is_some() {
+                    tc.write_list[index as usize] = Some(data);
+                    Ok(())
+                } else {
+                    Err(IMStatusCode::InvalidAction)
+                }
+            }
+            ListOperation::DeleteItem(index) => {
+                if tc.write_list[index as usize].is_some() {
+                    tc.write_list[index as usize] = None;
+                    Ok(())
+                } else {
+                    Err(IMStatusCode::InvalidAction)
+                }
+            }
+            ListOperation::DeleteList => {
+                for i in 0..WRITE_LIST_MAX {
+                    tc.write_list[i] = None;
+                }
+                Ok(())
+            }
+        }
     }
 }

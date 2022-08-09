@@ -141,7 +141,7 @@ pub mod ib {
     use std::fmt::Debug;
 
     use crate::{
-        data_model::objects::EncodeValue,
+        data_model::objects::{AttrDetails, EncodeValue},
         error::Error,
         interaction_model::core::IMStatusCode,
         tlv::{FromTLV, TLVElement, TLVWriter, TagType, ToTLV},
@@ -250,6 +250,56 @@ pub mod ib {
                 data_ver,
                 path,
                 data,
+            }
+        }
+    }
+
+    #[derive(Debug)]
+    /// Operations on an Interaction Model List
+    pub enum ListOperation {
+        /// Add (append) an item to the list
+        AddItem,
+        /// Edit an item from the list
+        EditItem(u16),
+        /// Delete item from the list
+        DeleteItem(u16),
+        /// Delete the whole list
+        DeleteList,
+    }
+
+    /// Attribute Lists in Attribute Data are special. Infer the correct meaning using this function
+    pub fn attr_list_op<F>(
+        attr: AttrDetails,
+        data: &TLVElement,
+        mut f: F,
+    ) -> Result<(), IMStatusCode>
+    where
+        F: FnMut(ListOperation, &TLVElement) -> Result<(), IMStatusCode>,
+    {
+        if let Some(index) = attr.list_index {
+            // If list index is valid,
+            //    - this is a modify item or delete item operation
+            if data.null().is_ok() {
+                // If data is NULL, delete item
+                f(ListOperation::DeleteItem(index), data)
+            } else {
+                f(ListOperation::EditItem(index), data)
+            }
+        } else {
+            if data.confirm_array().is_ok() {
+                // If data is list, this is either Delete List or OverWrite List operation
+                // in either case, we have to first delete the whole list
+                f(ListOperation::DeleteList, data)?;
+                // Now the data must be a list, that should be added item by item
+
+                let container = data.iter().ok_or(Error::Invalid)?;
+                for d in container {
+                    f(ListOperation::AddItem, &d)?;
+                }
+                Ok(())
+            } else {
+                // If data is not a list, this must be an add operation
+                f(ListOperation::AddItem, data)
             }
         }
     }
