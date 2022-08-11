@@ -4,7 +4,7 @@ use crate::{
     error::*,
     interaction_model::{command::CommandReq, core::IMStatusCode},
     // TODO: This layer shouldn't really depend on the TLV layer, should create an abstraction layer
-    tlv::{TLVElement, TLVWriter, TagType},
+    tlv::{Nullable, TLVElement, TLVWriter, TagType},
 };
 use log::error;
 use num_derive::FromPrimitive;
@@ -31,7 +31,7 @@ pub enum GlobalElements {
 // methods?
 pub struct AttrDetails {
     pub attr_id: u16,
-    pub list_index: Option<u16>,
+    pub list_index: Option<Nullable<u16>>,
     pub fab_idx: u8,
     pub fab_filter: bool,
 }

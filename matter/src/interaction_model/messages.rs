@@ -144,7 +144,7 @@ pub mod ib {
         data_model::objects::{AttrDetails, EncodeValue},
         error::Error,
         interaction_model::core::IMStatusCode,
-        tlv::{FromTLV, TLVElement, TLVWriter, TagType, ToTLV},
+        tlv::{FromTLV, Nullable, TLVElement, TLVWriter, TagType, ToTLV},
     };
     use log::error;
 
@@ -276,7 +276,7 @@ pub mod ib {
     where
         F: FnMut(ListOperation, &TLVElement) -> Result<(), IMStatusCode>,
     {
-        if let Some(index) = attr.list_index {
+        if let Some(Nullable::NotNull(index)) = attr.list_index {
             // If list index is valid,
             //    - this is a modify item or delete item operation
             if data.null().is_ok() {
@@ -328,7 +328,7 @@ pub mod ib {
         pub endpoint: Option<u16>,
         pub cluster: Option<u32>,
         pub attr: Option<u16>,
-        pub list_index: Option<u16>,
+        pub list_index: Option<Nullable<u16>>,
     }
 
     impl AttrPath {

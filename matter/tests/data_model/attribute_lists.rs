@@ -8,7 +8,7 @@ use matter::{
         },
         messages::{msg, GenericPath},
     },
-    tlv::{self, FromTLV, TLVWriter, TagType, ToTLV},
+    tlv::{self, FromTLV, Nullable, TLVWriter, TagType, ToTLV},
     utils::writebuf::WriteBuf,
 };
 
@@ -99,7 +99,7 @@ fn attr_list_ops() {
     }
 
     // Test 3: Edit Operation - edit val1 to val0
-    att_path.list_index = Some(1);
+    att_path.list_index = Some(Nullable::NotNull(1));
     let input = &[AttrData::new(None, att_path, EncodeValue::Value(&val0))];
     let expected = &[AttrStatus::new(&att_data, IMStatusCode::Sucess, 0)];
     let _ = handle_write_reqs(input, expected);
@@ -110,7 +110,7 @@ fn attr_list_ops() {
     }
 
     // Test 4: Delete Operation - delete index 0
-    att_path.list_index = Some(0);
+    att_path.list_index = Some(Nullable::NotNull(0));
     let input = &[AttrData::new(None, att_path, delete_item)];
     let expected = &[AttrStatus::new(&att_data, IMStatusCode::Sucess, 0)];
     let _ = handle_write_reqs(input, expected);
