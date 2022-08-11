@@ -152,7 +152,7 @@ pub struct AclEntry {
     targets: Targets,
     // TODO: Instead of the direct value, we should consider GlobalElements::FabricIndex
     #[tagval(0xFE)]
-    fab_idx: u8,
+    pub fab_idx: Option<u8>,
 }
 
 impl AclEntry {
@@ -161,7 +161,7 @@ impl AclEntry {
         const INIT_TARGETS: Option<Target> = None;
         let privilege = privilege;
         Self {
-            fab_idx,
+            fab_idx: Some(fab_idx),
             privilege,
             auth_mode,
             subjects: [INIT_SUBJECTS; SUBJECTS_PER_ENTRY],
@@ -189,10 +189,6 @@ impl AclEntry {
         Ok(())
     }
 
-    pub fn match_fabric(&self, fab_idx: u8) -> bool {
-        self.fab_idx == fab_idx
-    }
-
     fn match_accessor(&self, accessor: &Accessor) -> bool {
         if self.auth_mode != accessor.auth_mode {
             return false;
@@ -212,7 +208,7 @@ impl AclEntry {
         }
 
         // true if both are true
-        allow && self.fab_idx == accessor.fab_idx
+        allow && self.fab_idx == Some(accessor.fab_idx)
     }
 
     fn match_access_desc(&self, object: &AccessDesc) -> bool {
@@ -289,10 +285,11 @@ impl AclMgrInner {
         index: u8,
         fab_idx: u8,
     ) -> Result<&mut Option<AclEntry>, Error> {
+        // Can't use flatten as we need to borrow the Option<> not the 'AclEntry'
         for (curr_index, entry) in self
             .entries
             .iter_mut()
-            .filter(|e| e.filter(|e1| e1.fab_idx == fab_idx).is_some())
+            .filter(|e| e.filter(|e1| e1.fab_idx == Some(fab_idx)).is_some())
             .enumerate()
         {
             if curr_index == index as usize {
@@ -414,7 +411,10 @@ impl AclMgr {
         let mut inner = self.inner.write().unwrap();
 
         for i in 0..MAX_ACL_ENTRIES {
-            if inner.entries[i].map(|e| e.fab_idx) == Some(fab_idx) {
+            if inner.entries[i]
+                .filter(|e| e.fab_idx == Some(fab_idx))
+                .is_some()
+            {
                 inner.entries[i] = None;
             }
         }

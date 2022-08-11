@@ -53,12 +53,11 @@ impl AccessControlCluster {
         info!("Performing ACL operation {:?}", op);
         let result = match op {
             ListOperation::AddItem | ListOperation::EditItem(_) => {
-                let acl_entry =
+                let mut acl_entry =
                     AclEntry::from_tlv(data).map_err(|_| IMStatusCode::ConstraintError)?;
                 info!("ACL  {:?}", acl_entry);
-                if !acl_entry.match_fabric(fab_idx) {
-                    return Err(IMStatusCode::UnsupportedAccess);
-                }
+                // Overwrite the fabric index with our accessing fabric index
+                acl_entry.fab_idx = Some(fab_idx);
 
                 if let ListOperation::EditItem(index) = op {
                     self.acl_mgr.edit(index as u8, fab_idx, acl_entry)
@@ -174,7 +173,7 @@ mod tests {
     use crate::{
         acl::{AclEntry, AclMgr, AuthMode},
         data_model::objects::Privilege,
-        interaction_model::{core::IMStatusCode, messages::ib::ListOperation},
+        interaction_model::messages::ib::ListOperation,
         tlv::{get_root_node_struct, ElementType, TLVElement, TLVWriter, TagType, ToTLV},
         utils::writebuf::WriteBuf,
     };
@@ -182,8 +181,7 @@ mod tests {
     use super::AccessControlCluster;
 
     #[test]
-    /// Add should work when the access fabric matches the fabric in the ACL,
-    /// and don't otherwise
+    /// Add an ACL entry
     fn acl_cluster_add() {
         let mut buf: [u8; 100] = [0; 100];
         let buf_len = buf.len();
@@ -197,23 +195,20 @@ mod tests {
         new.to_tlv(&mut tw, TagType::Anonymous).unwrap();
         let data = get_root_node_struct(writebuf.as_borrow_slice()).unwrap();
 
-        // Test 1, ACL has fabric index 2, but the accessing fabric is 1 - deny
+        // Test, ACL has fabric index 2, but the accessing fabric is 1
+        //    the fabric index in the TLV should be ignored and the ACL should be created with entry 1
         let result = acl.write_acl_attr(ListOperation::AddItem, &data, 1);
-        assert_eq!(result, Err(IMStatusCode::UnsupportedAccess));
-
-        // Test 2, ACL has fabric index 2, and the accessing fabric is 2 - allow
-        let result = acl.write_acl_attr(ListOperation::AddItem, &data, 2);
         assert_eq!(result, Ok(()));
 
+        let verifier = AclEntry::new(1, Privilege::VIEW, AuthMode::Case);
         acl_mgr
             .for_each_acl(|a| {
-                assert_eq!(*a, new);
+                assert_eq!(*a, verifier);
             })
             .unwrap();
     }
 
     #[test]
-    /// - The accessing fabric's index must match the one in the ACL entry
     /// - The listindex used for edit should be relative to the current fabric
     fn acl_cluster_edit() {
         let mut buf: [u8; 100] = [0; 100];
@@ -237,20 +232,7 @@ mod tests {
         new.to_tlv(&mut tw, TagType::Anonymous).unwrap();
         let data = get_root_node_struct(writebuf.as_borrow_slice()).unwrap();
 
-        // Test 1, Edit Fabric 2's index 0 - but accessing fabric is 1 - deny
-        let result = acl.write_acl_attr(ListOperation::EditItem(0), &data, 1);
-        assert_eq!(result, Err(IMStatusCode::UnsupportedAccess));
-
-        // Also validate in the acl_mgr that the entries are in the right order
-        let mut index = 0;
-        acl_mgr
-            .for_each_acl(|a| {
-                assert_eq!(*a, verifier[index]);
-                index += 1;
-            })
-            .unwrap();
-
-        // Test 2, Edit Fabric 2's index 1 - with accessing fabring as 2 - allow
+        // Test, Edit Fabric 2's index 1 - with accessing fabring as 2 - allow
         let result = acl.write_acl_attr(ListOperation::EditItem(1), &data, 2);
         // Fabric 2's index 1, is actually our index 2, update the verifier
         verifier[2] = new;
