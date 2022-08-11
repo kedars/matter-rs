@@ -53,7 +53,7 @@ impl ToTLV for AuthMode {
 /// The Accessor Object
 pub struct Accessor {
     /// The fabric index of the accessor
-    fab_idx: u8,
+    pub fab_idx: u8,
     /// Accessor's identified: could be node-id, NoC CAT, group id
     id: u64,
     /// The Authmode of this session
@@ -124,7 +124,7 @@ impl<'a> AccessReq<'a> {
     }
 }
 
-#[derive(FromTLV, ToTLV, Copy, Clone, Debug)]
+#[derive(FromTLV, ToTLV, Copy, Clone, Debug, PartialEq)]
 pub struct Target {
     cluster: Option<u32>,
     endpoint: Option<u16>,
@@ -143,7 +143,7 @@ impl Target {
 
 type Subjects = [Option<u64>; SUBJECTS_PER_ENTRY];
 type Targets = [Option<Target>; TARGETS_PER_ENTRY];
-#[derive(ToTLV, FromTLV, Copy, Clone, Debug)]
+#[derive(ToTLV, FromTLV, Copy, Clone, Debug, PartialEq)]
 #[tlvargs(start = 1)]
 pub struct AclEntry {
     privilege: Privilege,
@@ -279,6 +279,28 @@ impl AclMgrInner {
             entries: AclEntries::from_tlv(&root)?,
         })
     }
+
+    /// Traverse fabric specific entries to find the index
+    ///
+    /// If the ACL Mgr has 3 entries with fabric indexes, 1, 2, 1, then the list
+    /// index 1 for Fabric 1 in the ACL Mgr will be the actual index 2 (starting from  0)
+    fn for_index_in_fabric(
+        &mut self,
+        index: u8,
+        fab_idx: u8,
+    ) -> Result<&mut Option<AclEntry>, Error> {
+        for (curr_index, entry) in self
+            .entries
+            .iter_mut()
+            .filter(|e| e.filter(|e1| e1.fab_idx == fab_idx).is_some())
+            .enumerate()
+        {
+            if curr_index == index as usize {
+                return Ok(entry);
+            }
+        }
+        Err(Error::NotFound)
+    }
 }
 
 pub struct AclMgr {
@@ -361,14 +383,11 @@ impl AclMgr {
         }
     }
 
-    pub fn edit(&self, index: u8, new: AclEntry) -> Result<(), Error> {
+    // Since the entries are fabric-scoped, the index is only for entries with the matching fabric index
+    pub fn edit(&self, index: u8, fab_idx: u8, new: AclEntry) -> Result<(), Error> {
         let mut inner = self.inner.write().unwrap();
-        if let Some(old) = inner.entries[index as usize] {
-            if old.fab_idx != new.fab_idx {
-                return Err(Error::NoSpace);
-            }
-        }
-        inner.entries[index as usize] = Some(new);
+        let old = inner.for_index_in_fabric(index, fab_idx)?;
+        *old = Some(new);
 
         if let Some(psm) = self.psm.as_ref() {
             let psm = psm.lock().unwrap();
@@ -378,9 +397,10 @@ impl AclMgr {
         }
     }
 
-    pub fn delete(&self, index: u8) -> Result<(), Error> {
+    pub fn delete(&self, index: u8, fab_idx: u8) -> Result<(), Error> {
         let mut inner = self.inner.write().unwrap();
-        inner.entries[index as usize] = None;
+        let old = inner.for_index_in_fabric(index, fab_idx)?;
+        *old = None;
 
         if let Some(psm) = self.psm.as_ref() {
             let psm = psm.lock().unwrap();

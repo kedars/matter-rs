@@ -444,6 +444,7 @@ fn write_with_runtime_acl_add() {
     handle_write_reqs(
         &mut im,
         peer,
+        // write to echo-cluster attribute, write to acl attribute, write to echo-cluster attribute
         &[input0, acl_input, input0],
         &[
             AttrStatus::new(&ep0_att, IMStatusCode::UnsupportedAccess, 0),

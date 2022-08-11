@@ -52,7 +52,7 @@ impl AccessControlCluster {
     ) -> Result<(), IMStatusCode> {
         info!("Performing ACL operation {:?}", op);
         let result = match op {
-            ListOperation::AddItem => {
+            ListOperation::AddItem | ListOperation::EditItem(_) => {
                 let acl_entry =
                     AclEntry::from_tlv(data).map_err(|_| IMStatusCode::ConstraintError)?;
                 info!("ACL  {:?}", acl_entry);
@@ -60,21 +60,13 @@ impl AccessControlCluster {
                     return Err(IMStatusCode::UnsupportedAccess);
                 }
 
-                self.acl_mgr.add(acl_entry)
-            }
-            ListOperation::EditItem(index) => {
-                let acl_entry =
-                    AclEntry::from_tlv(data).map_err(|_| IMStatusCode::ConstraintError)?;
-                info!("ACL  {:?}", acl_entry);
-                if !acl_entry.match_fabric(fab_idx) {
-                    return Err(IMStatusCode::UnsupportedAccess);
+                if let ListOperation::EditItem(index) = op {
+                    self.acl_mgr.edit(index as u8, fab_idx, acl_entry)
+                } else {
+                    self.acl_mgr.add(acl_entry)
                 }
-                self.acl_mgr.edit(index as u8, acl_entry)
             }
-            ListOperation::DeleteItem(index) => {
-                info!("Deleted Item {:?}", index);
-                self.acl_mgr.delete(index as u8)
-            }
+            ListOperation::DeleteItem(index) => self.acl_mgr.delete(index as u8, fab_idx),
             ListOperation::DeleteList => self.acl_mgr.delete_for_fabric(fab_idx),
         };
         match result {
@@ -173,4 +165,136 @@ fn attr_entries_per_fabric_new() -> Result<Attribute, Error> {
         Access::RV,
         Quality::FIXED,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use crate::{
+        acl::{AclEntry, AclMgr, AuthMode},
+        data_model::objects::Privilege,
+        interaction_model::{core::IMStatusCode, messages::ib::ListOperation},
+        tlv::{get_root_node_struct, ElementType, TLVElement, TLVWriter, TagType, ToTLV},
+        utils::writebuf::WriteBuf,
+    };
+
+    use super::AccessControlCluster;
+
+    #[test]
+    /// Add should work when the access fabric matches the fabric in the ACL,
+    /// and don't otherwise
+    fn acl_cluster_add() {
+        let mut buf: [u8; 100] = [0; 100];
+        let buf_len = buf.len();
+        let mut writebuf = WriteBuf::new(&mut buf, buf_len);
+        let mut tw = TLVWriter::new(&mut writebuf);
+
+        let acl_mgr = Arc::new(AclMgr::new_with(false).unwrap());
+        let mut acl = AccessControlCluster::new(acl_mgr.clone()).unwrap();
+
+        let new = AclEntry::new(2, Privilege::VIEW, AuthMode::Case);
+        new.to_tlv(&mut tw, TagType::Anonymous).unwrap();
+        let data = get_root_node_struct(writebuf.as_borrow_slice()).unwrap();
+
+        // Test 1, ACL has fabric index 2, but the accessing fabric is 1 - deny
+        let result = acl.write_acl_attr(ListOperation::AddItem, &data, 1);
+        assert_eq!(result, Err(IMStatusCode::UnsupportedAccess));
+
+        // Test 2, ACL has fabric index 2, and the accessing fabric is 2 - allow
+        let result = acl.write_acl_attr(ListOperation::AddItem, &data, 2);
+        assert_eq!(result, Ok(()));
+
+        acl_mgr
+            .for_each_acl(|a| {
+                assert_eq!(*a, new);
+            })
+            .unwrap();
+    }
+
+    #[test]
+    /// - The accessing fabric's index must match the one in the ACL entry
+    /// - The listindex used for edit should be relative to the current fabric
+    fn acl_cluster_edit() {
+        let mut buf: [u8; 100] = [0; 100];
+        let buf_len = buf.len();
+        let mut writebuf = WriteBuf::new(&mut buf, buf_len);
+        let mut tw = TLVWriter::new(&mut writebuf);
+
+        // Add 3 ACLs, belonging to fabric index 2, 1 and 2, in that order
+        let acl_mgr = Arc::new(AclMgr::new_with(false).unwrap());
+        let mut verifier = [
+            AclEntry::new(2, Privilege::VIEW, AuthMode::Case),
+            AclEntry::new(1, Privilege::VIEW, AuthMode::Case),
+            AclEntry::new(2, Privilege::ADMIN, AuthMode::Case),
+        ];
+        for i in verifier {
+            acl_mgr.add(i).unwrap();
+        }
+        let mut acl = AccessControlCluster::new(acl_mgr.clone()).unwrap();
+
+        let new = AclEntry::new(2, Privilege::VIEW, AuthMode::Case);
+        new.to_tlv(&mut tw, TagType::Anonymous).unwrap();
+        let data = get_root_node_struct(writebuf.as_borrow_slice()).unwrap();
+
+        // Test 1, Edit Fabric 2's index 0 - but accessing fabric is 1 - deny
+        let result = acl.write_acl_attr(ListOperation::EditItem(0), &data, 1);
+        assert_eq!(result, Err(IMStatusCode::UnsupportedAccess));
+
+        // Also validate in the acl_mgr that the entries are in the right order
+        let mut index = 0;
+        acl_mgr
+            .for_each_acl(|a| {
+                assert_eq!(*a, verifier[index]);
+                index += 1;
+            })
+            .unwrap();
+
+        // Test 2, Edit Fabric 2's index 1 - with accessing fabring as 2 - allow
+        let result = acl.write_acl_attr(ListOperation::EditItem(1), &data, 2);
+        // Fabric 2's index 1, is actually our index 2, update the verifier
+        verifier[2] = new;
+        assert_eq!(result, Ok(()));
+
+        // Also validate in the acl_mgr that the entries are in the right order
+        let mut index = 0;
+        acl_mgr
+            .for_each_acl(|a| {
+                assert_eq!(*a, verifier[index]);
+                index += 1;
+            })
+            .unwrap();
+    }
+
+    #[test]
+    /// - The listindex used for delete should be relative to the current fabric
+    fn acl_cluster_delete() {
+        // Add 3 ACLs, belonging to fabric index 2, 1 and 2, in that order
+        let acl_mgr = Arc::new(AclMgr::new_with(false).unwrap());
+        let input = [
+            AclEntry::new(2, Privilege::VIEW, AuthMode::Case),
+            AclEntry::new(1, Privilege::VIEW, AuthMode::Case),
+            AclEntry::new(2, Privilege::ADMIN, AuthMode::Case),
+        ];
+        for i in input {
+            acl_mgr.add(i).unwrap();
+        }
+        let mut acl = AccessControlCluster::new(acl_mgr.clone()).unwrap();
+        // data is don't-care actually
+        let data = TLVElement::new(TagType::Anonymous, ElementType::True);
+
+        // Test , Delete Fabric 1's index 0
+        let result = acl.write_acl_attr(ListOperation::DeleteItem(0), &data, 1);
+        assert_eq!(result, Ok(()));
+
+        let verifier = [input[0], input[2]];
+        // Also validate in the acl_mgr that the entries are in the right order
+        let mut index = 0;
+        acl_mgr
+            .for_each_acl(|a| {
+                assert_eq!(*a, verifier[index]);
+                index += 1;
+            })
+            .unwrap();
+    }
 }

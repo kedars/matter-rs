@@ -102,10 +102,11 @@ impl DataModel {
             encoder.skip_error();
         }
         let mut attr = AttrDetails {
+            // will be udpated in the loop below
             attr_id: 0,
             list_index: attr_data.path.list_index,
             fab_filter: false,
-            fab_idx: 0,
+            fab_idx: accessor.fab_idx,
         };
 
         let result = node.for_each_cluster_mut(&gen_path, |path, c| {
