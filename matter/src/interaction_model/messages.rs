@@ -268,8 +268,8 @@ pub mod ib {
     }
 
     /// Attribute Lists in Attribute Data are special. Infer the correct meaning using this function
-    pub fn attr_list_op<F>(
-        attr: AttrDetails,
+    pub fn attr_list_write<F>(
+        attr: &AttrDetails,
         data: &TLVElement,
         mut f: F,
     ) -> Result<(), IMStatusCode>

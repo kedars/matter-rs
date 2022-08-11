@@ -9,7 +9,7 @@ use matter::{
     interaction_model::{
         command::CommandReq,
         core::IMStatusCode,
-        messages::ib::{self, attr_list_op, ListOperation},
+        messages::ib::{self, attr_list_write, ListOperation},
     },
     tlv::{TLVElement, TLVWriter, TagType, ToTLV},
 };
@@ -77,7 +77,7 @@ impl ClusterType for EchoCluster {
         &mut self.base
     }
 
-    fn read_custom_attribute(&self, encoder: &mut dyn Encoder, attr: AttrDetails) {
+    fn read_custom_attribute(&self, encoder: &mut dyn Encoder, attr: &AttrDetails) {
         match num::FromPrimitive::from_u16(attr.attr_id) {
             Some(Attributes::AttCustom) => encoder.encode(EncodeValue::Closure(&|tag, tw| {
                 let _ = tw.u32(tag, ATTR_CUSTOM_VALUE);
@@ -99,12 +99,12 @@ impl ClusterType for EchoCluster {
 
     fn write_attribute(
         &mut self,
-        attr: AttrDetails,
+        attr: &AttrDetails,
         data: &TLVElement,
     ) -> Result<(), IMStatusCode> {
         match num::FromPrimitive::from_u16(attr.attr_id) {
             Some(Attributes::AttWriteList) => {
-                attr_list_op(attr, data, |op, data| self.write_attr_list(op, data))
+                attr_list_write(attr, data, |op, data| self.write_attr_list(op, data))
             }
             _ => self.base.write_attribute_from_tlv(attr.attr_id, data),
         }

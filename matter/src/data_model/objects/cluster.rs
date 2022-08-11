@@ -27,16 +27,20 @@ pub enum GlobalElements {
     FabricIndex = 0xFE,
 }
 
+// TODO: What if we instead of creating this, we just pass the AttrData/AttrPath to the read/write
+// methods?
 pub struct AttrDetails {
     pub attr_id: u16,
     pub list_index: Option<u16>,
+    pub fab_idx: u8,
+    pub fab_filter: bool,
 }
 
 pub trait ClusterType {
     // TODO: 5 methods is going to be quite expensive for vtables of all the clusters
     fn base(&self) -> &Cluster;
     fn base_mut(&mut self) -> &mut Cluster;
-    fn read_custom_attribute(&self, _encoder: &mut dyn Encoder, _attr: AttrDetails) {}
+    fn read_custom_attribute(&self, _encoder: &mut dyn Encoder, _attr: &AttrDetails) {}
 
     fn handle_command(&mut self, cmd_req: &mut CommandReq) -> Result<(), IMStatusCode> {
         let cmd = cmd_req.cmd.path.leaf.map(|a| a as u16);
@@ -45,9 +49,18 @@ pub trait ClusterType {
         Err(IMStatusCode::UnsupportedCommand)
     }
 
+    /// Write an attribute
+    ///
+    /// Note that if this method is defined, you must handle the write for all the attributes. Even those
+    /// that are not 'custom'. This is different from how you handle the read_custom_attribute() method.
+    /// The reason for this being, you may want to handle an attribute write request even though it is a
+    /// standard attribute like u16, u32 etc.
+    ///
+    /// If you wish to update the standard attribute in the data model database, you must call the
+    /// write_attribute_from_tlv() method from the base cluster, as is shown here in the default case
     fn write_attribute(
         &mut self,
-        attr: AttrDetails,
+        attr: &AttrDetails,
         data: &TLVElement,
     ) -> Result<(), IMStatusCode> {
         self.base_mut().write_attribute_from_tlv(attr.attr_id, data)
@@ -153,7 +166,7 @@ impl Cluster {
         c: &dyn ClusterType,
         access_req: &mut AccessReq,
         encoder: &mut dyn Encoder,
-        attr: AttrDetails,
+        attr: &AttrDetails,
     ) {
         let mut error = IMStatusCode::Sucess;
         let base = c.base();
@@ -226,7 +239,7 @@ impl Cluster {
         c: &mut dyn ClusterType,
         access_req: &mut AccessReq,
         data: &TLVElement,
-        attr: AttrDetails,
+        attr: &AttrDetails,
     ) -> Result<(), IMStatusCode> {
         let base = c.base_mut();
         let a = if let Ok(a) = base.get_attribute_mut(attr.attr_id) {

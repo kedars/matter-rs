@@ -6,6 +6,7 @@ use crate::acl::{self, AclEntry, AclMgr};
 use crate::data_model::objects::*;
 use crate::error::*;
 use crate::interaction_model::core::IMStatusCode;
+use crate::interaction_model::messages::ib::{attr_list_write, ListOperation};
 use crate::tlv::{FromTLV, TLVElement, TagType, ToTLV};
 use log::{error, info};
 
@@ -38,6 +39,50 @@ impl AccessControlCluster {
         c.base.add_attribute(attr_entries_per_fabric_new()?)?;
         Ok(c)
     }
+
+    /// Write the ACL Attribute
+    ///
+    /// This takes care of 4 things, add item, edit item, delete item, delete list.
+    /// Care about fabric-scoped behaviour is taken
+    fn write_acl_attr(
+        &mut self,
+        op: ListOperation,
+        data: &TLVElement,
+        fab_idx: u8,
+    ) -> Result<(), IMStatusCode> {
+        info!("Performing ACL operation {:?}", op);
+        let result = match op {
+            ListOperation::AddItem => {
+                let acl_entry =
+                    AclEntry::from_tlv(data).map_err(|_| IMStatusCode::ConstraintError)?;
+                info!("ACL  {:?}", acl_entry);
+                if !acl_entry.match_fabric(fab_idx) {
+                    return Err(IMStatusCode::UnsupportedAccess);
+                }
+
+                self.acl_mgr.add(acl_entry)
+            }
+            ListOperation::EditItem(index) => {
+                let acl_entry =
+                    AclEntry::from_tlv(data).map_err(|_| IMStatusCode::ConstraintError)?;
+                info!("ACL  {:?}", acl_entry);
+                if !acl_entry.match_fabric(fab_idx) {
+                    return Err(IMStatusCode::UnsupportedAccess);
+                }
+                self.acl_mgr.edit(index as u8, acl_entry)
+            }
+            ListOperation::DeleteItem(index) => {
+                info!("Deleted Item {:?}", index);
+                self.acl_mgr.delete(index as u8)
+            }
+            ListOperation::DeleteList => self.acl_mgr.delete_for_fabric(fab_idx),
+        };
+        match result {
+            Ok(_) => Ok(()),
+            Err(Error::NoSpace) => Err(IMStatusCode::ResourceExhausted),
+            _ => Err(IMStatusCode::ConstraintError),
+        }
+    }
 }
 
 impl ClusterType for AccessControlCluster {
@@ -48,10 +93,9 @@ impl ClusterType for AccessControlCluster {
         &mut self.base
     }
 
-    fn read_custom_attribute(&self, encoder: &mut dyn Encoder, attr: AttrDetails) {
+    fn read_custom_attribute(&self, encoder: &mut dyn Encoder, attr: &AttrDetails) {
         match num::FromPrimitive::from_u16(attr.attr_id) {
             Some(Attributes::Acl) => encoder.encode(EncodeValue::Closure(&|tag, tw| {
-                // Empty for now
                 let _ = tw.start_array(tag);
                 let _ = self.acl_mgr.for_each_acl(|entry| {
                     let _ = entry.to_tlv(tw, TagType::Anonymous);
@@ -71,23 +115,13 @@ impl ClusterType for AccessControlCluster {
 
     fn write_attribute(
         &mut self,
-        attr: AttrDetails,
+        attr: &AttrDetails,
         data: &TLVElement,
     ) -> Result<(), IMStatusCode> {
         match num::FromPrimitive::from_u16(attr.attr_id) {
-            Some(Attributes::Acl) => {
-                // TODO: Need to support all modes of 'List'
-                let acl_entry =
-                    AclEntry::from_tlv(data).map_err(|_| IMStatusCode::ConstraintError)?;
-                match self.acl_mgr.add(acl_entry) {
-                    Ok(_) => {
-                        info!("New ACL Added {:?}", acl_entry);
-                        Ok(())
-                    }
-                    Err(Error::NoSpace) => Err(IMStatusCode::ResourceExhausted),
-                    _ => Err(IMStatusCode::ConstraintError),
-                }
-            }
+            Some(Attributes::Acl) => attr_list_write(attr, data, |op, data| {
+                self.write_acl_attr(op, data, attr.fab_idx)
+            }),
             _ => {
                 error!("Attribute not yet supported: this shouldn't happen");
                 Err(IMStatusCode::NotFound)

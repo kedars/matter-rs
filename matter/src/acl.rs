@@ -189,6 +189,10 @@ impl AclEntry {
         Ok(())
     }
 
+    pub fn match_fabric(&self, fab_idx: u8) -> bool {
+        self.fab_idx == fab_idx
+    }
+
     fn match_accessor(&self, accessor: &Accessor) -> bool {
         if self.auth_mode != accessor.auth_mode {
             return false;
@@ -348,6 +352,52 @@ impl AclMgr {
             .position(|a| a.is_none())
             .ok_or(Error::NoSpace)?;
         inner.entries[index] = Some(entry);
+
+        if let Some(psm) = self.psm.as_ref() {
+            let psm = psm.lock().unwrap();
+            inner.store(&psm)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn edit(&self, index: u8, new: AclEntry) -> Result<(), Error> {
+        let mut inner = self.inner.write().unwrap();
+        if let Some(old) = inner.entries[index as usize] {
+            if old.fab_idx != new.fab_idx {
+                return Err(Error::NoSpace);
+            }
+        }
+        inner.entries[index as usize] = Some(new);
+
+        if let Some(psm) = self.psm.as_ref() {
+            let psm = psm.lock().unwrap();
+            inner.store(&psm)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn delete(&self, index: u8) -> Result<(), Error> {
+        let mut inner = self.inner.write().unwrap();
+        inner.entries[index as usize] = None;
+
+        if let Some(psm) = self.psm.as_ref() {
+            let psm = psm.lock().unwrap();
+            inner.store(&psm)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn delete_for_fabric(&self, fab_idx: u8) -> Result<(), Error> {
+        let mut inner = self.inner.write().unwrap();
+
+        for i in 0..MAX_ACL_ENTRIES {
+            if inner.entries[i].map(|e| e.fab_idx) == Some(fab_idx) {
+                inner.entries[i] = None;
+            }
+        }
 
         if let Some(psm) = self.psm.as_ref() {
             let psm = psm.lock().unwrap();

@@ -101,15 +101,18 @@ impl DataModel {
             //    to be taken care of.
             encoder.skip_error();
         }
+        let mut attr = AttrDetails {
+            attr_id: 0,
+            list_index: attr_data.path.list_index,
+            fab_filter: false,
+            fab_idx: 0,
+        };
 
         let result = node.for_each_cluster_mut(&gen_path, |path, c| {
-            let attr = AttrDetails {
-                attr_id: path.leaf.unwrap_or_default() as u16,
-                list_index: attr_data.path.list_index,
-            };
+            attr.attr_id = path.leaf.unwrap_or_default() as u16;
             encoder.set_path(*path);
             let mut access_req = AccessReq::new(accessor, path, Access::WRITE);
-            let r = match Cluster::write_attribute(c, &mut access_req, write_data, attr) {
+            let r = match Cluster::write_attribute(c, &mut access_req, write_data, &attr) {
                 Ok(_) => IMStatusCode::Sucess,
                 Err(e) => e,
             };
@@ -131,15 +134,18 @@ impl DataModel {
     ) {
         let gen_path = attr_path.to_gp();
         let mut attr_encoder = AttrReadEncoder::new(tw, TagType::Anonymous, gen_path);
+        let mut attr = AttrDetails {
+            attr_id: 0,
+            list_index: attr_path.list_index,
+            fab_filter: false,
+            fab_idx: 0,
+        };
 
         let result = node.for_each_attribute(&gen_path, |path, c| {
-            let attr = AttrDetails {
-                attr_id: path.leaf.unwrap_or_default() as u16,
-                list_index: attr_path.list_index,
-            };
+            attr.attr_id = path.leaf.unwrap_or_default() as u16;
             attr_encoder.set_path(*path);
             let mut access_req = AccessReq::new(accessor, path, Access::READ);
-            Cluster::read_attribute(c, &mut access_req, &mut attr_encoder, attr);
+            Cluster::read_attribute(c, &mut access_req, &mut attr_encoder, &attr);
             Ok(())
         });
         if let Err(e) = result {
