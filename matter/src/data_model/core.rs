@@ -13,17 +13,17 @@ use crate::{
         command::CommandReq,
         core::IMStatusCode,
         messages::{
-            ib::{self, AttrData, AttrPath},
+            ib::{self, AttrData, DataVersionFilter},
             msg::{self, InvReq, ReadReq, WriteReq},
             GenericPath,
         },
         InteractionConsumer, Transaction,
     },
-    tlv::{TLVWriter, TagType, ToTLV},
+    tlv::{TLVArray, TLVWriter, TagType, ToTLV},
     transport::session::{Session, SessionMode},
 };
 use log::{error, info};
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, RwLock};
 
 #[derive(Clone)]
 pub struct DataModel {
@@ -63,7 +63,7 @@ impl DataModel {
 
     // Encode a write attribute from a path that may or may not be wildcard
     fn handle_write_attr_path(
-        node: &mut RwLockWriteGuard<Box<Node>>,
+        node: &mut Node,
         accessor: &Accessor,
         attr_data: &AttrData,
         tw: &mut TLVWriter,
@@ -128,25 +128,21 @@ impl DataModel {
 
     // Encode a read attribute from a path that may or may not be wildcard
     fn handle_read_attr_path(
-        node: &RwLockReadGuard<Box<Node>>,
+        node: &Node,
         accessor: &Accessor,
-        attr_path: AttrPath,
-        tw: &mut TLVWriter,
+        attr_encoder: &mut AttrReadEncoder,
+        attr_details: &mut AttrDetails,
     ) {
-        let gen_path = attr_path.to_gp();
-        let mut attr_encoder = AttrReadEncoder::new(tw, TagType::Anonymous, gen_path);
-        let mut attr = AttrDetails {
-            attr_id: 0,
-            list_index: attr_path.list_index,
-            fab_filter: false,
-            fab_idx: 0,
-        };
+        let path = attr_encoder.path;
+        // Skip error reporting for wildcard paths, don't for concrete paths
+        attr_encoder.skip_error(path.is_wildcard());
 
-        let result = node.for_each_attribute(&gen_path, |path, c| {
-            attr.attr_id = path.leaf.unwrap_or_default() as u16;
+        let result = node.for_each_attribute(&path, |path, c| {
+            attr_details.attr_id = path.leaf.unwrap_or_default() as u16;
+            // Overwrite the previous path with the concrete path
             attr_encoder.set_path(*path);
             let mut access_req = AccessReq::new(accessor, path, Access::READ);
-            Cluster::read_attribute(c, &mut access_req, &mut attr_encoder, &attr);
+            Cluster::read_attribute(c, &mut access_req, attr_encoder, &attr_details);
             Ok(())
         });
         if let Err(e) = result {
@@ -229,19 +225,39 @@ impl InteractionConsumer for DataModel {
         trans: &mut Transaction,
         tw: &mut TLVWriter,
     ) -> Result<(), Error> {
-        if read_req.fabric_filtered {
-            error!("Fabric scoped attribute read not yet supported");
+        let mut attr_encoder = AttrReadEncoder::new(tw);
+        if let Some(filters) = &read_req.dataver_filters {
+            attr_encoder.set_data_ver_filters(filters);
         }
-        if read_req.dataver_filters.is_some() {
-            error!("Data Version Filter not yet supported");
-        }
+
+        let mut attr_details = AttrDetails {
+            // This will be updated internally
+            attr_id: 0,
+            // This will be updated internally
+            list_index: None,
+            // This will be updated internally
+            fab_idx: 0,
+            fab_filter: read_req.fabric_filtered,
+        };
 
         if let Some(attr_requests) = &read_req.attr_requests {
             let accessor = self.sess_to_accessor(trans.session);
             let node = self.node.read().unwrap();
-            tw.start_array(TagType::Context(msg::ReportDataTag::AttributeReports as u8))?;
+            attr_encoder
+                .tw
+                .start_array(TagType::Context(msg::ReportDataTag::AttributeReports as u8))?;
+
             for attr_path in attr_requests.iter() {
-                DataModel::handle_read_attr_path(&node, &accessor, attr_path, tw);
+                attr_encoder.set_path(attr_path.to_gp());
+                // Extract the attr_path fields into various structures
+                attr_details.list_index = attr_path.list_index;
+                attr_details.fab_idx = accessor.fab_idx;
+                DataModel::handle_read_attr_path(
+                    &node,
+                    &accessor,
+                    &mut attr_encoder,
+                    &mut attr_details,
+                );
             }
             tw.end_container()?;
         }
@@ -283,34 +299,33 @@ impl InteractionConsumer for DataModel {
 /// Encoder for generating a response to a read request
 pub struct AttrReadEncoder<'a, 'b, 'c> {
     tw: &'a mut TLVWriter<'b, 'c>,
-    tag: TagType,
     data_ver: u32,
     path: GenericPath,
     skip_error: bool,
+    data_ver_filters: Option<&'a TLVArray<'a, DataVersionFilter>>,
 }
 
 impl<'a, 'b, 'c> AttrReadEncoder<'a, 'b, 'c> {
-    pub fn new(tw: &'a mut TLVWriter<'b, 'c>, tag: TagType, path: GenericPath) -> Self {
-        let mut a = Self {
+    pub fn new(tw: &'a mut TLVWriter<'b, 'c>) -> Self {
+        Self {
             tw,
-            tag,
             data_ver: 0,
-            path,
             skip_error: false,
-        };
-        if a.path.is_wildcard() {
-            // This is a wild card path, skip error reporting
-            a.skip_error();
+            path: Default::default(),
+            data_ver_filters: None,
         }
-        a
     }
 
-    pub fn skip_error(&mut self) {
-        self.skip_error = true;
+    pub fn skip_error(&mut self, skip: bool) {
+        self.skip_error = skip;
     }
 
     pub fn set_data_ver(&mut self, data_ver: u32) {
         self.data_ver = data_ver;
+    }
+
+    pub fn set_data_ver_filters(&mut self, filters: &'a TLVArray<'a, DataVersionFilter>) {
+        self.data_ver_filters = Some(filters);
     }
 
     pub fn set_path(&mut self, path: GenericPath) {
@@ -325,14 +340,14 @@ impl<'a, 'b, 'c> Encoder for AttrReadEncoder<'a, 'b, 'c> {
             ib::AttrPath::new(&self.path),
             value,
         ));
-        let _ = resp.to_tlv(self.tw, self.tag);
+        let _ = resp.to_tlv(self.tw, TagType::Anonymous);
     }
 
     fn encode_status(&mut self, status: IMStatusCode, cluster_status: u16) {
         if !self.skip_error {
             let resp =
                 ib::AttrResp::Status(ib::AttrStatus::new(&self.path, status, cluster_status));
-            let _ = resp.to_tlv(self.tw, self.tag);
+            let _ = resp.to_tlv(self.tw, TagType::Anonymous);
         }
     }
 }

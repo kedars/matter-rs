@@ -53,7 +53,7 @@ pub mod msg {
         tlv::{FromTLV, TLVArray, TLVElement, TLVWriter, TagType, ToTLV},
     };
 
-    use super::ib::{AttrData, AttrPath, CmdData};
+    use super::ib::{AttrData, AttrPath, CmdData, DataVersionFilter};
 
     #[derive(FromTLV)]
     #[tlvargs(lifetime = "'a")]
@@ -81,7 +81,7 @@ pub mod msg {
         event_requests: Option<bool>,
         event_filters: Option<bool>,
         pub fabric_filtered: bool,
-        pub dataver_filters: Option<TLVArray<'a, bool>>,
+        pub dataver_filters: Option<TLVArray<'a, DataVersionFilter>>,
     }
 
     impl<'a> ReadReq<'a> {
@@ -397,5 +397,18 @@ pub mod ib {
         fn to_tlv(&self, tw: &mut TLVWriter, tag_type: TagType) -> Result<(), Error> {
             self.path.to_tlv(tw, tag_type)
         }
+    }
+
+    #[derive(FromTLV, ToTLV)]
+    pub struct ClusterPath {
+        pub node: Option<u64>,
+        pub endpoint: u16,
+        pub cluster: u32,
+    }
+
+    #[derive(FromTLV, ToTLV)]
+    pub struct DataVersionFilter {
+        path: ClusterPath,
+        data_ver: u32,
     }
 }
