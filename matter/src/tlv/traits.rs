@@ -1,4 +1,4 @@
-use super::{TLVContainerIterator, TLVElement, TLVWriter, TagType};
+use super::{ElementType, TLVContainerIterator, TLVElement, TLVWriter, TagType};
 use crate::error::Error;
 use core::slice::Iter;
 use log::error;
@@ -185,6 +185,51 @@ impl<T: ToTLV> ToTLV for Option<T> {
         match self {
             Some(s) => (s.to_tlv(tw, tag)),
             None => Ok(()),
+        }
+    }
+}
+
+/// Represent a nullable value
+///
+/// The value may be null or a valid value
+/// Note: Null is different from Option. If the value is optional, include Option<> too. For
+/// example, Option<Nullable<T>>
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub enum Nullable<T> {
+    Null,
+    NotNull(T),
+}
+
+impl<T> Nullable<T> {
+    pub fn is_null(&self) -> bool {
+        match self {
+            Nullable::Null => true,
+            Nullable::NotNull(_) => false,
+        }
+    }
+
+    pub fn unwrap_notnull(self) -> Option<T> {
+        match self {
+            Nullable::Null => None,
+            Nullable::NotNull(t) => Some(t),
+        }
+    }
+}
+
+impl<'a, T: FromTLV<'a>> FromTLV<'a> for Nullable<T> {
+    fn from_tlv(t: &TLVElement<'a>) -> Result<Nullable<T>, Error> {
+        match t.get_element_type() {
+            ElementType::Null => Ok(Nullable::Null),
+            _ => Ok(Nullable::NotNull(T::from_tlv(t)?)),
+        }
+    }
+}
+
+impl<T: ToTLV> ToTLV for Nullable<T> {
+    fn to_tlv(&self, tw: &mut TLVWriter, tag: TagType) -> Result<(), Error> {
+        match self {
+            Nullable::Null => tw.null(tag),
+            Nullable::NotNull(s) => s.to_tlv(tw, tag),
         }
     }
 }
