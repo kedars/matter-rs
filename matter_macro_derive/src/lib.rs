@@ -269,7 +269,7 @@ fn gen_fromtlv_for_struct(
         quote! {
            impl #generics FromTLV <#lifetime> for #struct_name #generics {
                fn from_tlv(t: &TLVElement<#lifetime>) -> Result<Self, Error> {
-                   let mut t_iter = t.#datatype ()?.iter().ok_or(Error::Invalid)?;
+                   let mut t_iter = t.#datatype ()?.enter().ok_or(Error::Invalid)?;
                    let mut item = t_iter.next();
                    #(
                        let #idents = if Some(true) == item.map(|x| x.check_ctx_tag(#tags)) {
@@ -343,7 +343,7 @@ fn gen_fromtlv_for_enum(
     let expanded = quote! {
            impl #generics FromTLV <#lifetime> for #enum_name #generics {
                fn from_tlv(t: &TLVElement<#lifetime>) -> Result<Self, Error> {
-                   let mut t_iter = t.confirm_struct()?.iter().ok_or(Error::Invalid)?;
+                   let mut t_iter = t.confirm_struct()?.enter().ok_or(Error::Invalid)?;
                    let mut item = t_iter.next().ok_or(Error::Invalid)?;
                    if let TagType::Context(tag) = item.get_tag() {
                        match tag {

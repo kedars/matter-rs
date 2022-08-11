@@ -280,7 +280,7 @@ impl<'a> FromTLV<'a> for DistNames {
         let mut d = Self {
             dn: Vec::with_capacity(MAX_DN_ENTRIES),
         };
-        let iter = t.confirm_list()?.iter().ok_or(Error::Invalid)?;
+        let iter = t.confirm_list()?.enter().ok_or(Error::Invalid)?;
         for t in iter {
             if let TagType::Context(tag) = t.get_tag() {
                 let value = t.u64().map_err(|e| {

@@ -25,7 +25,7 @@ impl<'a, T: Default + FromTLV<'a> + Copy, const N: usize> FromTLV<'a> for [T; N]
         t.confirm_array()?;
         let mut a: [T; N] = [Default::default(); N];
         let mut index = 0;
-        if let Some(tlv_iter) = t.iter() {
+        if let Some(tlv_iter) = t.enter() {
             for element in tlv_iter {
                 if index < N {
                     a[index] = T::from_tlv(&element)?;
@@ -195,7 +195,7 @@ impl<'a, T: FromTLV<'a>> FromTLV<'a> for TLVArrayOwned<T> {
     fn from_tlv(t: &TLVElement<'a>) -> Result<Self, Error> {
         t.confirm_array()?;
         let mut vec = Vec::<T>::new();
-        if let Some(tlv_iter) = t.iter() {
+        if let Some(tlv_iter) = t.enter() {
             for element in tlv_iter {
                 vec.push(T::from_tlv(&element)?);
             }
@@ -240,7 +240,7 @@ impl<'a, T: ToTLV> TLVArray<'a, T> {
     pub fn iter(&self) -> TLVArrayIter<'a, T> {
         match *self {
             Self::Slice(s) => TLVArrayIter::Slice(s.iter()),
-            Self::Ptr(p) => TLVArrayIter::Ptr(p.iter()),
+            Self::Ptr(p) => TLVArrayIter::Ptr(p.enter()),
         }
     }
 }

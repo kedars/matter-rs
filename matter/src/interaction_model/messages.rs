@@ -292,7 +292,7 @@ pub mod ib {
                 f(ListOperation::DeleteList, data)?;
                 // Now the data must be a list, that should be added item by item
 
-                let container = data.iter().ok_or(Error::Invalid)?;
+                let container = data.enter().ok_or(Error::Invalid)?;
                 for d in container {
                     f(ListOperation::AddItem, &d)?;
                 }

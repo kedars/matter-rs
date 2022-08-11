@@ -40,7 +40,7 @@ fn handle_write_reqs(input: &[AttrData], expected: &[AttrStatus]) -> DataModel {
         .unwrap()
         .confirm_array()
         .unwrap()
-        .iter()
+        .enter()
         .unwrap();
     for response in response_iter {
         println!("Validating index {}", index);

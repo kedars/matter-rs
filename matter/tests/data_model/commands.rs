@@ -41,7 +41,7 @@ fn handle_commands(input: &[(CmdPath, Option<u8>)], expected: &[ExpectedInvResp]
         .unwrap()
         .confirm_array()
         .unwrap()
-        .iter()
+        .enter()
         .unwrap();
     for response in cmd_list_iter {
         println!("Validating index {}", index);

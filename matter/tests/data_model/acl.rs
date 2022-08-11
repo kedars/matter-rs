@@ -81,7 +81,7 @@ fn handle_write_reqs(
         .unwrap()
         .confirm_array()
         .unwrap()
-        .iter()
+        .enter()
         .unwrap();
     for response in response_iter {
         println!("Validating index {}", index);

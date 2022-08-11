@@ -350,7 +350,7 @@ impl<'a> PartialEq for TLVElement<'a> {
 }
 
 impl<'a> TLVElement<'a> {
-    pub fn iter(&self) -> Option<TLVContainerIterator<'a>> {
+    pub fn enter(&self) -> Option<TLVContainerIterator<'a>> {
         let ptr = match self.element_type {
             ElementType::Struct(a) | ElementType::Array(a) | ElementType::List(a) => a,
             _ => return None,
@@ -464,7 +464,7 @@ impl<'a> TLVElement<'a> {
     pub fn find_tag(&self, tag: u32) -> Result<TLVElement<'a>, Error> {
         let match_tag: TagType = TagType::Context(tag as u8);
 
-        let iter = self.iter().ok_or(Error::TLVTypeMismatch)?;
+        let iter = self.enter().ok_or(Error::TLVTypeMismatch)?;
         for a in iter {
             if match_tag == a.tag_type {
                 return Ok(a);
@@ -979,7 +979,7 @@ mod tests {
         let mut tlv_iter = tlvlist.iter();
         // Skip the 0x15
         tlv_iter.next();
-        assert_eq!(tlv_iter.next().unwrap().iter(), None);
+        assert_eq!(tlv_iter.next().unwrap().enter(), None);
     }
 
     #[test]
@@ -989,7 +989,7 @@ mod tests {
             0x15, 0x24, 0x0, 0x2, 0x26, 0x2, 0x4e, 0x10, 0x02, 0x00, 0x30, 0x3, 0x04, 0x73, 0x6d,
             0x61, 0x72,
         ];
-        let mut root_iter = get_root_node_struct(&b).unwrap().iter().unwrap();
+        let mut root_iter = get_root_node_struct(&b).unwrap().enter().unwrap();
         assert_eq!(
             root_iter.next(),
             Some(TLVElement {
@@ -1052,7 +1052,7 @@ mod tests {
             0x17, 0x24, 0x0, 0x2, 0x26, 0x2, 0x4e, 0x10, 0x02, 0x00, 0x30, 0x3, 0x04, 0x73, 0x6d,
             0x61, 0x72,
         ];
-        let mut root_iter = get_root_node_list(&b).unwrap().iter().unwrap();
+        let mut root_iter = get_root_node_list(&b).unwrap().enter().unwrap();
         assert_eq!(
             root_iter.next(),
             Some(TLVElement {
@@ -1091,7 +1091,7 @@ mod tests {
             .unwrap()
             .confirm_array()
             .unwrap()
-            .iter()
+            .enter()
             .unwrap();
         println!("Command list iterator: {:?}", cmd_list_iter);
 
@@ -1124,7 +1124,7 @@ mod tests {
 
         // This is the variable of the invoke command
         assert_eq!(
-            cmd_data_ib.find_tag(1).unwrap().iter().unwrap().next(),
+            cmd_data_ib.find_tag(1).unwrap().enter().unwrap().next(),
             None
         );
     }
@@ -1137,7 +1137,7 @@ mod tests {
             .unwrap()
             .find_tag(0)
             .unwrap()
-            .iter()
+            .enter()
             .unwrap();
         assert_eq!(
             sub_root_iter.next(),

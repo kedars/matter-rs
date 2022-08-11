@@ -14,7 +14,7 @@ pub fn assert_attr_report(out_buf: &[u8], expected: &[AttrResp]) {
         .unwrap()
         .confirm_array()
         .unwrap()
-        .iter()
+        .enter()
         .unwrap();
     for response in response_iter {
         println!("Validating index {}", index);
