@@ -89,7 +89,9 @@ impl ClusterType for AccessControlCluster {
             Some(Attributes::Acl) => encoder.encode(EncodeValue::Closure(&|tag, tw| {
                 let _ = tw.start_array(tag);
                 let _ = self.acl_mgr.for_each_acl(|entry| {
-                    let _ = entry.to_tlv(tw, TagType::Anonymous);
+                    if !attr.fab_filter || Some(attr.fab_idx) == entry.fab_idx {
+                        let _ = entry.to_tlv(tw, TagType::Anonymous);
+                    }
                 });
                 let _ = tw.end_container();
             })),
@@ -172,7 +174,10 @@ mod tests {
 
     use crate::{
         acl::{AclEntry, AclMgr, AuthMode},
-        data_model::objects::Privilege,
+        data_model::{
+            core::AttrReadEncoder,
+            objects::{AttrDetails, ClusterType, Privilege},
+        },
         interaction_model::messages::ib::ListOperation,
         tlv::{get_root_node_struct, ElementType, TLVElement, TLVWriter, TagType, ToTLV},
         utils::writebuf::WriteBuf,
@@ -278,5 +283,91 @@ mod tests {
                 index += 1;
             })
             .unwrap();
+    }
+
+    #[test]
+    /// - acl read with and without fabric filtering
+    fn acl_cluster_read() {
+        let mut buf: [u8; 100] = [0; 100];
+        let buf_len = buf.len();
+        let mut writebuf = WriteBuf::new(&mut buf, buf_len);
+
+        // Add 3 ACLs, belonging to fabric index 2, 1 and 2, in that order
+        let acl_mgr = Arc::new(AclMgr::new_with(false).unwrap());
+        let input = [
+            AclEntry::new(2, Privilege::VIEW, AuthMode::Case),
+            AclEntry::new(1, Privilege::VIEW, AuthMode::Case),
+            AclEntry::new(2, Privilege::ADMIN, AuthMode::Case),
+        ];
+        for i in input {
+            acl_mgr.add(i).unwrap();
+        }
+        let acl = AccessControlCluster::new(acl_mgr.clone()).unwrap();
+        // Test 1, all 3 entries are read in the response without fabric filtering
+        {
+            let mut tw = TLVWriter::new(&mut writebuf);
+            let mut encoder = AttrReadEncoder::new(&mut tw);
+            let attr_details = AttrDetails {
+                attr_id: 0,
+                list_index: None,
+                fab_idx: 1,
+                fab_filter: false,
+            };
+            acl.read_custom_attribute(&mut encoder, &attr_details);
+            assert_eq!(
+                &[
+                    21, 53, 1, 36, 0, 0, 55, 1, 24, 54, 2, 21, 36, 1, 1, 36, 2, 2, 54, 3, 24, 54,
+                    4, 24, 36, 254, 2, 24, 21, 36, 1, 1, 36, 2, 2, 54, 3, 24, 54, 4, 24, 36, 254,
+                    1, 24, 21, 36, 1, 5, 36, 2, 2, 54, 3, 24, 54, 4, 24, 36, 254, 2, 24, 24, 24,
+                    24
+                ],
+                writebuf.as_borrow_slice()
+            );
+        }
+        writebuf.reset(0);
+
+        // Test 2, only single entry is read in the response with fabric filtering and fabric idx 1
+        {
+            let mut tw = TLVWriter::new(&mut writebuf);
+            let mut encoder = AttrReadEncoder::new(&mut tw);
+
+            let attr_details = AttrDetails {
+                attr_id: 0,
+                list_index: None,
+                fab_idx: 1,
+                fab_filter: true,
+            };
+            acl.read_custom_attribute(&mut encoder, &attr_details);
+            assert_eq!(
+                &[
+                    21, 53, 1, 36, 0, 0, 55, 1, 24, 54, 2, 21, 36, 1, 1, 36, 2, 2, 54, 3, 24, 54,
+                    4, 24, 36, 254, 1, 24, 24, 24, 24
+                ],
+                writebuf.as_borrow_slice()
+            );
+        }
+        writebuf.reset(0);
+
+        // Test 3, only single entry is read in the response with fabric filtering and fabric idx 2
+        {
+            let mut tw = TLVWriter::new(&mut writebuf);
+            let mut encoder = AttrReadEncoder::new(&mut tw);
+
+            let attr_details = AttrDetails {
+                attr_id: 0,
+                list_index: None,
+                fab_idx: 2,
+                fab_filter: true,
+            };
+            acl.read_custom_attribute(&mut encoder, &attr_details);
+            assert_eq!(
+                &[
+                    21, 53, 1, 36, 0, 0, 55, 1, 24, 54, 2, 21, 36, 1, 1, 36, 2, 2, 54, 3, 24, 54,
+                    4, 24, 36, 254, 2, 24, 21, 36, 1, 5, 36, 2, 2, 54, 3, 24, 54, 4, 24, 36, 254,
+                    2, 24, 24, 24, 24
+                ],
+                writebuf.as_borrow_slice()
+            );
+        }
     }
 }
