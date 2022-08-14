@@ -290,6 +290,19 @@ impl<'a, T: ToTLV> TLVArray<'a, T> {
     }
 }
 
+impl<'a, T: ToTLV + FromTLV<'a> + Copy> TLVArray<'a, T> {
+    pub fn get_index(&self, index: usize) -> T {
+        let mut curr = 0;
+        for element in self.iter() {
+            if curr == index {
+                return element;
+            }
+            curr += 1;
+        }
+        panic!("Out of bounds");
+    }
+}
+
 impl<'a, T: FromTLV<'a> + Copy> Iterator for TLVArrayIter<'a, T> {
     type Item = T;
     /* Code for going to the next Element */

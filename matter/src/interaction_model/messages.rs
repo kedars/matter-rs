@@ -244,6 +244,15 @@ pub mod ib {
         pub fn new(data_ver: u32, path: &AttrPath, data: EncodeValue<'a>) -> Self {
             AttrResp::Data(AttrData::new(Some(data_ver), *path, data))
         }
+
+        pub fn unwrap_data(self) -> AttrData<'a> {
+            match self {
+                AttrResp::Data(d) => d,
+                _ => {
+                    panic!("No data exists");
+                }
+            }
+        }
     }
 
     // Attribute Data

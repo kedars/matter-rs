@@ -272,6 +272,10 @@ impl Cluster {
                 .update_from_tlv(data)
                 .map_err(|_| IMStatusCode::Failure)?;
             a.set_value(value)
+                .map(|_| {
+                    self.cluster_changed();
+                    ()
+                })
                 .map_err(|_| IMStatusCode::UnsupportedWrite)
         } else {
             Err(IMStatusCode::UnsupportedAttribute)
@@ -280,7 +284,17 @@ impl Cluster {
 
     pub fn write_attribute_raw(&mut self, attr_id: u16, value: AttrValue) -> Result<(), Error> {
         let a = self.get_attribute_mut(attr_id)?;
-        a.set_value(value)
+        a.set_value(value).map(|_| {
+            self.cluster_changed();
+            ()
+        })
+    }
+
+    /// This method must be called for any changes to the data model
+    ///     Currently this only increments the data version, but we can reuse the same
+    ///     for raising events too
+    pub fn cluster_changed(&mut self) {
+        self.data_ver = self.data_ver.wrapping_add(1);
     }
 }
 

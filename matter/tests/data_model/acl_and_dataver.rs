@@ -7,12 +7,12 @@ use matter::{
     interaction_model::{
         core::{IMStatusCode, OpCode},
         messages::{
-            ib::{AttrData, AttrPath, AttrResp, AttrStatus},
+            ib::{AttrData, AttrPath, AttrResp, AttrStatus, ClusterPath, DataVersionFilter},
             msg::{ReadReq, ReportDataMsg, WriteReq},
         },
         messages::{msg, GenericPath},
     },
-    tlv::{self, ElementType, FromTLV, TLVElement, TLVWriter, TagType, ToTLV},
+    tlv::{self, ElementType, FromTLV, TLVArray, TLVElement, TLVWriter, TagType, ToTLV},
     utils::writebuf::WriteBuf,
 };
 
@@ -32,26 +32,36 @@ fn handle_read_reqs(
     input: &[AttrPath],
     expected: &[AttrResp],
 ) {
-    let mut buf = [0u8; 400];
+    let mut out_buf = [0u8; 400];
+    let received = gen_read_reqs_output(im, peer_node_id, input, None, &mut out_buf);
+    assert_attr_report(&received, expected)
+}
 
+fn gen_read_reqs_output<'a>(
+    im: &mut ImEngine,
+    peer_node_id: u64,
+    input: &[AttrPath],
+    dataver_filters: Option<TLVArray<'a, DataVersionFilter>>,
+    out_buf: &'a mut [u8],
+) -> ReportDataMsg<'a> {
+    let mut buf = [0u8; 400];
     let buf_len = buf.len();
     let mut wb = WriteBuf::new(&mut buf, buf_len);
     let mut tw = TLVWriter::new(&mut wb);
-    let mut out_buf = [0u8; 400];
 
-    let read_req = ReadReq::new(true).set_attr_requests(input);
+    let mut read_req = ReadReq::new(true).set_attr_requests(input);
+    read_req.dataver_filters = dataver_filters;
     read_req.to_tlv(&mut tw, TagType::Anonymous).unwrap();
 
     let mut input = ImInput::new(OpCode::ReadRequest, wb.as_borrow_slice());
     input.set_peer_node_id(peer_node_id);
 
-    let out_buf_len = im.process(&input, &mut out_buf);
+    let out_buf_len = im.process(&input, out_buf);
     let out_buf = &out_buf[..out_buf_len];
 
     tlv::print_tlv_list(out_buf);
     let root = tlv::get_root_node_struct(out_buf).unwrap();
-    let received = ReportDataMsg::from_tlv(&root).unwrap();
-    assert_attr_report(&received, expected)
+    ReportDataMsg::from_tlv(&root).unwrap()
 }
 
 // Helper for handling Write Attribute sequences
@@ -197,6 +207,13 @@ fn read_cluster_id_write_attr(im: &ImEngine, endpoint: u16) -> AttrValue {
         .base()
         .read_attribute_raw(echo_cluster::Attributes::AttWrite as u16)
         .unwrap()
+}
+
+fn read_cluster_id_data_ver(im: &ImEngine, endpoint: u16) -> u32 {
+    let node = im.dm.node.read().unwrap();
+    let echo = node.get_cluster(endpoint, echo_cluster::ID).unwrap();
+
+    echo.base().get_dataver()
 }
 
 #[test]
@@ -457,4 +474,195 @@ fn write_with_runtime_acl_add() {
         ],
     );
     assert_eq!(AttrValue::Uint16(val0), read_cluster_id_write_attr(&im, 0));
+}
+
+#[test]
+/// Data Version filtering should ignore the attributes that are filtered
+/// - in case of wildcard reads
+/// - in case of exact read attribute
+fn test_read_data_ver() {
+    // 1 Attr Read Requests
+    // - wildcard endpoint, att1
+    // - 2 responses are expected
+    let _ = env_logger::try_init();
+    let peer = 98765;
+    let mut im = ImEngine::new();
+
+    // Add ACL to allow our peer with only OPERATE permission
+    let acl = AclEntry::new(1, Privilege::OPERATE, AuthMode::Case);
+    im.acl_mgr.add(acl).unwrap();
+
+    let wc_ep_att1 = GenericPath::new(
+        None,
+        Some(echo_cluster::ID),
+        Some(echo_cluster::Attributes::Att1 as u32),
+    );
+    let input = &[AttrPath::new(&wc_ep_att1)];
+
+    let expected = &[
+        attr_data!(
+            GenericPath::new(
+                Some(0),
+                Some(echo_cluster::ID),
+                Some(echo_cluster::Attributes::Att1 as u32)
+            ),
+            ElementType::U16(0x1234)
+        ),
+        attr_data!(
+            GenericPath::new(
+                Some(1),
+                Some(echo_cluster::ID),
+                Some(echo_cluster::Attributes::Att1 as u32)
+            ),
+            ElementType::U16(0x1234)
+        ),
+    ];
+    let mut out_buf = [0u8; 400];
+
+    // Test 1: Simple read to retrieve the current Data Version of Cluster at Endpoint 0
+    let received = gen_read_reqs_output(&mut im, peer, input, None, &mut out_buf);
+    assert_attr_report(&received, expected);
+
+    let data_ver_cluster_at_0 = received
+        .attr_reports
+        .as_ref()
+        .unwrap()
+        .get_index(0)
+        .unwrap_data()
+        .data_ver
+        .unwrap();
+
+    let dataver_filter = [DataVersionFilter {
+        path: ClusterPath {
+            node: None,
+            endpoint: 0,
+            cluster: echo_cluster::ID,
+        },
+        data_ver: data_ver_cluster_at_0,
+    }];
+
+    // Test 2: Add Dataversion filter for cluster at endpoint 0 only single entry should be retrieved
+    let received = gen_read_reqs_output(
+        &mut im,
+        peer,
+        input,
+        Some(TLVArray::Slice(&dataver_filter)),
+        &mut out_buf,
+    );
+    let expected_only_one = &[attr_data!(
+        GenericPath::new(
+            Some(1),
+            Some(echo_cluster::ID),
+            Some(echo_cluster::Attributes::Att1 as u32)
+        ),
+        ElementType::U16(0x1234)
+    )];
+
+    assert_attr_report(&received, expected_only_one);
+
+    // Test 3: Exact read attribute
+    let ep0_att1 = GenericPath::new(
+        Some(0),
+        Some(echo_cluster::ID),
+        Some(echo_cluster::Attributes::Att1 as u32),
+    );
+    let input = &[AttrPath::new(&ep0_att1)];
+    let received = gen_read_reqs_output(
+        &mut im,
+        peer,
+        input,
+        Some(TLVArray::Slice(&dataver_filter)),
+        &mut out_buf,
+    );
+    let expected_error = &[];
+
+    assert_attr_report(&received, expected_error);
+}
+
+#[test]
+/// - Write with the correct data version should go through
+/// - Write with incorrect data version should fail with error
+/// - Wildcard write with incorrect data version should be ignored
+fn test_write_data_ver() {
+    // 1 Attr Read Requests
+    // - wildcard endpoint, att1
+    // - 2 responses are expected
+    let _ = env_logger::try_init();
+    let peer = 98765;
+    let mut im = ImEngine::new();
+
+    // Add ACL to allow our peer with only OPERATE permission
+    let acl = AclEntry::new(1, Privilege::ADMIN, AuthMode::Case);
+    im.acl_mgr.add(acl).unwrap();
+
+    let wc_ep_attwrite = GenericPath::new(
+        None,
+        Some(echo_cluster::ID),
+        Some(echo_cluster::Attributes::AttWrite as u32),
+    );
+    let ep0_attwrite = GenericPath::new(
+        Some(0),
+        Some(echo_cluster::ID),
+        Some(echo_cluster::Attributes::AttWrite as u32),
+    );
+
+    let val0 = 10u16;
+    let val1 = 11u16;
+    let attr_data0 = EncodeValue::Value(&val0);
+    let attr_data1 = EncodeValue::Value(&val1);
+
+    let initial_data_ver = read_cluster_id_data_ver(&im, 0);
+
+    // Test 1: Write with correct dataversion should succeed
+    let input_correct_dataver = &[AttrData::new(
+        Some(initial_data_ver),
+        AttrPath::new(&ep0_attwrite),
+        attr_data0,
+    )];
+    handle_write_reqs(
+        &mut im,
+        peer,
+        input_correct_dataver,
+        &[AttrStatus::new(&ep0_attwrite, IMStatusCode::Sucess, 0)],
+    );
+    assert_eq!(AttrValue::Uint16(val0), read_cluster_id_write_attr(&im, 0));
+
+    // Test 2: Write with incorrect dataversion should fail
+    // Now the data version would have incremented due to the previous write
+    let input_correct_dataver = &[AttrData::new(
+        Some(initial_data_ver),
+        AttrPath::new(&ep0_attwrite),
+        attr_data1,
+    )];
+    handle_write_reqs(
+        &mut im,
+        peer,
+        input_correct_dataver,
+        &[AttrStatus::new(
+            &ep0_attwrite,
+            IMStatusCode::DataVersionMismatch,
+            0,
+        )],
+    );
+    assert_eq!(AttrValue::Uint16(val0), read_cluster_id_write_attr(&im, 0));
+
+    // Test 3: Wildcard write with incorrect dataversion should ignore that cluster
+    //   In this case, while the data version is correct for endpoint 0, the endpoint 1's
+    //   data version would not match
+    let new_data_ver = read_cluster_id_data_ver(&im, 0);
+
+    let input_correct_dataver = &[AttrData::new(
+        Some(new_data_ver),
+        AttrPath::new(&wc_ep_attwrite),
+        attr_data1,
+    )];
+    handle_write_reqs(
+        &mut im,
+        peer,
+        input_correct_dataver,
+        &[AttrStatus::new(&ep0_attwrite, IMStatusCode::Sucess, 0)],
+    );
+    assert_eq!(AttrValue::Uint16(val1), read_cluster_id_write_attr(&im, 0));
+
+    assert_eq!(initial_data_ver + 1, new_data_ver);
 }

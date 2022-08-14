@@ -111,7 +111,7 @@ impl ClusterType for AccessControlCluster {
         attr: &AttrDetails,
         data: &TLVElement,
     ) -> Result<(), IMStatusCode> {
-        match num::FromPrimitive::from_u16(attr.attr_id) {
+        let result = match num::FromPrimitive::from_u16(attr.attr_id) {
             Some(Attributes::Acl) => attr_list_write(attr, data, |op, data| {
                 self.write_acl_attr(op, data, attr.fab_idx)
             }),
@@ -119,7 +119,11 @@ impl ClusterType for AccessControlCluster {
                 error!("Attribute not yet supported: this shouldn't happen");
                 Err(IMStatusCode::NotFound)
             }
+        };
+        if result.is_ok() {
+            self.base.cluster_changed();
         }
+        result
     }
 }
 

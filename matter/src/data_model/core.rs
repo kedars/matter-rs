@@ -68,10 +68,6 @@ impl DataModel {
         attr_data: &AttrData,
         tw: &mut TLVWriter,
     ) {
-        if attr_data.data_ver.is_some() {
-            error!("Data ver handling not yet supported");
-        }
-
         let gen_path = attr_data.path.to_gp();
         let mut encoder = AttrWriteEncoder::new(tw, TagType::Anonymous);
         encoder.set_path(gen_path);
@@ -110,6 +106,11 @@ impl DataModel {
         };
 
         let result = node.for_each_cluster_mut(&gen_path, |path, c| {
+            if attr_data.data_ver.is_some() && Some(c.base().get_dataver()) != attr_data.data_ver {
+                encoder.encode_status(IMStatusCode::DataVersionMismatch, 0);
+                return Ok(());
+            }
+
             attr.attr_id = path.leaf.unwrap_or_default() as u16;
             encoder.set_path(*path);
             let mut access_req = AccessReq::new(accessor, path, Access::WRITE);
@@ -138,9 +139,20 @@ impl DataModel {
         attr_encoder.skip_error(path.is_wildcard());
 
         let result = node.for_each_attribute(&path, |path, c| {
+            // Ignore processing if data filter matches.
+            // For a wildcard attribute, this may end happening unnecessarily for all attributes, although
+            // a single skip for the cluster is sufficient. That requires us to replace this for_each with a
+            // for_each_cluster
+            let cluster_data_ver = c.base().get_dataver();
+            if Self::data_filter_matches(&attr_encoder.data_ver_filters, path, cluster_data_ver) {
+                return Ok(());
+            }
+
             attr_details.attr_id = path.leaf.unwrap_or_default() as u16;
             // Overwrite the previous path with the concrete path
             attr_encoder.set_path(*path);
+            // Set the cluster's data version
+            attr_encoder.set_data_ver(cluster_data_ver);
             let mut access_req = AccessReq::new(accessor, path, Access::READ);
             Cluster::read_attribute(c, &mut access_req, attr_encoder, &attr_details);
             Ok(())
@@ -190,6 +202,26 @@ impl DataModel {
             SessionMode::Pase => Accessor::new(0, 1, AuthMode::Pase, self.acl_mgr.clone()),
             SessionMode::PlainText => Accessor::new(0, 1, AuthMode::Invalid, self.acl_mgr.clone()),
         }
+    }
+
+    /// Returns true if the path matches the cluster path and the data version is a match
+    fn data_filter_matches(
+        filters: &Option<&TLVArray<DataVersionFilter>>,
+        path: &GenericPath,
+        data_ver: u32,
+    ) -> bool {
+        if let Some(filters) = *filters {
+            for filter in filters.iter() {
+                // TODO: No handling of 'node' comparision yet
+                if Some(filter.path.endpoint) == path.endpoint
+                    && Some(filter.path.cluster) == path.cluster
+                    && filter.data_ver == data_ver
+                {
+                    return true;
+                }
+            }
+        }
+        false
     }
 }
 
