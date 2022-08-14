@@ -8,7 +8,7 @@ use matter::{
         core::{IMStatusCode, OpCode},
         messages::{
             ib::{AttrData, AttrPath, AttrResp, AttrStatus},
-            msg::{ReadReq, WriteReq},
+            msg::{ReadReq, ReportDataMsg, WriteReq},
         },
         messages::{msg, GenericPath},
     },
@@ -47,7 +47,11 @@ fn handle_read_reqs(
 
     let out_buf_len = im.process(&input, &mut out_buf);
     let out_buf = &out_buf[..out_buf_len];
-    assert_attr_report(out_buf, expected)
+
+    tlv::print_tlv_list(out_buf);
+    let root = tlv::get_root_node_struct(out_buf).unwrap();
+    let received = ReportDataMsg::from_tlv(&root).unwrap();
+    assert_attr_report(&received, expected)
 }
 
 // Helper for handling Write Attribute sequences

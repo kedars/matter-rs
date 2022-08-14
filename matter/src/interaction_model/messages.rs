@@ -53,7 +53,7 @@ pub mod msg {
         tlv::{FromTLV, TLVArray, TLVElement, TLVWriter, TagType, ToTLV},
     };
 
-    use super::ib::{AttrData, AttrPath, CmdData, DataVersionFilter};
+    use super::ib::{AttrData, AttrPath, AttrResp, CmdData, DataVersionFilter};
 
     #[derive(FromTLV)]
     #[tlvargs(lifetime = "'a")]
@@ -123,6 +123,17 @@ pub mod msg {
     }
 
     // Report Data
+    #[derive(FromTLV, ToTLV)]
+    #[tlvargs(lifetime = "'a")]
+    pub struct ReportDataMsg<'a> {
+        pub subscription_id: Option<u32>,
+        pub attr_reports: Option<TLVArray<'a, AttrResp<'a>>>,
+        // TODO
+        pub event_reports: Option<bool>,
+        pub more_chunks: Option<bool>,
+        pub suppress_response: Option<bool>,
+    }
+
     pub enum ReportDataTag {
         _SubscriptionId = 0,
         AttributeReports = 1,
@@ -222,7 +233,7 @@ pub mod ib {
     }
 
     // Attribute Response
-    #[derive(Clone, Copy, FromTLV, ToTLV)]
+    #[derive(Clone, Copy, FromTLV, ToTLV, PartialEq, Debug)]
     #[tlvargs(lifetime = "'a")]
     pub enum AttrResp<'a> {
         Status(AttrStatus),
@@ -236,7 +247,7 @@ pub mod ib {
     }
 
     // Attribute Data
-    #[derive(Clone, Copy, PartialEq, FromTLV, ToTLV)]
+    #[derive(Clone, Copy, PartialEq, FromTLV, ToTLV, Debug)]
     #[tlvargs(lifetime = "'a")]
     pub struct AttrData<'a> {
         pub data_ver: Option<u32>,
@@ -399,16 +410,16 @@ pub mod ib {
         }
     }
 
-    #[derive(FromTLV, ToTLV)]
+    #[derive(FromTLV, ToTLV, Copy, Clone)]
     pub struct ClusterPath {
         pub node: Option<u64>,
         pub endpoint: u16,
         pub cluster: u32,
     }
 
-    #[derive(FromTLV, ToTLV)]
+    #[derive(FromTLV, ToTLV, Copy, Clone)]
     pub struct DataVersionFilter {
-        path: ClusterPath,
-        data_ver: u32,
+        pub path: ClusterPath,
+        pub data_ver: u32,
     }
 }

@@ -8,7 +8,7 @@ use matter::{
         core::{IMStatusCode, OpCode},
         messages::{
             ib::{AttrData, AttrPath, AttrResp, AttrStatus},
-            msg::{ReadReq, WriteReq},
+            msg::{ReadReq, ReportDataMsg, WriteReq},
         },
         messages::{msg, GenericPath},
     },
@@ -21,21 +21,27 @@ use crate::{
     common::{attributes::*, echo_cluster, im_engine::im_engine},
 };
 
-// Helper for handling Read Req sequences
 fn handle_read_reqs(input: &[AttrPath], expected: &[AttrResp]) {
-    let mut buf = [0u8; 400];
+    let mut out_buf = [0u8; 400];
+    let received = gen_read_reqs_output(input, &mut out_buf);
+    assert_attr_report(&received, expected)
+}
 
+// Helper for handling Read Req sequences
+fn gen_read_reqs_output<'a>(input: &[AttrPath], out_buf: &'a mut [u8]) -> ReportDataMsg<'a> {
+    let mut buf = [0u8; 400];
     let buf_len = buf.len();
     let mut wb = WriteBuf::new(&mut buf, buf_len);
     let mut tw = TLVWriter::new(&mut wb);
-    let mut out_buf = [0u8; 400];
 
     let read_req = ReadReq::new(true).set_attr_requests(input);
     read_req.to_tlv(&mut tw, TagType::Anonymous).unwrap();
 
-    let (_, out_buf_len) = im_engine(OpCode::ReadRequest, wb.as_borrow_slice(), &mut out_buf);
+    let (_, out_buf_len) = im_engine(OpCode::ReadRequest, wb.as_borrow_slice(), out_buf);
     let out_buf = &out_buf[..out_buf_len];
-    assert_attr_report(out_buf, expected)
+    tlv::print_tlv_list(out_buf);
+    let root = tlv::get_root_node_struct(out_buf).unwrap();
+    ReportDataMsg::from_tlv(&root).unwrap()
 }
 
 // Helper for handling Write Attribute sequences

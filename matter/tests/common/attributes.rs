@@ -1,27 +1,15 @@
-use matter::{
-    interaction_model::{messages::ib::AttrResp, messages::msg},
-    tlv::{self, FromTLV},
-};
+use matter::interaction_model::{messages::ib::AttrResp, messages::msg::ReportDataMsg};
 
 /// Assert that the data received in the outbuf matches our expectations
-pub fn assert_attr_report(out_buf: &[u8], expected: &[AttrResp]) {
-    tlv::print_tlv_list(out_buf);
-    let root = tlv::get_root_node_struct(out_buf).unwrap();
-
+pub fn assert_attr_report(received: &ReportDataMsg, expected: &[AttrResp]) {
     let mut index = 0;
-    let response_iter = root
-        .find_tag(msg::ReportDataTag::AttributeReports as u32)
-        .unwrap()
-        .confirm_array()
-        .unwrap()
-        .enter()
-        .unwrap();
-    for response in response_iter {
+
+    for inv_response in received.attr_reports.as_ref().unwrap().iter() {
         println!("Validating index {}", index);
-        let inv_response = AttrResp::from_tlv(&response).unwrap();
         match expected[index] {
             AttrResp::Data(e_d) => match inv_response {
                 AttrResp::Data(d) => {
+                    // We don't match the data-version
                     assert_eq!(e_d.path, d.path);
                     assert_eq!(e_d.data, d.data);
                 }
