@@ -47,6 +47,10 @@ safemem = "0.3.3"
 chrono = { version = "0.4.19", default-features = false, features = ["clock", "std"] }
 async-channel = "1.6"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+libmdns = "0.7"
+lazy_static = "1.4.0"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 astro-dnssd = "0.3"
 
